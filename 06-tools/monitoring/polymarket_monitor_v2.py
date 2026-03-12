@@ -23,6 +23,12 @@ from whale_tracker_v2 import (
     fetch_recent_trades, identify_active_whales, analyze_whale,
     WHALE_TRADE_THRESHOLD, WHALE_TOTAL_VOLUME
 )
+from vwap_calculator import calculate_slippage
+from kelly_criterion import assess_opportunity
+from momentum_strategy import detect_breakout
+from news_monitor import NewsMonitor, format_news_alert
+from correlation_matrix import CorrelationMatrix, format_correlation_signal
+from market_maker import MarketMaker, format_market_making_signal
 
 # 导入通知器（使用 V2 版本）
 try:
@@ -77,6 +83,16 @@ def run_pair_cost_scan() -> dict:
         for opp in opportunities[:5]:
             print(f"\n   💰 {opp['question'][:60]}...")
             print(f"      利润: {opp['profit_pct']:.2f}% | Pair Cost: ${opp['pair_cost']:.4f}")
+            
+            # 使用 Kelly 准则评估仓位
+            kelly_assessment = assess_opportunity(
+                profit_margin=opp['profit_margin'],
+                risk_score=0.2,  # 基础风险分
+                historical_win_rate=0.6
+            )
+            opp['kelly_ratio'] = kelly_assessment['kelly_ratio']
+            opp['suggested_position'] = kelly_assessment['suggested_position']
+            print(f"      Kelly建议: {kelly_assessment['suggested_position']:.1%} 仓位")
             
             # 风险评估
             if RISK_REVIEW_AVAILABLE and RISK_REVIEW_ENABLED:
@@ -254,17 +270,172 @@ def run_whale_tracking() -> dict:
     return result
 
 
-def save_report(pair_cost: dict, cross_market: dict, whale: dict):
+def run_news_monitoring() -> dict:
+    """运行新闻监控"""
+    print("\n" + "="*70)
+    print("📰 监控热点新闻...")
+    print("="*70)
+    
+    monitor = NewsMonitor()
+    
+    # 这里可以从外部 API 获取新闻
+    # 暂时使用示例数据演示
+    test_headlines = [
+        {'title': 'Bitcoin price movement detected', 'source': 'crypto'},
+        {'title': 'Fed meeting scheduled next week', 'source': 'finance'}
+    ]
+    
+    results = monitor.scan_news_impact(test_headlines)
+    signals = monitor.generate_trading_signals(results)
+    
+    if signals:
+        print(f"\n✅ 发现 {len(signals)} 个新闻驱动信号")
+        for signal in signals:
+            print(f"\n   📊 {signal['category']}: {signal['direction']}")
+            print(f"      置信度: {signal['confidence']:.1%}")
+            print(f"      建议: {signal['reason']}")
+            
+            if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
+                from telegram_notifier_v2 import send_telegram_message
+                alert = format_news_alert({
+                    'headline': signal['reason'],
+                    'impact_score': int(signal['confidence'] * 100),
+                    'category': signal['category'],
+                    'urgency': signal['timeframe'],
+                    'sentiment': 'POSITIVE' if signal['direction'] == 'UP' else 'NEGATIVE',
+                    'keywords': signal['suggested_markets'],
+                    'suggested_action': f"关注 {signal['category']} 相关市场"
+                })
+                send_telegram_message(alert)
+    else:
+        print("\n⚪ 无重大新闻影响")
+    
+    return {
+        "signals": len(signals),
+        "details": signals
+    }
+
+
+def run_correlation_analysis() -> dict:
+    """运行相关性分析"""
+    print("\n" + "="*70)
+    print("📊 分析市场相关性...")
+    print("="*70)
+    
+    analyzer = CorrelationMatrix(lookback_period=50, correlation_threshold=0.7)
+    
+    # 从活跃市场获取价格历史（示例）
+    markets = fetch_polymarket_markets(limit=20)
+    
+    if len(markets) < 3:
+        print("\n⚪ 市场数据不足，跳过相关性分析")
+        return {"signals": 0, "details": []}
+    
+    # 更新价格数据
+    for market in markets[:10]:  # 分析前 10 个市场
+        market_id = market.get('id', market.get('slug', ''))
+        price = market.get('yes_price', 0.5)
+        analyzer.update_price(market_id, price)
+    
+    # 检测相关性断裂
+    market_ids = [m.get('id', m.get('slug', '')) for m in markets[:10]]
+    signals = analyzer.detect_correlation_breakdown(market_ids)
+    
+    if signals:
+        print(f"\n✅ 发现 {len(signals)} 个相关性断裂信号")
+        for signal in signals[:3]:  # 只显示前 3 个
+            print(f"\n   📊 {signal.market_a} vs {signal.market_b}")
+            print(f"      相关性: {signal.normal_correlation:.2f} → {signal.current_correlation:.2f}")
+            print(f"      偏离: {signal.divergence:.2f}")
+            
+            if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
+                from telegram_notifier_v2 import send_telegram_message
+                send_telegram_message(format_correlation_signal(signal))
+    else:
+        print("\n⚪ 无相关性断裂信号")
+    
+    return {
+        "signals": len(signals),
+        "details": [
+            {
+                'market_a': s.market_a,
+                'market_b': s.market_b,
+                'divergence': s.divergence,
+                'direction': s.direction
+            } for s in signals
+        ]
+    }
+
+
+def run_market_making_scan() -> dict:
+    """运做市策略扫描"""
+    print("\n" + "="*70)
+    print("💹 扫描做市机会...")
+    print("="*70)
+    
+    mm = MarketMaker(min_spread_pct=0.01, max_position=1000)
+    
+    # 获取高流动性市场
+    markets = fetch_polymarket_markets(limit=20)
+    opportunities = []
+    
+    for market in markets[:10]:
+        # 模拟订单簿（实际应从 CLOB API 获取）
+        yes_price = market.get('yes_price', 0.5)
+        spread = 0.02  # 假设 2% 价差
+        
+        order_book = {
+            'market': market.get('slug', ''),
+            'bids': [[yes_price * 0.99, 5000], [yes_price * 0.98, 8000]],
+            'asks': [[yes_price * 1.01, 3000], [yes_price * 1.02, 6000]]
+        }
+        
+        signal = mm.analyze_order_book(order_book)
+        if signal and signal.confidence > 0.5:
+            opportunities.append(signal)
+    
+    if opportunities:
+        print(f"\n✅ 发现 {len(opportunities)} 个做市机会")
+        for opp in opportunities[:3]:
+            print(f"\n   💹 {opp.market}")
+            print(f"      价差: {opp.spread_pct:.2%}")
+            print(f"      预期利润: {opp.expected_profit:.2%}")
+            
+            if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
+                from telegram_notifier_v2 import send_telegram_message
+                send_telegram_message(format_market_making_signal(opp))
+    else:
+        print("\n⚪ 无合适做市机会")
+    
+    return {
+        "opportunities": len(opportunities),
+        "details": [
+            {
+                'market': o.market,
+                'spread_pct': o.spread_pct,
+                'expected_profit': o.expected_profit
+            } for o in opportunities
+        ]
+    }
+
+
+def save_report(pair_cost: dict, cross_market: dict, whale: dict, news: dict = None, correlation: dict = None, market_making: dict = None):
     """保存监控报告"""
     report = {
         "scan_time": datetime.now(timezone.utc).isoformat(),
         "pair_cost": pair_cost,
         "cross_market": cross_market,
         "whale": whale,
+        "news": news or {"signals": 0, "details": []},
+        "correlation": correlation or {"signals": 0, "details": []},
+        "market_making": market_making or {"opportunities": 0, "details": []},
         "summary": {
-            "total_opportunities": pair_cost["count"] + cross_market["count"],
+            "total_opportunities": pair_cost["count"] + cross_market["count"] + (market_making or {}).get("opportunities", 0),
             "approved_opportunities": pair_cost["approved_count"] + cross_market["approved_count"],
             "active_whales": whale["active"],
+            "news_signals": (news or {}).get("signals", 0),
+            "correlation_signals": (correlation or {}).get("signals", 0),
+            "market_making_opportunities": (market_making or {}).get("opportunities", 0),
             "risk_review_enabled": RISK_REVIEW_ENABLED
         }
     }
@@ -290,7 +461,7 @@ def send_summary(report: dict):
         "pair_cost_count": report["pair_cost"]["approved_count"],
         "cross_market_count": report["cross_market"]["approved_count"],
         "active_whales": report["whale"]["active"],
-        "markets_scanned": report["cross_market"]["platforms"]["polymarket"],
+        "markets_scanned": report["cross_market"].get("platforms", {}).get("polymarket", 0),
         "total_opportunities": report["summary"]["approved_opportunities"],
         "avg_pair_cost": 1.0  # 简化
     }
@@ -316,9 +487,12 @@ def main():
     pair_cost_result = run_pair_cost_scan()
     cross_market_result = run_cross_market_scan()
     whale_result = run_whale_tracking()
+    news_result = run_news_monitoring()
+    correlation_result = run_correlation_analysis()
+    market_making_result = run_market_making_scan()
     
     # 保存报告
-    report = save_report(pair_cost_result, cross_market_result, whale_result)
+    report = save_report(pair_cost_result, cross_market_result, whale_result, news_result, correlation_result, market_making_result)
     
     # 发送汇总
     print("\n" + "="*70)
@@ -332,6 +506,9 @@ def main():
     print(f"   Pair Cost 机会: {pair_cost_result['count']} 个 (通过审核: {pair_cost_result['approved_count']})")
     print(f"   跨平台套利: {cross_market_result['count']} 个 (通过审核: {cross_market_result['approved_count']})")
     print(f"   活跃鲸鱼: {whale_result['active']} 个")
+    print(f"   新闻信号: {news_result.get('signals', 0)} 个")
+    print(f"   相关性断裂: {correlation_result.get('signals', 0)} 个")
+    print(f"   做市机会: {market_making_result.get('opportunities', 0)} 个")
     print(f"   总计机会: {report['summary']['total_opportunities']} 个")
     print(f"   通过审核: {report['summary']['approved_opportunities']} 个")
 

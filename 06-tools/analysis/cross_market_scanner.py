@@ -17,8 +17,8 @@ POLYMARKET_API = "https://gamma-api.polymarket.com"
 MANIFOLD_API = "https://api.manifold.markets"
 METACULUS_API = "https://www.metaculus.com/api"
 
-# 套利阈值
-MIN_GAP_THRESHOLD = 0.05  # 5% 价差
+# 套利阈值（优化后更敏感）
+MIN_GAP_THRESHOLD = 0.03  # 从 5% 降低到 3%
 
 
 def fetch_api(url: str, headers: dict = None) -> dict | list | None:

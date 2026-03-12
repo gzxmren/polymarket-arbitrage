@@ -15,9 +15,9 @@ from collections import defaultdict
 DATA_API = "https://data-api.polymarket.com"
 GAMMA_API = "https://gamma-api.polymarket.com"
 
-# 鲸鱼标准
-WHALE_TRADE_THRESHOLD = 1000      # 单笔交易 > $1000 (降低阈值)
-WHALE_TOTAL_VOLUME = 10000        # 总交易量 > $10k (降低阈值)
+# 鲸鱼标准（优化后更敏感）
+WHALE_TRADE_THRESHOLD = 500       # 从 1000 降低到 500
+WHALE_TOTAL_VOLUME = 5000         # 从 10000 降低到 5000
 TRACKING_WALLETS_LIMIT = 20       # 追踪前20个活跃大户
 
 # 状态目录

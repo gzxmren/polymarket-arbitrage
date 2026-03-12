@@ -13,9 +13,9 @@ from datetime import datetime
 GAMMA_API = "https://gamma-api.polymarket.com"
 DATA_API = "https://data-api.polymarket.com"
 
-# 套利阈值
-PAIR_COST_THRESHOLD = 0.99  # 低于此值视为机会
-MIN_LIQUIDITY = 1000        # 最低流动性要求
+# 套利阈值（优化后更敏感）
+PAIR_COST_THRESHOLD = 0.995  # 从 0.99 放宽到 0.995
+MIN_LIQUIDITY = 500          # 从 1000 降低到 500
 
 
 def fetch_api(base_url: str, endpoint: str) -> dict | list | None:
