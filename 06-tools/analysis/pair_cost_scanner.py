@@ -14,7 +14,7 @@ GAMMA_API = "https://gamma-api.polymarket.com"
 DATA_API = "https://data-api.polymarket.com"
 
 # 套利阈值（优化后更敏感）
-PAIR_COST_THRESHOLD = 0.995  # 从 0.99 放宽到 0.995
+PAIR_COST_THRESHOLD = 0.99  # 降低阈值以增加机会发现（评价报告建议）
 MIN_LIQUIDITY = 500          # 从 1000 降低到 500
 
 

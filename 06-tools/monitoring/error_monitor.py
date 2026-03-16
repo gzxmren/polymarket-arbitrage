@@ -11,7 +11,7 @@ from pathlib import Path
 
 # 加载环境变量
 os.environ['TELEGRAM_BOT_TOKEN'] = '8693703622:AAGtlESUqoc4qH7qusEbOlxX8X-mlj2gwyw'
-os.environ['TELEGRAM_CHAT_ID'] = '1530224854'
+os.environ['TELEGRAM_CHAT_ID'] = '-5052636342'
 
 from telegram_notifier_v2 import send_telegram_message
 

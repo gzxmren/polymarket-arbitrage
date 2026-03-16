@@ -142,6 +142,9 @@ def detect_changes(current_positions: list, previous_positions: dict) -> list:
     
     # 新持仓
     for market, pos in current_dict.items():
+        # 提取 end_date（市场结算日期）
+        end_date = pos.get("endDate", "")
+        
         if market not in previous_positions:
             changes.append({
                 "type": "new",
@@ -149,7 +152,8 @@ def detect_changes(current_positions: list, previous_positions: dict) -> list:
                 "outcome": pos.get("outcome", "?"),
                 "size": float(pos.get("size", 0)),
                 "avg_price": float(pos.get("avgPrice", 0)),
-                "current_price": float(pos.get("curPrice", pos.get("currentPrice", 0)))
+                "current_price": float(pos.get("curPrice", pos.get("currentPrice", 0))),
+                "end_date": end_date  # 添加市场结算日期
             })
         else:
             # 仓位变化
@@ -164,7 +168,8 @@ def detect_changes(current_positions: list, previous_positions: dict) -> list:
                     "new_size": new_size,
                     "change": new_size - old_size,
                     "avg_price": float(pos.get("avgPrice", 0)),
-                    "current_price": float(pos.get("curPrice", pos.get("currentPrice", 0)))
+                    "current_price": float(pos.get("curPrice", pos.get("currentPrice", 0))),
+                    "end_date": end_date  # 添加市场结算日期
                 })
     
     # 清仓
@@ -174,7 +179,8 @@ def detect_changes(current_positions: list, previous_positions: dict) -> list:
                 "type": "closed",
                 "market": market,
                 "outcome": pos.get("outcome", "?"),
-                "previous_size": float(pos.get("size", 0))
+                "previous_size": float(pos.get("size", 0)),
+                "end_date": pos.get("endDate", "")  # 添加市场结算日期
             })
     
     return changes
@@ -201,13 +207,21 @@ def analyze_whale(wallet: str, whale_info: dict) -> dict:
     
     total_pnl = float(pnl.get("total", 0)) if pnl else 0
     
+    # 检测异常数据：持仓数多但总价值极低（可能是已清仓或数据异常）
+    is_suspicious = False
+    if len(positions) > 50 and total_value < 1000:
+        is_suspicious = True
+        print(f"   ⚠️  警告: {whale_info.get('pseudonym', wallet[:10])} 数据异常 "
+              f"({len(positions)}个持仓但总价值仅${total_value:.2f})，可能是已清仓")
+    
     # 保存新状态
     current_dict = {p.get("market", p.get("title", "Unknown")): p for p in positions}
     save_wallet_state(wallet, {
         "positions": current_dict,
         "last_check": datetime.now(timezone.utc).isoformat(),
         "total_value": total_value,
-        "total_pnl": total_pnl
+        "total_pnl": total_pnl,
+        "is_suspicious": is_suspicious
     })
     
     return {
@@ -218,7 +232,8 @@ def analyze_whale(wallet: str, whale_info: dict) -> dict:
         "total_value": total_value,
         "total_pnl": total_pnl,
         "changes": changes,
-        "has_activity": len(changes) > 0
+        "has_activity": len(changes) > 0 and not is_suspicious,  # 异常数据不视为活跃
+        "is_suspicious": is_suspicious
     }
 
 
@@ -265,6 +280,71 @@ def format_whale(analysis: dict) -> str:
             value = size * float(pos.get("curPrice", pos.get("currentPrice", 0)))
             lines.append(f"      • {market}... | {outcome} | ${value:,.0f} | P&L: ${pnl:+.0f}")
     
+    return "\n".join(lines)
+
+
+def get_top_whales(limit: int = 10) -> list:
+    """
+    获取 Top N 鲸鱼列表（按持仓价值排序）
+    
+    Returns:
+        list: 鲸鱼分析数据列表，按持仓价值降序排列
+    """
+    print(f"\n📡 获取 Top {limit} 鲸鱼数据...")
+    
+    # 获取最近交易识别活跃鲸鱼
+    trades = fetch_recent_trades(limit=1000)
+    if not trades:
+        print("❌ 无法获取交易数据")
+        return []
+    
+    whales = identify_active_whales(trades)
+    print(f"   发现 {len(whales)} 个活跃大户")
+    
+    # 分析每个鲸鱼
+    analyses = []
+    for wallet, info in whales.items():
+        analysis = analyze_whale(wallet, info)
+        # 排除异常数据
+        if not analysis["is_suspicious"]:
+            analyses.append(analysis)
+    
+    # 按持仓价值排序
+    analyses.sort(key=lambda x: x["total_value"], reverse=True)
+    
+    return analyses[:limit]
+
+
+def format_top_whales(analyses: list) -> str:
+    """格式化 Top 鲸鱼列表为字符串"""
+    lines = [
+        f"\n{'='*70}",
+        f"🏆 Top {len(analyses)} 鲸鱼排行榜 (按持仓价值)",
+        f"{'='*70}",
+        ""
+    ]
+    
+    for i, analysis in enumerate(analyses, 1):
+        w = analysis["info"]
+        
+        # 排名奖牌
+        rank_emoji = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i:2d}.")
+        
+        # 盈亏状态
+        pnl = analysis["total_pnl"]
+        pnl_emoji = "📈" if pnl > 0 else "📉" if pnl < 0 else "➖"
+        
+        # 活跃度
+        activity = "🔥" if analysis["has_activity"] else "⚪"
+        
+        lines.append(
+            f"{rank_emoji} {activity} {w['pseudonym'][:20]:<20} | "
+            f"💰 ${analysis['total_value']:>12,.0f} | "
+            f"📊 {analysis['position_count']:>3}个市场 | "
+            f"{pnl_emoji} ${pnl:>+10,.0f}"
+        )
+    
+    lines.append(f"\n{'='*70}")
     return "\n".join(lines)
 
 

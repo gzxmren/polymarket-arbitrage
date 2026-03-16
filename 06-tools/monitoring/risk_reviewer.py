@@ -168,7 +168,8 @@ def review_cross_market_opportunity(opp: dict) -> dict:
 
 def review_whale_signal(analysis: dict) -> dict:
     """
-    审查鲸鱼信号
+    审查鲸鱼信号 - 修复版
+    优化阈值和判断逻辑，适应Polymarket实际情况
     """
     concerns = []
     risk_points = 0
@@ -176,46 +177,107 @@ def review_whale_signal(analysis: dict) -> dict:
     
     w = analysis.get('info', {})
     
-    # 1. 交易量检查
-    total_volume = w.get('total_volume', 0)
-    if total_volume < 10000:
-        concerns.append(f"24h交易量较低 (${total_volume:,.0f})，信号可能不强")
-        risk_points += 1
+    # 数据一致性修复：明确区分不同数据来源
+    # whale_info 中的 total_volume = 24h交易量（来自交易记录）
+    # analysis 中的 total_value = 当前持仓价值（实时计算）
+    total_volume = w.get('total_volume', 0)  # 24h交易量
+    total_value = analysis.get('total_value', 0)  # 持仓价值（修正：从analysis获取）
+    position_count = analysis.get('position_count', 0)  # 持仓市场数
     
-    # 2. 变动数量检查
-    changes = len(analysis.get('changes', []))
-    if changes == 0:
+    # 检查异常数据：持仓多但价值极低
+    is_suspicious = analysis.get('is_suspicious', False)
+    if is_suspicious or (position_count > 50 and total_value < 1000):
+        return {
+            "approved": False,
+            "risk_score": 1.0,  # 最高风险
+            "risk_level": "high",
+            "concerns": [f"数据异常 ({position_count}个持仓但总价值仅${total_value:,.0f})，可能是已清仓或API错误"],
+            "recommendation": "❌ 数据异常，建议忽略",
+            "metrics": {
+                "total_volume": total_volume,
+                "total_value": total_value,
+                "position_count": position_count,
+                "changes": len(analysis.get('changes', [])),
+                "change_ratio": 0,
+                "is_suspicious": True
+            }
+        }
+    
+    # 1. 交易量检查 - 降低阈值，Polymarket活跃交易者标准
+    if total_volume < 3000:  # 从10000降低到3000
+        concerns.append(f"24h交易量较低 (${total_volume:,.0f})，信号可能不强")
+        risk_points += 2
+    elif total_volume < 8000:  # 新增中等区间
+        concerns.append(f"24h交易量一般 (${total_volume:,.0f})")
+        risk_points += 0.5
+    
+    # 2. 变动数量检查 - 优化判断逻辑，区分首次追踪和已有历史
+    changes = analysis.get('changes', [])
+    changes_count = len(changes)
+    
+    # 判断是否为首次追踪：所有变动都是"new"类型且比例接近100%
+    is_first_time = False
+    if changes_count > 0 and position_count > 0:
+        new_positions = sum(1 for c in changes if c.get('type') == 'new')
+        # 如果新建仓占绝大多数(>80%)且接近总持仓数，认为是首次追踪
+        if new_positions / changes_count > 0.8 and changes_count / position_count > 0.8:
+            is_first_time = True
+    
+    if changes_count == 0:
         concerns.append("无持仓变动，信号已过期")
         risk_points += 3
-    elif changes > 10:
-        concerns.append(f"变动过多 ({changes}个)，可能是噪音交易")
-        risk_points += 2
-    
-    # 3. 持仓价值检查
-    total_value = analysis.get('total_value', 0)
-    if total_value < 50000:
-        concerns.append(f"持仓价值较低 (${total_value:,.0f})，可能不是大鲸鱼")
+    elif is_first_time:
+        # 首次追踪：显示为"新发现"而非"变动"
+        concerns.append(f"新发现鲸鱼，首次追踪 ({changes_count}个持仓)")
+        risk_points += 0.5  # 低风险，只是提示
+    elif position_count > 0:  # 有持仓时计算变动比例
+        change_ratio = changes_count / position_count
+        if change_ratio > 0.5:  # 变动超过持仓数的50%才认为是高频
+            concerns.append(f"变动比例较高 ({changes_count}/{position_count}个仓位，{change_ratio:.0%})")
+            risk_points += 1.5
+        elif changes_count > 15:  # 绝对数量阈值放宽
+            concerns.append(f"变动数量较多 ({changes_count}个)，可能是活跃调仓")
+            risk_points += 1
+    elif changes_count > 15:  # 无position_count时的fallback
+        concerns.append(f"变动数量较多 ({changes_count}个)")
         risk_points += 1
     
-    # 4. 胜率检查（如果有数据）
+    # 3. 持仓价值检查 - 大幅降低阈值
+    if total_value < 10000:  # 从50000降低到10000
+        concerns.append(f"持仓价值较低 (${total_value:,.0f})，可能不是大鲸鱼")
+        risk_points += 2
+    elif total_value < 50000:  # 新增中等区间
+        concerns.append(f"持仓价值中等 (${total_value:,.0f})")
+        risk_points += 0.5
+    
+    # 4. 持仓分散度检查 - 新增：持仓过于分散可能是风险
+    if position_count > 50:  # 持仓超过50个市场
+        concerns.append(f"持仓过于分散 ({position_count}个市场)，可能缺乏重点")
+        risk_points += 1
+    
+    # 5. 胜率检查（如果有数据）
     win_rate = w.get('win_rate', 0)
     if win_rate > 0 and win_rate < 0.55:
         concerns.append(f"历史胜率较低 ({win_rate:.1%})，跟随需谨慎")
         risk_points += 2
+    elif win_rate >= 0.6:  # 高胜率加分
+        risk_points -= 1
     
-    # 计算风险分数
-    risk_score = risk_points / max_points
+    # 计算风险分数（确保在0-1范围内）
+    risk_score = max(0, min(1, risk_points / max_points))
     
-    if risk_score < 0.3:
+    # 风险等级判断
+    if risk_score < 0.25:
         risk_level = "low"
-    elif risk_score < 0.6:
+    elif risk_score < 0.5:
         risk_level = "medium"
     else:
         risk_level = "high"
     
-    if risk_score < 0.3:
-        recommendation = "✅ 信号较强，可以关注"
-    elif risk_score < 0.6:
+    # 生成建议
+    if risk_score < 0.25:
+        recommendation = "✅ 信号较强，值得关注"
+    elif risk_score < 0.5:
         recommendation = "⚠️ 信号一般，建议观望"
     else:
         recommendation = "❌ 信号较弱，不建议跟随"
@@ -225,7 +287,14 @@ def review_whale_signal(analysis: dict) -> dict:
         "risk_score": risk_score,
         "risk_level": risk_level,
         "concerns": concerns,
-        "recommendation": recommendation
+        "recommendation": recommendation,
+        "metrics": {  # 返回实际使用的指标，便于调试
+            "total_volume": total_volume,
+            "total_value": total_value,
+            "position_count": position_count,
+            "changes": changes_count,
+            "change_ratio": changes_count / position_count if position_count > 0 else 0
+        }
     }
 
 

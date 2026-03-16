@@ -12,8 +12,26 @@ from urllib.error import URLError
 from datetime import datetime
 
 # Telegram Bot 配置
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+import json
+
+# 尝试从配置文件读取
+def load_telegram_config():
+    """从 openclaw.json 加载配置"""
+    try:
+        config_path = "/home/xmren/.openclaw/openclaw.json"
+        with open(config_path) as f:
+            config = json.load(f)
+            telegram = config.get("channels", {}).get("telegram", {})
+            # 从配置读取，如果没有则使用默认值（菜园子群）
+            token = telegram.get("botToken", "")
+            chat_id = telegram.get("chatId", "") or telegram.get("defaultChatId", "") or "-5052636342"
+            return token, chat_id
+    except:
+        return "", ""
+
+# 优先环境变量，其次配置文件
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or load_telegram_config()[0]
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or load_telegram_config()[1]
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
@@ -85,8 +103,43 @@ def format_pair_cost_alert(opportunity: dict) -> str:
 """
 
 
-def format_whale_alert(analysis: dict) -> str:
-    """格式化鲸鱼活动提醒 - 清晰版"""
+def check_market_status(end_date_str: str) -> tuple:
+    """
+    检查市场状态
+    返回: (状态emoji, 状态描述, 是否过期)
+    """
+    if not end_date_str:
+        return "", "", False
+    
+    try:
+        from datetime import datetime, timezone
+        # 解析日期
+        end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+        now = datetime.now(timezone.utc)
+        
+        days_to_end = (end_date - now).days
+        
+        if days_to_end < 0:
+            # 已过期
+            days_overdue = abs(days_to_end)
+            if days_overdue <= 1:
+                return "⏰", "刚刚过期，等待结算", True
+            elif days_overdue <= 7:
+                return "⚠️", f"已过期 {days_overdue} 天，等待结算", True
+            else:
+                return "🚨", f"已过期 {days_overdue} 天，可能异常", True
+        elif days_to_end <= 1:
+            return "🔥", "即将到期", False
+        elif days_to_end <= 3:
+            return "⏳", f"{days_to_end} 天后到期", False
+        else:
+            return "", "", False
+    except:
+        return "", "", False
+
+
+def format_whale_alert(analysis: dict, is_watched: bool = False, is_new_watched: bool = False) -> str:
+    """格式化鲸鱼活动提醒 - 清晰版（添加市场状态检查和重点标记）"""
     w = analysis['info']
     
     # 判断信号强度
@@ -100,10 +153,17 @@ def format_whale_alert(analysis: dict) -> str:
     else:
         signal_strength = "⚪ 弱"
     
-    message = f"""🐋 *鲸鱼活动警报*
+    # 重点鲸鱼标记
+    watch_badge = ""
+    if is_new_watched:
+        watch_badge = "🔔 *[新重点关注]* "
+    elif is_watched:
+        watch_badge = "🔔 *[重点关注]* "
+    
+    message = f"""🐋 *鲸鱼活动警报* {watch_badge}
 
 *交易者:* {w['pseudonym']}
-`{w['wallet'][:8]}...{w['wallet'][-6:]}`
+`{w['wallet'][:8]}...{w['wallet'][-6:]}'`
 
 ┌─────────────────────────────┐
 │  📊 24h交易量: ${w['total_volume']:,.0f}              │
@@ -120,29 +180,34 @@ def format_whale_alert(analysis: dict) -> str:
         for i, change in enumerate(analysis['changes'][:5], 1):
             market_short = change['market'][:35] + "..." if len(change['market']) > 35 else change['market']
             
+            # 检查市场状态
+            end_date = change.get('end_date', '')
+            status_emoji, status_desc, is_expired = check_market_status(end_date)
+            status_warning = f"\n   {status_emoji} *{status_desc}*" if status_emoji else ""
+            
             if change['type'] == 'new':
                 message += f"""
 {i}. 🟢 *新建仓*
-   市场: {market_short}
+   市场: {market_short}{status_warning}
    方向: {change['outcome']} | 数量: {change['size']:.1f}
    成本: ${change['avg_price']:.3f}
 """
             elif change['type'] == 'increased':
                 message += f"""
 {i}. 📈 *加仓*
-   市场: {market_short}
+   市场: {market_short}{status_warning}
    增加: +{change['change']:.1f} (现持仓: {change['new_size']:.1f})
 """
             elif change['type'] == 'decreased':
                 message += f"""
 {i}. 📉 *减仓*
-   市场: {market_short}
+   市场: {market_short}{status_warning}
    减少: {change['change']:.1f} (现持仓: {change['new_size']:.1f})
 """
             elif change['type'] == 'closed':
                 message += f"""
 {i}. 🔴 *清仓*
-   市场: {market_short}
+   市场: {market_short}{status_warning}
    原持仓: {change['previous_size']:.1f}
 """
     
@@ -159,7 +224,8 @@ def format_whale_alert(analysis: dict) -> str:
             market = pos.get('market', pos.get('title', 'Unknown'))[:30]
             outcome = pos.get('outcome', '?')
             size = float(pos.get('size', 0))
-            pnl = float(pos.get('pnl', 0))
+            # 修复：使用正确的字段名 cashPnl（API返回的是cashPnl而不是pnl）
+            pnl = float(pos.get('cashPnl', pos.get('pnl', 0)))
             pnl_emoji = "📈" if pnl > 0 else "📉" if pnl < 0 else "➖"
             message += f"   • {market}... | {outcome} | {pnl_emoji} ${pnl:+.0f}\n"
     
@@ -281,9 +347,9 @@ def send_pair_cost_alert(opportunity: dict) -> bool:
     return send_telegram_message(message)
 
 
-def send_whale_alert(analysis: dict) -> bool:
-    """发送鲸鱼活动提醒"""
-    message = format_whale_alert(analysis)
+def send_whale_alert(analysis: dict, is_watched: bool = False, is_new_watched: bool = False) -> bool:
+    """发送鲸鱼活动提醒（支持重点标记）"""
+    message = format_whale_alert(analysis, is_watched=is_watched, is_new_watched=is_new_watched)
     return send_telegram_message(message)
 
 
@@ -297,6 +363,113 @@ def send_summary_report(stats: dict) -> bool:
     """发送每日汇总报告"""
     message = format_summary_report(stats)
     return send_telegram_message(message)
+
+
+def format_top_whales_message(analyses: list) -> str:
+    """格式化 Top 鲸鱼排行榜为 Telegram 消息"""
+    if not analyses:
+        return "📊 *Top 鲸鱼排行榜*\n\n⚪ 当前无活跃鲸鱼数据"
+    
+    separator = "=" * 50
+    message = f"""🏆 *Top {len(analyses)} 鲸鱼排行榜*
+
+_按持仓价值排序 | 实时数据_
+
+```
+{separator}
+"""
+    
+    for i, analysis in enumerate(analyses, 1):
+        w = analysis['info']
+        
+        # 排名奖牌
+        rank_emoji = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i:2d}.")
+        
+        # 盈亏状态
+        pnl = analysis["total_pnl"]
+        pnl_str = f"+${pnl:,.0f}" if pnl > 0 else f"-${abs(pnl):,.0f}" if pnl < 0 else "$0"
+        
+        # 活跃度标记
+        activity = "🔥" if analysis["has_activity"] else "⚪"
+        
+        # 重点标记
+        watch_badge = "👑" if analysis.get("is_watched", False) else ""
+        
+        message += f"""
+{rank_emoji} {activity} {watch_badge} *{w['pseudonym'][:18]}*
+   💰 持仓: ${analysis['total_value']:,.0f} | 📊 {analysis['position_count']}个市场
+   📈 24h交易量: ${w['total_volume']:,.0f} | P&L: {pnl_str}
+   🔗 `{w['wallet'][:8]}...{w['wallet'][-6:]}`
+"""
+    
+    message += f"""
+{separator}
+```
+
+💡 *解读:*
+• 🥇🥈🥉 = 持仓价值排名
+• 🔥 = 最近有交易活动
+• 👑 = 已加入重点关注列表
+
+📊 *建议:*
+关注高持仓 + 高活跃度的鲸鱼
+集中度高的鲸鱼信号更强
+"""
+    
+    return message
+
+
+def send_top_whales_report(analyses: list) -> bool:
+    """发送 Top 鲸鱼排行榜"""
+    message = format_top_whales_message(analyses)
+    return send_telegram_message(message)
+
+
+def format_real_market_making_signal(opp: dict) -> str:
+    """格式化真实CLOB做市信号"""
+    
+    # 计算建议挂单价格
+    spread = opp['best_ask'] - opp['best_bid']
+    suggested_bid = opp['best_bid'] + spread * 0.3
+    suggested_ask = opp['best_ask'] - spread * 0.3
+    
+    # 预期利润
+    expected_profit = (suggested_ask - suggested_bid) / ((opp['best_bid'] + opp['best_ask']) / 2)
+    
+    # 建议仓位
+    suggested_size = min(opp['min_depth'] * 0.1, 1000)
+    
+    # 判断是否为模拟数据
+    is_simulated = opp.get('market', '').startswith('test-') or 'simulated' in opp.get('_data_source', '')
+    data_source = "🧪 模拟数据" if is_simulated else "✅ 真实CLOB"
+    
+    return f"""💹 *做市机会* | {data_source}
+
+*{opp['question'][:70]}*
+
+┌─────────────────────────────┐
+│  📊 市场深度                 │
+├─────────────────────────────┤
+│  💰 当前价差: *{opp['spread_pct']:.2%}*              │
+│  📈 买价: {opp['best_bid']:.4f}              │
+│  📉 卖价: {opp['best_ask']:.4f}              │
+├─────────────────────────────┤
+│  📦 深度                     │
+│  • 买盘: ${opp['bid_depth']:,.0f}              │
+│  • 卖盘: ${opp['ask_depth']:,.0f}              │
+│  • 流动性: ${opp['liquidity']:,.0f}              │
+└─────────────────────────────┘
+
+💡 *建议挂单:*
+   买入: {suggested_bid:.4f}
+   卖出: {suggested_ask:.4f}
+   
+💵 *预期利润:* {expected_profit:.2%}
+📦 *建议仓位:* ${suggested_size:,.0f}
+
+🔗 [查看市场](https://polymarket.com/event/{opp['market']})
+⚠️ *风险提示:* 价格可能快速变动
+"""
 
 
 def test_notification():

@@ -1,23 +1,39 @@
-# 敏感信息
-.env
-*.env
-
-# 数据文件
-07-data/
-*.json
-*.log
-
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+*.py[cod]
+*$py.class
 *.so
-*.egg
-*.egg-info/
-dist/
+.Python
+env/
+venv/
+ENV/
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Data files
+07-data/
 
 # IDE
 .vscode/
@@ -29,3 +45,15 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Dashboard specific
+dashboard/venv/
+dashboard/backend/venv/
+dashboard/node_modules/
+dashboard/frontend/node_modules/
+dashboard/build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local

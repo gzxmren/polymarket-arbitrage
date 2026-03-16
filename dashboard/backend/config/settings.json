@@ -1,0 +1,5 @@
+{
+  "enable_whale_alerts": false,
+  "enable_arbitrage_alerts": false,
+  "enable_summary_report": true
+}

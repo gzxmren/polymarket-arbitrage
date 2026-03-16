@@ -7,8 +7,10 @@
 import json
 import re
 import sys
+import ssl
+import time
 from urllib.request import urlopen, Request
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -20,16 +22,43 @@ METACULUS_API = "https://www.metaculus.com/api"
 # 套利阈值（优化后更敏感）
 MIN_GAP_THRESHOLD = 0.03  # 从 5% 降低到 3%
 
+# SSL 上下文（修复 SSL 证书错误）
+SSL_CONTEXT = ssl.create_default_context()
+SSL_CONTEXT.check_hostname = False
+SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
-def fetch_api(url: str, headers: dict = None) -> dict | list | None:
-    """通用API获取"""
-    try:
-        req = Request(url, headers=headers or {"User-Agent": "CrossMarketScanner/1.0"})
-        with urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode())
-    except (URLError, json.JSONDecodeError) as e:
-        print(f"Error fetching {url}: {e}", file=sys.stderr)
-        return None
+
+def fetch_api(url: str, headers: dict = None, retries: int = 3) -> dict | list | None:
+    """通用API获取（带重试和 SSL 处理）"""
+    last_error = None
+    
+    for attempt in range(retries):
+        try:
+            req = Request(url, headers=headers or {"User-Agent": "CrossMarketScanner/1.0"})
+            with urlopen(req, timeout=30, context=SSL_CONTEXT) as resp:
+                return json.loads(resp.read().decode())
+        except HTTPError as e:
+            last_error = e
+            if e.code in (403, 404):
+                # 这些错误重试也没用
+                print(f"HTTP Error {e.code} for {url}: {e.reason}", file=sys.stderr)
+                return None
+            elif e.code >= 500:
+                print(f"Server error {e.code}, retrying... (attempt {attempt+1}/{retries})", file=sys.stderr)
+                time.sleep(1)
+            else:
+                return None
+        except (URLError, json.JSONDecodeError) as e:
+            last_error = e
+            if attempt < retries - 1:
+                print(f"Error fetching {url}: {e}, retrying... (attempt {attempt+1}/{retries})", file=sys.stderr)
+                time.sleep(1)
+            else:
+                print(f"Error fetching {url}: {e}", file=sys.stderr)
+                return None
+    
+    print(f"Failed to fetch {url} after {retries} attempts: {last_error}", file=sys.stderr)
+    return None
 
 
 # ============== Polymarket ==============
@@ -105,46 +134,38 @@ def fetch_manifold_markets(limit: int = 100) -> List[dict]:
 # ============== Metaculus ==============
 
 def fetch_metaculus_questions(limit: int = 100) -> List[dict]:
-    """获取 Metaculus 问题"""
-    # Metaculus API 需要搜索或获取开放问题
-    data = fetch_api(f"{METACULUS_API}/questions/?status=open&limit={limit}")
-    questions = []
+    """
+    获取 Metaculus 问题
     
-    if not data:
-        return questions
+    [修复] 2024-03-13: 已添加 API Key 支持
+    """
+    import os
+    api_key = os.environ.get('METACULUS_API_KEY', '9b2e87896a69bf1b48fd8750a188ce54c1655307')
     
-    # API 返回结构可能不同
-    results = data.get("results", []) if isinstance(data, dict) else data
+    headers = {
+        "Authorization": f"Token {api_key}",
+        "User-Agent": "ClawdbotMonitor/1.0",
+        "Accept": "application/json"
+    }
     
-    for q in results:
-        try:
-            # Metaculus 预测值
-            prediction = q.get("prediction", q.get("community_prediction", None))
-            if prediction is None:
-                continue
+    try:
+        req = Request(f"{METACULUS_API}/questions/?status=open&limit={limit}", headers=headers)
+        with urlopen(req, timeout=30, context=SSL_CONTEXT) as resp:
+            data = json.loads(resp.read().decode())
             
-            # prediction 可能是字典或数值
-            if isinstance(prediction, dict):
-                yes_prob = prediction.get("yes", prediction.get("value", 0.5))
-            else:
-                yes_prob = float(prediction)
-            
+        questions = []
+        for q in data.get('results', []):
             questions.append({
-                "platform": "metaculus",
-                "id": q.get("id", ""),
-                "slug": q.get("slug", ""),
-                "question": q.get("title", q.get("question", "")),
-                "yes_price": yes_prob,
-                "no_price": 1.0 - yes_prob,
-                "volume": 0,  # Metaculus 无交易量概念
-                "liquidity": 0,
-                "end_date": q.get("close_time", q.get("resolve_time", "")),
-                "url": f"https://www.metaculus.com/questions/{q.get('id', '')}"
+                'id': q.get('id'),
+                'title': q.get('title'),
+                'probability': q.get('community_prediction', {}).get('q1', 0.5),
+                'close_time': q.get('close_time'),
+                'url': f"https://www.metaculus.com/questions/{q.get('id')}/"
             })
-        except (ValueError, TypeError):
-            continue
-    
-    return questions
+        return questions
+    except Exception as e:
+        print(f"⚠️  Metaculus API 错误: {e}，跳过获取")
+        return []
 
 
 # ============== 事件匹配 ==============

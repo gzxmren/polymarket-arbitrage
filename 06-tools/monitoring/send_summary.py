@@ -10,7 +10,7 @@ from datetime import datetime
 
 # 硬编码环境变量
 os.environ['TELEGRAM_BOT_TOKEN'] = '8693703622:AAGtlESUqoc4qH7qusEbOlxX8X-mlj2gwyw'
-os.environ['TELEGRAM_CHAT_ID'] = '1530224854'
+os.environ['TELEGRAM_CHAT_ID'] = '-5052636342'
 os.environ['NOTIFY_IMMEDIATELY'] = 'true'
 os.environ['RISK_REVIEW_ENABLED'] = 'true'
 os.environ['RISK_REVIEW_THRESHOLD'] = '0.5'
