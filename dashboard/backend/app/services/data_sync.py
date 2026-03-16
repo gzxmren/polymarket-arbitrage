@@ -141,18 +141,34 @@ class DataSyncService:
                         VALUES (?, ?, ?)
                     ''', (wallet, top5_ratio, datetime.now().isoformat()))
             
-            # 清理不在当前活跃列表中的鲸鱼的is_watched标记
-            #（如果鲸鱼不再被监控程序跟踪，也从关注列表移除）
-            all_wallets_str = ','.join(f"'{w}'" for w in all_whales.keys())
-            if all_whales:
+            # 确保所有在watchlist中的鲸鱼都被标记为is_watched=1
+            #（即使它们暂时没有状态文件）
+            for wallet in watched_wallets:
+                if wallet not in all_whales:
+                    # 从watchlist获取基本信息
+                    watchlist_data = watchlist.get('whales', {}).get(wallet, {})
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO whales 
+                        (wallet, pseudonym, is_watched, added_at, last_updated)
+                        VALUES (?, ?, 1, ?, ?)
+                    ''', (
+                        wallet,
+                        watchlist_data.get('pseudonym', wallet[:10] + '...'),
+                        watchlist_data.get('added_at', datetime.now().isoformat()),
+                        datetime.now().isoformat()
+                    ))
+            
+            # 清理不在watchlist中的鲸鱼的is_watched标记
+            if watched_wallets:
+                watched_wallets_str = ','.join(f"'{w}'" for w in watched_wallets)
                 cursor.execute(f'''
                     UPDATE whales 
                     SET is_watched = 0 
-                    WHERE wallet NOT IN ({all_wallets_str}) AND is_watched = 1
+                    WHERE wallet NOT IN ({watched_wallets_str}) AND is_watched = 1
                 ''')
                 removed_count = cursor.rowcount
                 if removed_count > 0:
-                    print(f"   ℹ️  {removed_count} 个鲸鱼不再活跃，已取消关注标记")
+                    print(f"   ℹ️  {removed_count} 个鲸鱼不再关注，已取消标记")
             
             conn.commit()
             conn.close()

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Descriptions, Table, Tag, Button, Spin, message, Row, Col, Alert, Progress, Statistic } from 'antd';
-import { ArrowLeftOutlined, WalletOutlined, ReloadOutlined, RobotOutlined } from '@ant-design/icons';
+import { Card, Descriptions, Table, Tag, Button, Spin, message, Row, Col, Alert, Progress, Statistic, Tabs } from 'antd';
+import { ArrowLeftOutlined, WalletOutlined, ReloadOutlined, RobotOutlined, ReadOutlined } from '@ant-design/icons';
 import { getWhaleDetail, getWhaleHistory, getWhaleAnalysis, getWhaleDeepAnalysis, generateWhaleDeepAnalysis } from '../services/api';
 import ConcentrationChart from '../components/Charts/ConcentrationChart';
+import WhaleNews from '../components/News/WhaleNews';
 
 const WhaleDetail: React.FC = () => {
   const { wallet } = useParams<{ wallet: string }>();
@@ -461,21 +462,53 @@ const WhaleDetail: React.FC = () => {
         </Col>
       </Row>
 
-      <Card title="💼 持仓明细" style={{ marginBottom: 16 }}>
-        <Table 
-          columns={positionColumns}
-          dataSource={whale.positions || []}
-          rowKey="market"
-          pagination={{ pageSize: 10 }}
-        />
-      </Card>
-
-      <Card title="📈 历史变动">
-        <Table 
-          columns={changeColumns}
-          dataSource={whale.changes || []}
-          rowKey="id"
-          pagination={{ pageSize: 10 }}
+      {/* 新闻与持仓标签页 */}
+      <Card style={{ marginBottom: 16 }}>
+        <Tabs
+          defaultActiveKey="positions"
+          items={[
+            {
+              key: 'positions',
+              label: (
+                <span>
+                  💼 持仓明细
+                </span>
+              ),
+              children: (
+                <Table 
+                  columns={positionColumns}
+                  dataSource={whale.positions || []}
+                  rowKey="market"
+                  pagination={{ pageSize: 10 }}
+                />
+              )
+            },
+            {
+              key: 'news',
+              label: (
+                <span>
+                  <ReadOutlined /> 相关新闻
+                </span>
+              ),
+              children: <WhaleNews wallet={wallet!} />
+            },
+            {
+              key: 'history',
+              label: (
+                <span>
+                  📈 历史变动
+                </span>
+              ),
+              children: (
+                <Table 
+                  columns={changeColumns}
+                  dataSource={whale.changes || []}
+                  rowKey="id"
+                  pagination={{ pageSize: 10 }}
+                />
+              )
+            }
+          ]}
         />
       </Card>
     </div>
