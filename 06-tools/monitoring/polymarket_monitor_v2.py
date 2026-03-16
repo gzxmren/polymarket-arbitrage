@@ -42,6 +42,14 @@ except ImportError:
     WATCHLIST_AVAILABLE = False
     print("⚠️  Whale watchlist not available")
 
+# 导入鲸鱼跟随策略（V2新增）
+try:
+    from whale_following import WhaleFollowingStrategy, format_signal_telegram
+    WHALE_FOLLOWING_AVAILABLE = True
+except ImportError:
+    WHALE_FOLLOWING_AVAILABLE = False
+    print("⚠️  Whale following strategy not available")
+
 # 导入CLOB API（真实订单簿）
 try:
     from clob_api import get_markets_with_order_book, get_order_book, calculate_spread_from_order_book
@@ -615,6 +623,88 @@ def send_summary(report: dict):
     send_summary_report(stats)
 
 
+def run_whale_following_scan() -> dict:
+    """运行鲸鱼跟随策略扫描（V2新增）"""
+    print("\n" + "="*70)
+    print("🐋 运行鲸鱼跟随策略...")
+    print("="*70)
+    
+    if not WHALE_FOLLOWING_AVAILABLE:
+        print("\n⚪ 鲸鱼跟随策略不可用")
+        return {"signals": 0, "details": []}
+    
+    try:
+        strategy = WhaleFollowingStrategy()
+        signals = strategy.scan()
+        
+        if signals:
+            print(f"\n✅ 发现 {len(signals)} 个鲸鱼跟随信号")
+            
+            # 发送Telegram通知
+            if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
+                from telegram_notifier_v2 import send_telegram_message
+                for signal in signals[:3]:  # 最多发送3个
+                    message = format_signal_telegram(signal)
+                    send_telegram_message(message)
+                    print(f"   📱 已发送信号: {signal.whale.pseudonym}")
+            
+            # 记录信号到数据库
+            save_signals_to_db(signals)
+        else:
+            print("\n⚪ 未发现鲸鱼跟随信号")
+        
+        return {
+            "signals": len(signals),
+            "details": [{
+                'whale': s.whale.pseudonym,
+                'market': s.market,
+                'direction': s.direction,
+                'confidence': s.confidence
+            } for s in signals]
+        }
+    except Exception as e:
+        print(f"\n❌ 鲸鱼跟随策略错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"signals": 0, "details": [], "error": str(e)}
+
+
+def save_signals_to_db(signals: list):
+    """保存信号到数据库"""
+    try:
+        import sqlite3
+        from pathlib import Path
+        
+        db_path = Path(__file__).parent.parent.parent / "dashboard/backend/database/polymarket.db"
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        for signal in signals:
+            cursor.execute('''
+                INSERT INTO signals 
+                (type, wallet, market, direction, confidence, suggested_position, 
+                 expected_price_change, suggested_holding_hours, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                signal.type,
+                signal.whale.wallet,
+                signal.market,
+                signal.direction,
+                signal.confidence,
+                signal.suggested_position,
+                signal.expected_return,
+                48,  # 建议持有48小时
+                'pending',
+                signal.created_at.isoformat()
+            ))
+        
+        conn.commit()
+        conn.close()
+        print(f"   💾 已保存 {len(signals)} 个信号到数据库")
+    except Exception as e:
+        print(f"   ⚠️  保存信号失败: {e}")
+
+
 def main():
     print("🚀 Polymarket 综合监控器 V2")
     print("="*70)
@@ -623,6 +713,7 @@ def main():
     print(f"即时通知: {'✅ 开启' if NOTIFY_IMMEDIATELY else '⚪ 关闭'}")
     print(f"CLOB API: {'✅ 可用' if CLOB_API_AVAILABLE else '❌ 不可用'}")
     print(f"做市通知: {'✅ 开启' if MARKET_MAKING_NOTIFY_ENABLED else '⚪ 关闭'}")
+    print(f"鲸鱼跟随: {'✅ 可用' if WHALE_FOLLOWING_AVAILABLE else '❌ 不可用'}")
     print(f"做市阈值: 价差>{MARKET_MAKING_MIN_SPREAD:.1%}, 深度>${MARKET_MAKING_MIN_DEPTH:,.0f}")
     print(f"价格范围: {MARKET_MAKING_MIN_PRICE:.0%}~{MARKET_MAKING_MAX_PRICE:.0%} (排除极端市场)")
     print("="*70)
@@ -631,12 +722,14 @@ def main():
     pair_cost_result = run_pair_cost_scan()
     cross_market_result = run_cross_market_scan()
     whale_result = run_whale_tracking()
+    whale_following_result = run_whale_following_scan()  # V2新增
     news_result = run_news_monitoring()
     correlation_result = run_correlation_analysis()
     market_making_result = run_market_making_scan()
     
     # 保存报告
     report = save_report(pair_cost_result, cross_market_result, whale_result, news_result, correlation_result, market_making_result)
+    report['whale_following'] = whale_following_result  # 添加到报告
     
     # 发送汇总
     print("\n" + "="*70)
