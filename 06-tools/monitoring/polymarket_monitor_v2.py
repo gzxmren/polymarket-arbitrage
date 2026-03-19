@@ -264,27 +264,59 @@ def run_cross_market_scan() -> dict:
             
             # 保存到 Dashboard 数据库
             try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "dashboard/backend/app/models"))
-                from cross_market_arbitrage import save_opportunity
+                import sqlite3
+                from pathlib import Path
+                
+                db_path = Path(__file__).parent.parent.parent / "dashboard/backend/database/polymarket.db"
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                # 确保表存在
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS cross_market_arbitrage (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_name TEXT NOT NULL,
+                        polymarket_price REAL,
+                        manifold_price REAL,
+                        price_gap REAL,
+                        expected_return REAL,
+                        risk_level TEXT,
+                        risk_score REAL,
+                        audit_status TEXT,
+                        match_rate REAL,
+                        polymarket_url TEXT,
+                        manifold_url TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        is_read BOOLEAN DEFAULT 0
+                    )
+                ''')
                 
                 # 正确获取 URL（从嵌套对象中）
                 poly_url = opp.get('polymarket', {}).get('url', '') if isinstance(opp.get('polymarket'), dict) else opp.get('poly_url', '')
                 manifold_url = opp.get('manifold', {}).get('url', '') if isinstance(opp.get('manifold'), dict) else opp.get('manifold_url', '')
                 
-                opp_data = {
-                    'event_name': opp.get('question', '')[:200],
-                    'polymarket_price': opp.get('polymarket', {}).get('price', opp.get('poly_price', 0)) * 100,
-                    'manifold_price': opp.get('manifold', {}).get('price', opp.get('manifold_price', 0)) * 100,
-                    'price_gap': opp.get('gap', 0) * 100,
-                    'expected_return': opp.get('gap', 0) * 100 * 0.8,  # 扣除手续费后约 80%
-                    'risk_level': review.get('risk_level', 'UNKNOWN') if RISK_REVIEW_AVAILABLE else 'UNKNOWN',
-                    'risk_score': review.get('risk_score', 0) if RISK_REVIEW_AVAILABLE else 0,
-                    'audit_status': 'approved' if review.get('approved', True) else 'rejected',
-                    'match_rate': opp.get('similarity', 0) * 100,
-                    'polymarket_url': poly_url,
-                    'manifold_url': manifold_url
-                }
-                save_opportunity(opp_data)
+                # 插入数据
+                cursor.execute('''
+                    INSERT INTO cross_market_arbitrage 
+                    (event_name, polymarket_price, manifold_price, price_gap, expected_return,
+                     risk_level, risk_score, audit_status, match_rate, polymarket_url, manifold_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    opp.get('question', '')[:200],
+                    opp.get('polymarket', {}).get('price', opp.get('poly_price', 0)) * 100,
+                    opp.get('manifold', {}).get('price', opp.get('manifold_price', 0)) * 100,
+                    opp.get('gap', 0) * 100,
+                    opp.get('gap', 0) * 100 * 0.8,  # 扣除手续费后约 80%
+                    review.get('risk_level', 'UNKNOWN') if RISK_REVIEW_AVAILABLE else 'UNKNOWN',
+                    review.get('risk_score', 0) if RISK_REVIEW_AVAILABLE else 0,
+                    'approved' if review.get('approved', True) else 'rejected',
+                    opp.get('similarity', 0) * 100,
+                    poly_url,
+                    manifold_url
+                ))
+                
+                conn.commit()
+                conn.close()
                 print(f"      💾 已保存到 Dashboard 数据库")
             except Exception as e:
                 print(f"      ⚠️ 保存失败：{e}")

@@ -121,6 +121,165 @@ def get_whale_history(wallet):
     })
 
 
+@whales_bp.route('/<wallet>/pnl-history', methods=['GET'])
+def get_whale_pnl_history(wallet):
+    """获取鲸鱼盈亏历史数据"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取盈亏历史（从changes表计算）
+        cursor.execute('''
+            SELECT 
+                date(timestamp) as date,
+                SUM(CASE WHEN type = 'increase' THEN change_amount * cur_price ELSE 0 END) as realized_pnl,
+                COUNT(*) as trade_count
+            FROM changes 
+            WHERE wallet = ? 
+              AND timestamp > datetime('now', '-30 days')
+            GROUP BY date(timestamp)
+            ORDER BY date(timestamp) ASC
+        ''', (wallet,))
+        
+        rows = cursor.fetchall()
+        
+        # 获取当前总盈亏
+        cursor.execute('SELECT total_pnl FROM whales WHERE wallet = ?', (wallet,))
+        whale_row = cursor.fetchone()
+        current_pnl = whale_row['total_pnl'] if whale_row else 0
+        
+        conn.close()
+        
+        # 构建历史数据
+        pnl_history = []
+        cumulative_pnl = 0
+        
+        for row in rows:
+            cumulative_pnl += row['realized_pnl'] or 0
+            pnl_history.append({
+                'date': row['date'],
+                'daily_pnl': row['realized_pnl'] or 0,
+                'cumulative_pnl': cumulative_pnl,
+                'trade_count': row['trade_count']
+            })
+        
+        return jsonify({
+            'success': True,
+            'wallet': wallet,
+            'current_pnl': current_pnl,
+            'history': pnl_history
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取盈亏历史失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@whales_bp.route('/concentration-trend', methods=['GET'])
+def get_concentration_trend():
+    """获取所有关注鲸鱼的集中度趋势"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取关注的鲸鱼列表
+        cursor.execute('SELECT wallet, pseudonym FROM whales WHERE is_watched = 1')
+        watched_whales = cursor.fetchall()
+        
+        # 获取每个关注鲸鱼的集中度历史
+        trend_data = []
+        for whale in watched_whales:
+            cursor.execute('''
+                SELECT 
+                    date(timestamp) as date,
+                    AVG(top5_ratio) as avg_top5_ratio,
+                    AVG(hhi) as avg_hhi
+                FROM concentration_history 
+                WHERE wallet = ? 
+                  AND timestamp > datetime('now', '-7 days')
+                GROUP BY date(timestamp)
+                ORDER BY date(timestamp) ASC
+            ''', (whale['wallet'],))
+            
+            history = cursor.fetchall()
+            
+            if history:
+                trend_data.append({
+                    'wallet': whale['wallet'],
+                    'pseudonym': whale['pseudonym'],
+                    'history': [
+                        {
+                            'date': row['date'],
+                            'top5_ratio': row['avg_top5_ratio'],
+                            'hhi': row['avg_hhi']
+                        }
+                        for row in history
+                    ]
+                })
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(trend_data),
+            'data': trend_data
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取集中度趋势失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@whales_bp.route('/pnl-ranking', methods=['GET'])
+def get_pnl_ranking():
+    """获取鲸鱼盈亏排名"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取盈亏排名
+        cursor.execute('''
+            SELECT 
+                wallet,
+                pseudonym,
+                total_pnl,
+                total_value,
+                position_count,
+                is_watched
+            FROM whales
+            WHERE total_pnl != 0
+            ORDER BY total_pnl DESC
+            LIMIT 50
+        ''')
+        
+        rows = cursor.fetchall()
+        
+        ranking = []
+        for i, row in enumerate(rows, 1):
+            ranking.append({
+                'rank': i,
+                'wallet': row['wallet'],
+                'pseudonym': row['pseudonym'],
+                'total_pnl': row['total_pnl'],
+                'total_value': row['total_value'],
+                'position_count': row['position_count'],
+                'is_watched': row['is_watched'],
+                'pnl_ratio': (row['total_pnl'] / row['total_value'] * 100) if row['total_value'] > 0 else 0
+            })
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(ranking),
+            'data': ranking
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取盈亏排名失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @whales_bp.route('/<wallet>/analysis', methods=['GET'])
 def get_whale_analysis(wallet):
     """获取鲸鱼 AI 分析（实时）"""

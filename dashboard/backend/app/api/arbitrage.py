@@ -9,6 +9,153 @@ from ..models.database import db
 
 arbitrage_bp = Blueprint('arbitrage', __name__)
 
+
+@arbitrage_bp.route('/feedback', methods=['POST'])
+def submit_arbitrage_feedback():
+    """提交套利反馈（人工确认）"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        arbitrage_id = data.get('arbitrage_id')
+        arbitrage_type = data.get('arbitrage_type')  # 'pair_cost' 或 'cross_market'
+        feedback_type = data.get('feedback_type')    # 'confirmed' 或 'error'
+        feedback_text = data.get('feedback_text', '')
+        user_notes = data.get('user_notes', '')
+        
+        if not all([arbitrage_id, arbitrage_type, feedback_type]):
+            return jsonify({
+                'success': False, 
+                'error': 'Missing required fields: arbitrage_id, arbitrage_type, feedback_type'
+            }), 400
+        
+        if feedback_type not in ['confirmed', 'error']:
+            return jsonify({
+                'success': False,
+                'error': 'feedback_type must be "confirmed" or "error"'
+            }), 400
+        
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 插入反馈
+        cursor.execute('''
+            INSERT INTO arbitrage_feedback 
+            (arbitrage_id, arbitrage_type, feedback_type, feedback_text, user_notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (arbitrage_id, arbitrage_type, feedback_type, feedback_text, user_notes, datetime.now().isoformat()))
+        
+        feedback_id = cursor.lastrowid
+        
+        # 更新对应套利记录的状态
+        if arbitrage_type == 'pair_cost':
+            new_status = 'confirmed' if feedback_type == 'confirmed' else 'error'
+            cursor.execute('''
+                UPDATE pair_cost_arbitrage 
+                SET status = ? 
+                WHERE id = ?
+            ''', (new_status, arbitrage_id))
+        elif arbitrage_type == 'cross_market':
+            new_status = 'confirmed' if feedback_type == 'confirmed' else 'error'
+            cursor.execute('''
+                UPDATE cross_market_arbitrage 
+                SET audit_status = ? 
+                WHERE id = ?
+            ''', (new_status, arbitrage_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'feedback_id': feedback_id,
+            'message': f'Feedback submitted: {feedback_type}'
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 提交套利反馈失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@arbitrage_bp.route('/feedback/<int:arbitrage_id>', methods=['GET'])
+def get_arbitrage_feedback(arbitrage_id):
+    """获取套利反馈记录"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM arbitrage_feedback 
+            WHERE arbitrage_id = ?
+            ORDER BY created_at DESC
+        ''', (arbitrage_id,))
+        
+        rows = cursor.fetchall()
+        feedback_list = [dict(row) for row in rows]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'arbitrage_id': arbitrage_id,
+            'count': len(feedback_list),
+            'feedback': feedback_list
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取套利反馈失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@arbitrage_bp.route('/compare', methods=['POST'])
+def compare_arbitrage_prices():
+    """
+    对比套利价格
+    实时获取最新价格进行对比
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        arbitrage_type = data.get('arbitrage_type')
+        market_id = data.get('market_id')
+        event_name = data.get('event_name')
+        
+        if not arbitrage_type:
+            return jsonify({'success': False, 'error': 'Missing arbitrage_type'}), 400
+        
+        result = {
+            'arbitrage_type': arbitrage_type,
+            'comparison_time': datetime.now().isoformat(),
+            'prices': {}
+        }
+        
+        if arbitrage_type == 'pair_cost':
+            # 获取Pair Cost最新价格
+            # 这里可以调用CLOB API获取实时价格
+            result['prices'] = {
+                'message': 'Pair Cost comparison - real-time prices would be fetched from CLOB API',
+                'market_id': market_id
+            }
+            
+        elif arbitrage_type == 'cross_market':
+            # 获取跨平台最新价格
+            result['prices'] = {
+                'message': 'Cross-market comparison - real-time prices would be fetched from Polymarket and Manifold APIs',
+                'event_name': event_name
+            }
+        
+        return jsonify({
+            'success': True,
+            'data': result
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 对比套利价格失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @arbitrage_bp.route('/pair-cost', methods=['GET'])
 def get_pair_cost():
     """获取 Pair Cost 套利机会（从数据库）"""

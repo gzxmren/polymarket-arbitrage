@@ -25,6 +25,11 @@ export const getWhaleDetail = (wallet: string) => api.get(`/api/whales/${wallet}
 export const getWhaleHistory = (wallet: string) => api.get(`/api/whales/${wallet}/history`);
 export const getWhaleAnalysis = (wallet: string) => api.get(`/api/whales/${wallet}/analysis`);
 
+// 鲸鱼历史数据 API
+export const getWhalePnLHistory = (wallet: string) => api.get(`/api/whales/${wallet}/pnl-history`);
+export const getConcentrationTrend = () => api.get('/api/whales/concentration-trend');
+export const getPnLRanking = () => api.get('/api/whales/pnl-ranking');
+
 // 深度分析 API（使用更长的超时）
 export const getWhaleDeepAnalysis = (wallet: string) => deepAnalysisApi.get(`/api/whales/${wallet}/deep-analysis`);
 export const generateWhaleDeepAnalysis = (wallet: string, forceRefresh: boolean = false) => 

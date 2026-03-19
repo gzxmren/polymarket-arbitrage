@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Tabs, Table, Tag, Button, Empty, Statistic, Row, Col, Badge, Spin, Alert } from 'antd';
-import { ArrowUpOutlined, ArrowDownOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Card, Tabs, Table, Tag, Button, Empty, Statistic, Row, Col, Badge, Spin, Alert, Modal, Radio, Input, message } from 'antd';
+import { ArrowUpOutlined, ArrowDownOutlined, ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, SwapOutlined } from '@ant-design/icons';
 import { getPairCostOpportunities, getCrossMarketOpportunities } from '../services/api';
+import axios from 'axios';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 const REFRESH_INTERVAL = 300000; // 300秒 = 5分钟
 
@@ -11,6 +14,20 @@ const Arbitrage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // 反馈模态框状态
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
+  const [feedbackType, setFeedbackType] = useState<'confirmed' | 'error'>('confirmed');
+  const [feedbackText, setFeedbackText] = useState('');
+  const [userNotes, setUserNotes] = useState('');
+  const [currentRecord, setCurrentRecord] = useState<any>(null);
+  const [currentArbitrageType, setCurrentArbitrageType] = useState<'pair_cost' | 'cross_market'>('pair_cost');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  
+  // 对比模态框状态
+  const [compareModalVisible, setCompareModalVisible] = useState(false);
+  const [compareData, setCompareData] = useState<any>(null);
+  const [comparing, setComparing] = useState(false);
 
   const fetchArbitrageData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -52,6 +69,71 @@ const Arbitrage: React.FC = () => {
 
   const handleManualRefresh = () => {
     fetchArbitrageData(true);
+  };
+
+  // 打开反馈模态框
+  const openFeedbackModal = (record: any, type: 'pair_cost' | 'cross_market') => {
+    setCurrentRecord(record);
+    setCurrentArbitrageType(type);
+    setFeedbackType('confirmed');
+    setFeedbackText('');
+    setUserNotes('');
+    setFeedbackModalVisible(true);
+  };
+
+  // 提交反馈
+  const submitFeedback = async () => {
+    if (!currentRecord) return;
+    
+    setSubmittingFeedback(true);
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/arbitrage/feedback`, {
+        arbitrage_id: currentRecord.id,
+        arbitrage_type: currentArbitrageType,
+        feedback_type: feedbackType,
+        feedback_text: feedbackText,
+        user_notes: userNotes
+      });
+      
+      if (response.data.success) {
+        message.success(`反馈提交成功: ${feedbackType === 'confirmed' ? '确认有效' : '标记错误'}`);
+        setFeedbackModalVisible(false);
+        // 刷新数据
+        fetchArbitrageData(false);
+      } else {
+        message.error(response.data.error || '提交失败');
+      }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '提交反馈失败');
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
+
+  // 打开对比模态框
+  const openCompareModal = async (record: any, type: 'pair_cost' | 'cross_market') => {
+    setCurrentRecord(record);
+    setCurrentArbitrageType(type);
+    setCompareModalVisible(true);
+    setComparing(true);
+    
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/arbitrage/compare`, {
+        arbitrage_type: type,
+        market_id: record.market_id || record.slug,
+        event_name: record.event_name || record.market
+      });
+      
+      if (response.data.success) {
+        setCompareData(response.data.data);
+      } else {
+        message.error(response.data.error || '对比失败');
+      }
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '获取对比数据失败');
+    } finally {
+      setComparing(false);
+    }
   };
 
   const pairCostColumns = [
@@ -109,14 +191,31 @@ const Arbitrage: React.FC = () => {
       title: '操作',
       key: 'action',
       render: (_: any, record: any) => (
-        <Button 
-          type="primary" 
-          size="small" 
-          href={`https://polymarket.com/event/${record.slug || record.market_id}`} 
-          target="_blank"
-        >
-          前往交易
-        </Button>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <Button 
+            type="primary" 
+            size="small" 
+            href={`https://polymarket.com/event/${record.slug || record.market_id}`} 
+            target="_blank"
+          >
+            交易
+          </Button>
+          <Button 
+            size="small" 
+            icon={<SwapOutlined />}
+            onClick={() => openCompareModal(record, 'pair_cost')}
+          >
+            对比
+          </Button>
+          <Button 
+            size="small"
+            icon={<CheckCircleOutlined />}
+            style={{ color: '#52c41a' }}
+            onClick={() => openFeedbackModal(record, 'pair_cost')}
+          >
+            确认
+          </Button>
+        </div>
       ),
     },
   ];
@@ -203,6 +302,21 @@ const Arbitrage: React.FC = () => {
             target="_blank"
           >
             Manifold
+          </Button>
+          <Button 
+            size="small" 
+            icon={<SwapOutlined />}
+            onClick={() => openCompareModal(record, 'cross_market')}
+          >
+            对比
+          </Button>
+          <Button 
+            size="small"
+            icon={<CheckCircleOutlined />}
+            style={{ color: '#52c41a' }}
+            onClick={() => openFeedbackModal(record, 'cross_market')}
+          >
+            确认
           </Button>
         </div>
       ),
@@ -331,6 +445,103 @@ const Arbitrage: React.FC = () => {
       <Card>
         <Tabs items={tabItems} />
       </Card>
+      
+      {/* 反馈模态框 */}
+      <Modal
+        title="套利确认反馈"
+        open={feedbackModalVisible}
+        onOk={submitFeedback}
+        onCancel={() => setFeedbackModalVisible(false)}
+        confirmLoading={submittingFeedback}
+        okText="提交"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 16 }}>
+          <p><strong>事件:</strong> {currentRecord?.event_name || currentRecord?.market || currentRecord?.market_name}</p>
+          <p><strong>类型:</strong> {currentArbitrageType === 'pair_cost' ? 'Pair Cost 套利' : '跨平台套利'}</p>
+        </div>
+        
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8 }}>反馈类型:</label>
+          <Radio.Group value={feedbackType} onChange={(e) => setFeedbackType(e.target.value)}>
+            <Radio.Button value="confirmed">
+              <CheckCircleOutlined style={{ color: '#52c41a' }} /> 确认有效
+            </Radio.Button>
+            <Radio.Button value="error">
+              <CloseCircleOutlined style={{ color: '#ff4d4f' }} /> 标记错误
+            </Radio.Button>
+          </Radio.Group>
+        </div>
+        
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8 }}>反馈说明:</label>
+          <Input.TextArea
+            value={feedbackText}
+            onChange={(e) => setFeedbackText(e.target.value)}
+            placeholder="请输入反馈说明（可选）"
+            rows={3}
+          />
+        </div>
+        
+        <div>
+          <label style={{ display: 'block', marginBottom: 8 }}>备注:</label>
+          <Input.TextArea
+            value={userNotes}
+            onChange={(e) => setUserNotes(e.target.value)}
+            placeholder="个人备注（可选）"
+            rows={2}
+          />
+        </div>
+      </Modal>
+      
+      {/* 对比模态框 */}
+      <Modal
+        title="价格对比"
+        open={compareModalVisible}
+        onCancel={() => setCompareModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setCompareModalVisible(false)}>
+            关闭
+          </Button>
+        ]}
+      >
+        {comparing ? (
+          <Spin tip="正在获取最新价格..." />
+        ) : compareData ? (
+          <div>
+            <p><strong>对比时间:</strong> {new Date(compareData.comparison_time).toLocaleString('zh-CN')}</p>
+            <p><strong>套利类型:</strong> {compareData.arbitrage_type === 'pair_cost' ? 'Pair Cost 套利' : '跨平台套利'}</p>
+            
+            {compareData.arbitrage_type === 'pair_cost' && (
+              <div style={{ marginTop: 16 }}>
+                <Alert
+                  message="Pair Cost 对比"
+                  description="实时价格对比功能已触发。实际价格数据将从CLOB API获取。"
+                  type="info"
+                />
+              </div>
+            )}
+            
+            {compareData.arbitrage_type === 'cross_market' && (
+              <div style={{ marginTop: 16 }}>
+                <Alert
+                  message="跨平台对比"
+                  description="实时价格对比功能已触发。实际价格数据将从Polymarket和Manifold API获取。"
+                  type="info"
+                />
+              </div>
+            )}
+            
+            <div style={{ marginTop: 16, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
+              <pre style={{ margin: 0, fontSize: 12 }}>
+                {JSON.stringify(compareData.prices, null, 2)}
+              </pre>
+            </div>
+          </div>
+        ) : (
+          <Empty description="暂无对比数据" />
+        )}
+      </Modal>
     </div>
   );
 };

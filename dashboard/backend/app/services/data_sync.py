@@ -292,11 +292,125 @@ class DataSyncService:
         except Exception as e:
             print(f"❌ 警报同步失败: {e}")
     
+    def sync_cross_market_arbitrage(self):
+        """同步跨平台套利数据到 Dashboard"""
+        try:
+            # 从监控数据目录读取跨平台套利机会
+            data_dir = Path(__file__).parent.parent.parent.parent.parent / "07-data"
+            arbitrage_files = list(data_dir.glob("monitor_report_*.json"))
+            
+            if not arbitrage_files:
+                print("⚠️ 未找到监控报告文件")
+                return
+            
+            # 读取最新的报告
+            latest_file = max(arbitrage_files, key=lambda f: f.stat().st_mtime)
+            with open(latest_file, 'r') as f:
+                report = json.load(f)
+            
+            cross_market_data = report.get('cross_market', {})
+            opportunities = cross_market_data.get('opportunities', [])
+            
+            if not opportunities:
+                print("⚪ 无跨平台套利机会需要同步")
+                return
+            
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            
+            # 确保表存在
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS cross_market_arbitrage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_name TEXT NOT NULL,
+                    polymarket_price REAL,
+                    manifold_price REAL,
+                    price_gap REAL,
+                    expected_return REAL,
+                    risk_level TEXT,
+                    risk_score REAL,
+                    audit_status TEXT,
+                    match_rate REAL,
+                    polymarket_url TEXT,
+                    manifold_url TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_read BOOLEAN DEFAULT 0
+                )
+            ''')
+            
+            # 获取已存在的机会（用于去重）
+            cursor.execute('''
+                SELECT event_name, polymarket_price, manifold_price, created_at 
+                FROM cross_market_arbitrage 
+                WHERE created_at > datetime('now', '-24 hours')
+            ''')
+            existing = cursor.fetchall()
+            existing_set = set()
+            for row in existing:
+                # 使用事件名+价格+时间（精确到小时）作为唯一键
+                time_key = row['created_at'][:13] if row['created_at'] else ''
+                existing_set.add(f"{row['event_name']}|{row['polymarket_price']:.2f}|{row['manifold_price']:.2f}|{time_key}")
+            
+            new_count = 0
+            skip_count = 0
+            
+            for opp in opportunities:
+                event_name = opp.get('question', '')[:200]
+                poly_price = opp.get('polymarket', {}).get('price', opp.get('poly_price', 0)) * 100
+                mf_price = opp.get('manifold', {}).get('price', opp.get('manifold_price', 0)) * 100
+                
+                # 构建唯一键
+                time_key = datetime.now().strftime('%Y-%m-%d %H')
+                unique_key = f"{event_name}|{poly_price:.2f}|{mf_price:.2f}|{time_key}"
+                
+                if unique_key in existing_set:
+                    skip_count += 1
+                    continue
+                
+                # 获取风险评估数据
+                risk_reviews = cross_market_data.get('risk_reviews', [])
+                review = next((r for r in risk_reviews if r.get('opportunity', {}).get('question') == opp.get('question')), {})
+                
+                # 获取URL
+                poly_url = opp.get('polymarket', {}).get('url', '') if isinstance(opp.get('polymarket'), dict) else opp.get('poly_url', '')
+                manifold_url = opp.get('manifold', {}).get('url', '') if isinstance(opp.get('manifold'), dict) else opp.get('manifold_url', '')
+                
+                cursor.execute('''
+                    INSERT INTO cross_market_arbitrage 
+                    (event_name, polymarket_price, manifold_price, price_gap, expected_return,
+                     risk_level, risk_score, audit_status, match_rate, polymarket_url, manifold_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    event_name,
+                    poly_price,
+                    mf_price,
+                    opp.get('gap', 0) * 100,
+                    opp.get('gap', 0) * 100 * 0.8,
+                    review.get('risk_level', 'UNKNOWN'),
+                    review.get('risk_score', 0),
+                    'approved' if review.get('approved', True) else 'rejected',
+                    opp.get('similarity', 0) * 100,
+                    poly_url,
+                    manifold_url
+                ))
+                
+                new_count += 1
+                existing_set.add(unique_key)
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"✅ 跨平台套利同步完成: 新增 {new_count} 条, 跳过 {skip_count} 条重复")
+            
+        except Exception as e:
+            print(f"❌ 跨平台套利同步失败: {e}")
+    
     def run_full_sync(self):
         """执行完整同步"""
         print("🔄 开始数据同步...")
         self.sync_whales()
         self.sync_alerts()
+        self.sync_cross_market_arbitrage()
         print("✅ 数据同步完成")
 
 if __name__ == '__main__':
