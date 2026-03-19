@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Descriptions, Table, Tag, Button, Spin, message, Row, Col, Alert, Progress, Statistic, Tabs } from 'antd';
 import { ArrowLeftOutlined, WalletOutlined, ReloadOutlined, RobotOutlined, ReadOutlined } from '@ant-design/icons';
 import { getWhaleDetail, getWhaleHistory, getWhaleAnalysis, getWhaleDeepAnalysis, generateWhaleDeepAnalysis } from '../services/api';
 import ConcentrationChart from '../components/Charts/ConcentrationChart';
 import WhaleNews from '../components/News/WhaleNews';
+
+const REFRESH_INTERVAL = 900000; // 15分钟 = 900000毫秒
 
 const WhaleDetail: React.FC = () => {
   const { wallet } = useParams<{ wallet: string }>();
@@ -19,34 +21,30 @@ const WhaleDetail: React.FC = () => {
   const [deepAnalysisGenerating, setDeepAnalysisGenerating] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  useEffect(() => {
-    if (wallet) {
-      fetchWhaleData();
-      fetchAnalysis();
-      fetchDeepAnalysis();
-    }
-  }, [wallet]);
-
-  const fetchWhaleData = async () => {
-    setLoading(true);
+  const fetchWhaleData = useCallback(async (showLoading = true) => {
+    if (!wallet) return;
+    if (showLoading) setLoading(true);
+    
     try {
       const [detailRes, historyRes] = await Promise.all([
-        getWhaleDetail(wallet!),
-        getWhaleHistory(wallet!),
+        getWhaleDetail(wallet),
+        getWhaleHistory(wallet),
       ]);
       setWhale(detailRes.data);
       setHistory(historyRes.data.history || []);
+      setLastUpdated(new Date());
     } catch (error) {
       message.error('获取鲸鱼数据失败');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
-  };
+  }, [wallet]);
 
-  const fetchAnalysis = async () => {
+  const fetchAnalysis = useCallback(async () => {
+    if (!wallet) return;
     setAnalysisLoading(true);
     try {
-      const res = await getWhaleAnalysis(wallet!);
+      const res = await getWhaleAnalysis(wallet);
       setAnalysis(res.data);
       setLastUpdated(new Date());
     } catch (error) {
@@ -54,12 +52,13 @@ const WhaleDetail: React.FC = () => {
     } finally {
       setAnalysisLoading(false);
     }
-  };
+  }, [wallet]);
 
-  const fetchDeepAnalysis = async () => {
+  const fetchDeepAnalysis = useCallback(async () => {
+    if (!wallet) return;
     setDeepAnalysisLoading(true);
     try {
-      const res = await getWhaleDeepAnalysis(wallet!);
+      const res = await getWhaleDeepAnalysis(wallet);
       if (res.data && res.data.exists !== false) {
         setDeepAnalysis(res.data);
       }
@@ -68,12 +67,31 @@ const WhaleDetail: React.FC = () => {
     } finally {
       setDeepAnalysisLoading(false);
     }
-  };
+  }, [wallet]);
+
+  useEffect(() => {
+    if (wallet) {
+      fetchWhaleData();
+      fetchAnalysis();
+      fetchDeepAnalysis();
+    }
+  }, [wallet, fetchWhaleData, fetchAnalysis, fetchDeepAnalysis]);
+
+  useEffect(() => {
+    // 设置自动刷新（15分钟）
+    const intervalId = setInterval(() => {
+      fetchWhaleData(false);
+      fetchAnalysis();
+    }, REFRESH_INTERVAL);
+    
+    return () => clearInterval(intervalId);
+  }, [fetchWhaleData, fetchAnalysis]);
 
   const generateDeepAnalysis = async (forceRefresh: boolean = false, retryCount: number = 0) => {
+    if (!wallet) return;
     setDeepAnalysisGenerating(true);
     try {
-      const res = await generateWhaleDeepAnalysis(wallet!, forceRefresh);
+      const res = await generateWhaleDeepAnalysis(wallet, forceRefresh);
       setDeepAnalysis(res.data);
       message.success('深度分析已生成');
     } catch (error: any) {
@@ -229,13 +247,26 @@ const WhaleDetail: React.FC = () => {
 
   return (
     <div>
-      <Button 
-        icon={<ArrowLeftOutlined />} 
-        onClick={() => navigate('/whales')}
-        style={{ marginBottom: 16 }}
-      >
-        返回列表
-      </Button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Button 
+          icon={<ArrowLeftOutlined />} 
+          onClick={() => navigate('/whales')}
+        >
+          返回列表
+        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span style={{ color: '#999', fontSize: 14 }}>
+            更新于: {lastUpdated.toLocaleTimeString('zh-CN')}
+          </span>
+          <Button 
+            icon={<ReloadOutlined />} 
+            onClick={() => { fetchWhaleData(); fetchAnalysis(); }}
+            loading={loading}
+          >
+            刷新
+          </Button>
+        </div>
+      </div>
 
       <h1 style={{ marginBottom: 24 }}>
         <WalletOutlined /> {whale.pseudonym}
@@ -265,7 +296,7 @@ const WhaleDetail: React.FC = () => {
             showIcon={false}
             message={
               <div style={{ fontSize: '12px', color: '#666' }}>
-                ⏰ 更新时间: {lastUpdated.toLocaleString()}
+                更新时间: {lastUpdated.toLocaleString()}
               </div>
             }
             style={{ marginBottom: 16 }}
@@ -274,7 +305,7 @@ const WhaleDetail: React.FC = () => {
           <Row gutter={16}>
             {/* 左侧：核心指标 */}
             <Col span={12}>
-              <Card size="small" title="📈 核心指标" style={{ marginBottom: 16 }}>
+              <Card size="small" title="核心指标" style={{ marginBottom: 16 }}>
                 <Descriptions column={1} size="small">
                   <Descriptions.Item label="信号强度">
                     <Tag color={analysis.signal_strength.level === 'extreme' ? 'red' : analysis.signal_strength.level === 'high' ? 'orange' : 'default'}>
@@ -300,7 +331,7 @@ const WhaleDetail: React.FC = () => {
                 
                 {/* 解读 */}
                 <Alert 
-                  message="💡 解读" 
+                  message="解读" 
                   description={analysis.interpretation}
                   type="info" 
                   style={{ marginTop: 16 }}
@@ -309,7 +340,7 @@ const WhaleDetail: React.FC = () => {
                 {/* 风险提示 */}
                 {analysis.risk_warning && analysis.risk_warning !== "暂无显著风险" && (
                   <Alert 
-                    message="⚠️ 风险提示" 
+                    message="风险提示" 
                     description={analysis.risk_warning}
                     type="warning" 
                     style={{ marginTop: 8 }}
@@ -320,13 +351,13 @@ const WhaleDetail: React.FC = () => {
 
             {/* 右侧：多维度评分 */}
             <Col span={12}>
-              <Card size="small" title="📊 多维度评估" style={{ marginBottom: 16 }}>
+              <Card size="small" title="多维度评估" style={{ marginBottom: 16 }}>
                 {/* 综合评分 */}
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                     <span>综合评分</span>
                     <span style={{ fontWeight: 'bold', color: analysis.composite_score >= 80 ? '#52c41a' : analysis.composite_score >= 60 ? '#faad14' : '#f5222d' }}>
-                      ⭐ {analysis.composite_score}/100
+                      {analysis.composite_score}/100
                     </span>
                   </div>
                   <Progress percent={analysis.composite_score} status="active" strokeColor={analysis.composite_score >= 80 ? '#52c41a' : analysis.composite_score >= 60 ? '#faad14' : '#f5222d'} />
@@ -337,7 +368,7 @@ const WhaleDetail: React.FC = () => {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                     <span>适合跟单指数</span>
                     <span style={{ fontWeight: 'bold', color: analysis.copy_score >= 80 ? '#52c41a' : analysis.copy_score >= 60 ? '#faad14' : '#f5222d' }}>
-                      🤖 {analysis.copy_score}/100
+                      {analysis.copy_score}/100
                     </span>
                   </div>
                   <Progress percent={analysis.copy_score} status="active" strokeColor={analysis.copy_score >= 80 ? '#52c41a' : analysis.copy_score >= 60 ? '#faad14' : '#f5222d'} />
@@ -374,7 +405,7 @@ const WhaleDetail: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span><RobotOutlined /> AI 深度分析</span>
             {deepAnalysis ? (
-              <Tag color="green">✅ 已生成</Tag>
+              <Tag color="green">已生成</Tag>
             ) : (
               <Button 
                 type="primary" 
@@ -396,8 +427,8 @@ const WhaleDetail: React.FC = () => {
               {deepAnalysis.content}
             </div>
             <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #eee', fontSize: '12px', color: '#999' }}>
-              <span>⏰ {new Date(deepAnalysis.generated_at).toLocaleString()}</span>
-              {deepAnalysis.cost > 0 && <span style={{ marginLeft: 16 }}>💰 ${deepAnalysis.cost.toFixed(4)}</span>}
+              <span>{new Date(deepAnalysis.generated_at).toLocaleString()}</span>
+              {deepAnalysis.cost > 0 && <span style={{ marginLeft: 16 }}>${deepAnalysis.cost.toFixed(4)}</span>}
               {deepAnalysis.from_cache && <Tag style={{ marginLeft: 16 }}>来自缓存</Tag>}
               <Button 
                 size="small" 
@@ -420,7 +451,7 @@ const WhaleDetail: React.FC = () => {
 
       <Row gutter={16}>
         <Col span={16}>
-          <Card title="📊 集中度趋势" style={{ marginBottom: 16 }}>
+          <Card title="集中度趋势" style={{ marginBottom: 16 }}>
             {history.length > 0 ? (
               <ConcentrationChart 
                 data={history} 
@@ -432,7 +463,7 @@ const WhaleDetail: React.FC = () => {
           </Card>
         </Col>
         <Col span={8}>
-          <Card title="📈 基本信息" style={{ marginBottom: 16 }}>
+          <Card title="基本信息" style={{ marginBottom: 16 }}>
             <Descriptions column={1}>
               <Descriptions.Item label="钱包">
                 <code>{whale.wallet?.slice(0, 10)}...{whale.wallet?.slice(-6)}</code>
@@ -450,7 +481,7 @@ const WhaleDetail: React.FC = () => {
               </Descriptions.Item>
               <Descriptions.Item label="趋势">
                 {whale.convergence_trend === 'converging' ? (
-                  <Tag color="red">🔥 正在收敛</Tag>
+                  <Tag color="red">正在收敛</Tag>
                 ) : whale.convergence_trend === 'diverging' ? (
                   <Tag color="orange">正在分散</Tag>
                 ) : (
@@ -469,11 +500,7 @@ const WhaleDetail: React.FC = () => {
           items={[
             {
               key: 'positions',
-              label: (
-                <span>
-                  💼 持仓明细
-                </span>
-              ),
+              label: '持仓明细',
               children: (
                 <Table 
                   columns={positionColumns}
@@ -485,20 +512,12 @@ const WhaleDetail: React.FC = () => {
             },
             {
               key: 'news',
-              label: (
-                <span>
-                  <ReadOutlined /> 相关新闻
-                </span>
-              ),
+              label: '相关新闻',
               children: <WhaleNews wallet={wallet!} />
             },
             {
               key: 'history',
-              label: (
-                <span>
-                  📈 历史变动
-                </span>
-              ),
+              label: '历史变动',
               children: (
                 <Table 
                   columns={changeColumns}

@@ -25,6 +25,7 @@ def create_app():
     from .api.alerts import alerts_bp
     from .api.summary import summary_bp
     from .api.settings import settings_bp
+    from .api.semantic import semantic_bp
     
     app.register_blueprint(whales_bp, url_prefix='/api/whales')
     app.register_blueprint(markets_bp, url_prefix='/api/markets')
@@ -32,5 +33,6 @@ def create_app():
     app.register_blueprint(alerts_bp, url_prefix='/api/alerts')
     app.register_blueprint(summary_bp, url_prefix='/api/summary')
     app.register_blueprint(settings_bp, url_prefix='/api/settings')
+    app.register_blueprint(semantic_bp, url_prefix='/api/semantic')
     
     return app

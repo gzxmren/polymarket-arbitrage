@@ -16,8 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))  # 添加当前目录以导入news_fetcher
 
 # 配置
-DATA_DIR = Path(__file__).parent.parent.parent / "07-data"
-NEWS_CACHE_DIR = DATA_DIR / "news_cache"
+from config import DATA_DIR, NEWS_CACHE_DIR
 NEWS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # 新闻源配置
@@ -106,10 +105,15 @@ class WhaleNewsConnector:
                 if value not in keywords["primary"]:
                     keywords["primary"].append(value)
         
-        # 关键条件
-        conditions = ["attack", "war", "conflict", "election", "win", "price", "hit", "above", "below"]
+        # 关键条件（平衡严格度和召回率）
+        conditions = ["attack", "war", "conflict", "election", "price", "hit", "above", "below"]
         for cond in conditions:
             if cond in title_lower:
+                # 排除误匹配
+                if cond == "war" and "warriors" in title_lower:
+                    continue
+                if cond == "win" and any(sport in title_lower for sport in ["manchester", "city", "fc", "premier"]):
+                    continue  # 体育比赛不抓取
                 keywords["secondary"].append(cond)
         
         # 背景类别

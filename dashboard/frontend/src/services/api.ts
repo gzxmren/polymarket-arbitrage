@@ -38,7 +38,10 @@ export const getSummary = async () => {
 
 // 警报相关 API
 export const getAlerts = (params?: any) => api.get('/api/alerts/', { params });
+export const getAlertDetail = (id: number) => api.get(`/api/alerts/${id}`);
 export const markAlertRead = (id: number) => api.post(`/api/alerts/${id}/read`);
+export const markAllAlertsRead = (type?: string) => api.post('/api/alerts/mark-all-read', null, { params: { type } });
+export const getAlertStats = () => api.get('/api/alerts/stats');
 
 // 套利相关 API
 export const getPairCostOpportunities = () => api.get('/api/arbitrage/pair-cost');
@@ -47,5 +50,46 @@ export const getCrossMarketOpportunities = () => api.get('/api/arbitrage/cross-m
 // 设置相关 API
 export const getSettings = () => api.get('/api/settings/');
 export const saveSettings = (settings: any) => api.post('/api/settings/', settings);
+
+// 市场数据 API
+export const marketsAPI = {
+  // 获取活跃市场
+  getActive: (limit?: number) => {
+    return api.get('/api/markets/active', { params: { limit } });
+  },
+  
+  // 扫描市场
+  scan: (markets: any[], scanType?: string) => {
+    return api.post('/api/markets/scan', { markets, scan_type: scanType });
+  },
+  
+  // 快速扫描
+  quickScan: (limit?: number) => {
+    return api.get('/api/markets/quick-scan', { params: { limit } });
+  }
+};
+
+// 语义套利 API
+export const semanticAPI = {
+  // 执行扫描
+  scan: (markets: any[]) => {
+    return api.post('/api/semantic/scan', { markets });
+  },
+  
+  // 获取预定义关系
+  getRelationships: () => {
+    return api.get('/api/semantic/relationships');
+  },
+  
+  // 获取统计
+  getStatistics: () => {
+    return api.get('/api/semantic/statistics');
+  },
+  
+  // 测试
+  test: () => {
+    return api.get('/api/semantic/test');
+  },
+};
 
 export default api;

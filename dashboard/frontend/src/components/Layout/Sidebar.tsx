@@ -6,7 +6,9 @@ import {
   TeamOutlined,
   LineChartOutlined,
   BellOutlined,
-  SettingOutlined
+  SettingOutlined,
+  ExperimentOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
@@ -19,6 +21,8 @@ const Sidebar: React.FC = () => {
     { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
     { key: '/whales', icon: <TeamOutlined />, label: '鲸鱼跟踪' },
     { key: '/arbitrage', icon: <LineChartOutlined />, label: '套利机会' },
+    { key: '/semantic-arbitrage', icon: <ExperimentOutlined />, label: '语义套利' },
+    { key: '/news-driven', icon: <ThunderboltOutlined />, label: '新闻驱动' },
     { key: '/alerts', icon: <BellOutlined />, label: '警报中心' },
     { key: '/settings', icon: <SettingOutlined />, label: '设置' },
   ];

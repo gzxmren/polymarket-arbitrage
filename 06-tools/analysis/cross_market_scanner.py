@@ -205,7 +205,7 @@ def extract_key_entities(text: str) -> set:
 
 
 def validate_match(poly_question: str, other_question: str, similarity: float) -> tuple:
-    """验证匹配是否有效"""
+    """验证匹配是否有效 - 改进版"""
     # 提取关键实体
     poly_entities = extract_key_entities(poly_question)
     other_entities = extract_key_entities(other_question)
@@ -213,7 +213,7 @@ def validate_match(poly_question: str, other_question: str, similarity: float) -
     # 检查是否有共同的实体
     common_entities = poly_entities & other_entities
     
-    # 检查是否有冲突的实体（如足球 vs 棒球）
+    # 检查是否有冲突的实体
     conflicting_pairs = [
         ({'world cup', 'fifa', 'soccer'}, {'baseball', 'mlb'}),
         ({'bitcoin', 'btc'}, {'ethereum', 'eth'}),
@@ -233,8 +233,22 @@ def validate_match(poly_question: str, other_question: str, similarity: float) -
     if has_conflict:
         return False, "conflicting_entities"
     
-    if similarity < 0.5 and len(common_entities) < 2:
-        return False, "insufficient_common_entities"
+    # 提高匹配阈值
+    if similarity < 0.6:
+        return False, f"similarity_too_low ({similarity:.1%} < 60%)"
+    
+    # 关键实体必须至少有 2 个匹配
+    if len(common_entities) < 2:
+        return False, f"insufficient_common_entities ({len(common_entities)} < 2)"
+    
+    # 检查重要关键词
+    important_keywords = ['trump', 'biden', 'gta', 'election', 'president', 'winner']
+    poly_has_keyword = any(kw in poly_question.lower() for kw in important_keywords)
+    other_has_keyword = any(kw in other_question.lower() for kw in important_keywords)
+    
+    # 如果一方有重要关键词，另一方也必须有
+    if (poly_has_keyword or other_has_keyword) and not (poly_has_keyword and other_has_keyword):
+        return False, "important_keyword_mismatch"
     
     return True, "valid"
 

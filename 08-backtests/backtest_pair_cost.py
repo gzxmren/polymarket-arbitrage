@@ -17,8 +17,10 @@ except ImportError:
     print("Warning: pandas not installed, using basic data structures")
 
 # 配置
-DATA_DIR = "/home/xmren/.openclaw/workspace/polymarket-project/07-data"
-REPORT_DIR = "/home/xmren/.openclaw/workspace/polymarket-project/07-data"
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "06-tools/analysis"))
+from config import DATA_DIR, LOGS_DIR as REPORT_DIR
 
 
 def load_historical_data(days=7):

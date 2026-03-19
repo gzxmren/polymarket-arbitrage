@@ -345,3 +345,131 @@ def get_whale_news(wallet):
         print(f"[ERROR] 获取鲸鱼新闻失败: {str(e)}")
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+
+
+# ========== 鲸鱼跟随策略 API ==========
+
+@whales_bp.route('/<wallet>/signal', methods=['POST'])
+def generate_whale_signal(wallet):
+    """
+    为指定鲸鱼生成跟随信号
+    
+    POST /api/whales/<wallet>/signal
+    
+    Returns:
+        跟随信号
+    """
+    try:
+        # 导入鲸鱼跟随策略
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "06-tools/analysis"))
+        from whale_following import WhaleFollowingStrategy
+        
+        strategy = WhaleFollowingStrategy()
+        
+        # 获取鲸鱼信息
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM whales WHERE wallet = ?', (wallet,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'error': 'Whale not found'}), 404
+        
+        # 构建 Whale 对象
+        from whale_following import Whale
+        whale = Whale(
+            wallet=row[1],
+            pseudonym=row[2] or row[1][:10] + "...",
+            total_value=row[3] or 0,
+            win_rate=0.6 if (row[6] or 0) > 0 else 0.4,  # 基于盈亏估算
+            sharpe_ratio=min((row[6] or 0) / (row[3] or 1), 2.0),
+            strategy_consistency=0.7
+        )
+        
+        # 生成信号
+        signal = strategy.detect_large_trade(whale)
+        
+        if signal:
+            return jsonify({
+                'success': True,
+                'has_signal': True,
+                'signal': {
+                    'type': signal.type,
+                    'market': signal.market,
+                    'direction': signal.direction,
+                    'confidence': signal.confidence,
+                    'suggested_position': signal.suggested_position,
+                    'expected_return': signal.expected_return,
+                    'risk_level': signal.risk_level,
+                    'reasoning': signal.reasoning,
+                    'created_at': signal.created_at.isoformat()
+                }
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'has_signal': False,
+                'message': 'No significant trade detected in recent hours'
+            })
+    
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 生成鲸鱼信号失败: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@whales_bp.route('/signals', methods=['GET'])
+def get_whale_signals():
+    """
+    获取所有鲸鱼跟随信号
+    
+    GET /api/whales/signals?hours=24&min_confidence=0.7
+    
+    Returns:
+        信号列表
+    """
+    try:
+        hours = request.args.get('hours', 24, type=int)
+        min_confidence = request.args.get('min_confidence', 0.7, type=float)
+        
+        # 导入策略
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "06-tools/analysis"))
+        from whale_following import WhaleFollowingStrategy
+        
+        strategy = WhaleFollowingStrategy()
+        
+        # 扫描所有聪明钱鲸鱼
+        signals = strategy.scan()
+        
+        # 过滤低置信度
+        filtered_signals = [s for s in signals if s.confidence >= min_confidence]
+        
+        return jsonify({
+            'success': True,
+            'count': len(filtered_signals),
+            'hours': hours,
+            'signals': [
+                {
+                    'type': s.type,
+                    'whallet': s.whale.wallet,
+                    'whale_pseudonym': s.whale.pseudonym,
+                    'market': s.market,
+                    'direction': s.direction,
+                    'confidence': s.confidence,
+                    'suggested_position': s.suggested_position,
+                    'expected_return': s.expected_return,
+                    'risk_level': s.risk_level,
+                    'reasoning': s.reasoning,
+                    'created_at': s.created_at.isoformat()
+                }
+                for s in filtered_signals
+            ]
+        })
+    
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 获取鲸鱼信号失败: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500

@@ -11,9 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 # 配置
-DATA_DIR = Path(__file__).parent.parent.parent / "07-data"
-WATCHLIST_FILE = DATA_DIR / "whale_watchlist.json"
-WHALE_STATES_DIR = DATA_DIR / "whale_states"
+from config import DATA_DIR, WATCHLIST_FILE, WHALE_STATES_DIR
 
 # 自动标记阈值
 WATCH_THRESHOLD_VALUE = 100000  # 持仓价值 > $100k

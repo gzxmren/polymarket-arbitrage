@@ -152,6 +152,36 @@ def run_pair_cost_scan() -> dict:
             else:
                 approved_opportunities.append(opp)
             
+            # 保存到数据库
+            try:
+                import sqlite3
+                from pathlib import Path
+                
+                db_path = Path(__file__).parent.parent.parent / "dashboard/backend/database/polymarket.db"
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT INTO pair_cost_arbitrage 
+                    (market_id, market_name, yes_price, no_price, sum_price, profit_potential, liquidity, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    opp.get('market_id', ''),
+                    opp.get('question', '')[:200],
+                    opp.get('yes_price', 0),
+                    opp.get('no_price', 0),
+                    opp.get('yes_price', 0) + opp.get('no_price', 0),
+                    opp.get('profit', 0),
+                    opp.get('liquidity', 0),
+                    'approved' if (not RISK_REVIEW_ENABLED or review['approved']) else 'pending'
+                ))
+                
+                conn.commit()
+                conn.close()
+                print(f"      💾 已保存到数据库")
+            except Exception as e:
+                print(f"      ⚠️  保存数据库失败: {e}")
+            
             # 发送机会通知（只有通过审核的）
             if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
                 if not RISK_REVIEW_ENABLED or review['approved']:
@@ -231,6 +261,33 @@ def run_cross_market_scan() -> dict:
             if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
                 if not RISK_REVIEW_ENABLED or review['approved']:
                     send_cross_market_alert(opp)
+            
+            # 保存到 Dashboard 数据库
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "dashboard/backend/app/models"))
+                from cross_market_arbitrage import save_opportunity
+                
+                # 正确获取 URL（从嵌套对象中）
+                poly_url = opp.get('polymarket', {}).get('url', '') if isinstance(opp.get('polymarket'), dict) else opp.get('poly_url', '')
+                manifold_url = opp.get('manifold', {}).get('url', '') if isinstance(opp.get('manifold'), dict) else opp.get('manifold_url', '')
+                
+                opp_data = {
+                    'event_name': opp.get('question', '')[:200],
+                    'polymarket_price': opp.get('polymarket', {}).get('price', opp.get('poly_price', 0)) * 100,
+                    'manifold_price': opp.get('manifold', {}).get('price', opp.get('manifold_price', 0)) * 100,
+                    'price_gap': opp.get('gap', 0) * 100,
+                    'expected_return': opp.get('gap', 0) * 100 * 0.8,  # 扣除手续费后约 80%
+                    'risk_level': review.get('risk_level', 'UNKNOWN') if RISK_REVIEW_AVAILABLE else 'UNKNOWN',
+                    'risk_score': review.get('risk_score', 0) if RISK_REVIEW_AVAILABLE else 0,
+                    'audit_status': 'approved' if review.get('approved', True) else 'rejected',
+                    'match_rate': opp.get('similarity', 0) * 100,
+                    'polymarket_url': poly_url,
+                    'manifold_url': manifold_url
+                }
+                save_opportunity(opp_data)
+                print(f"      💾 已保存到 Dashboard 数据库")
+            except Exception as e:
+                print(f"      ⚠️ 保存失败：{e}")
     else:
         print("\n⚪ 未发现套利机会")
     

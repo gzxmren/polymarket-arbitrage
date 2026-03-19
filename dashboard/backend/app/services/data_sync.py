@@ -15,12 +15,23 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / '06-tools/an
 
 from app.models.database import db
 
+# 尝试导入 WebSocket 服务
+try:
+    from .websocket import broadcast_new_alert
+    WEBSOCKET_AVAILABLE = True
+except ImportError:
+    WEBSOCKET_AVAILABLE = False
+    print("⚠️ WebSocket 服务不可用")
+
 class DataSyncService:
     """数据同步服务"""
     
     def __init__(self):
-        self.whale_states_dir = Path('/home/xmren/.openclaw/workspace/polymarket-project/07-data/whale_states')
-        self.watchlist_file = Path('/home/xmren/.openclaw/workspace/polymarket-project/07-data/whale_watchlist.json')
+        # 使用相对路径，从项目根目录计算
+        project_root = Path(__file__).parent.parent.parent.parent.parent
+        data_dir = project_root / "07-data"
+        self.whale_states_dir = data_dir / "whale_states"
+        self.watchlist_file = data_dir / "whale_watchlist.json"
     
     def sync_whales(self):
         """同步鲸鱼数据（包括所有活跃鲸鱼和重点关注鲸鱼）"""
@@ -232,6 +243,8 @@ class DataSyncService:
             new_count = 0
             skip_count = 0
             
+            new_alert_ids = []
+            
             for alert in alerts_data[-50:]:  # 只同步最近50条
                 wallet = alert.get('wallet', '')
                 timestamp = alert.get('timestamp', '')
@@ -259,10 +272,19 @@ class DataSyncService:
                     timestamp
                 ))
                 
+                new_alert_id = cursor.lastrowid
+                new_alert_ids.append(new_alert_id)
                 new_count += 1
                 existing_set.add(unique_key)
             
             conn.commit()
+            
+            # 通过 WebSocket 广播新警报
+            if WEBSOCKET_AVAILABLE and new_alert_ids:
+                print(f"   📡 广播 {len(new_alert_ids)} 条新警报...")
+                for alert_id in new_alert_ids:
+                    broadcast_new_alert(alert_id)
+            
             conn.close()
             
             print(f"✅ 警报同步完成: 新增 {new_count} 条, 跳过 {skip_count} 条重复")
