@@ -11,6 +11,7 @@ import SemanticArbitrage from './pages/SemanticArbitrage';
 import NewsDriven from './pages/NewsDriven';
 import Alerts from './pages/Alerts';
 import Settings from './pages/Settings';
+import QualityReport from './pages/QualityReport';
 
 const { Content } = Layout;
 
@@ -30,6 +31,7 @@ const App: React.FC = () => {
               <Route path="/semantic-arbitrage" element={<SemanticArbitrage />} />
               <Route path="/news-driven" element={<NewsDriven />} />
               <Route path="/alerts" element={<Alerts />} />
+              <Route path="/quality-report" element={<QualityReport />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </Content>

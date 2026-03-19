@@ -8,7 +8,8 @@ import {
   BellOutlined,
   SettingOutlined,
   ExperimentOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  TrophyOutlined
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
@@ -24,6 +25,7 @@ const Sidebar: React.FC = () => {
     { key: '/semantic-arbitrage', icon: <ExperimentOutlined />, label: '语义套利' },
     { key: '/news-driven', icon: <ThunderboltOutlined />, label: '新闻驱动' },
     { key: '/alerts', icon: <BellOutlined />, label: '警报中心' },
+    { key: '/quality-report', icon: <TrophyOutlined />, label: '质量报告' },
     { key: '/settings', icon: <SettingOutlined />, label: '设置' },
   ];
 

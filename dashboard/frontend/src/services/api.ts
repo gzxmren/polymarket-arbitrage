@@ -51,6 +51,9 @@ export const getAlertStats = () => api.get('/api/alerts/stats');
 // 套利相关 API
 export const getPairCostOpportunities = () => api.get('/api/arbitrage/pair-cost');
 export const getCrossMarketOpportunities = () => api.get('/api/arbitrage/cross-market');
+export const getArbitrageStatistics = () => api.get('/api/arbitrage/statistics');
+export const submitArbitrageFeedback = (data: any) => api.post('/api/arbitrage/feedback', data);
+export const compareArbitragePrices = (data: any) => api.post('/api/arbitrage/compare', data);
 
 // 设置相关 API
 export const getSettings = () => api.get('/api/settings/');
@@ -95,6 +98,45 @@ export const semanticAPI = {
   test: () => {
     return api.get('/api/semantic/test');
   },
+};
+
+// 信号追踪 API
+export const signalsAPI = {
+  // 获取信号统计
+  getStats: (params?: any) => api.get('/api/signals/stats', { params }),
+  
+  // 按类型获取信号统计
+  getByType: (params?: any) => api.get('/api/signals/by-type', { params }),
+  
+  // 获取信号列表
+  getList: (params?: any) => api.get('/api/signals/list', { params }),
+  
+  // 获取待处理信号
+  getPending: (params?: any) => api.get('/api/signals/pending', { params }),
+  
+  // 创建信号
+  create: (data: any) => api.post('/api/signals/create', data),
+  
+  // 解决信号
+  resolve: (signalId: string, data: any) => api.post(`/api/signals/${signalId}/resolve`, data),
+  
+  // 获取质量报告
+  getReports: (params?: any) => api.get('/api/signals/reports', { params }),
+  
+  // 获取最新报告
+  getLatestReport: (params?: any) => api.get('/api/signals/reports/latest', { params }),
+  
+  // 获取阈值设置
+  getThresholds: () => api.get('/api/signals/thresholds'),
+  
+  // 获取阈值历史
+  getThresholdHistory: (params?: any) => api.get('/api/signals/thresholds/history', { params }),
+  
+  // 记录阈值变更
+  recordThreshold: (data: any) => api.post('/api/signals/thresholds/record', data),
+  
+  // 获取Dashboard数据
+  getDashboard: (params?: any) => api.get('/api/signals/dashboard', { params }),
 };
 
 export default api;

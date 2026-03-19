@@ -132,7 +132,7 @@ def get_whale_pnl_history(wallet):
         cursor.execute('''
             SELECT 
                 date(timestamp) as date,
-                SUM(CASE WHEN type = 'increase' THEN change_amount * cur_price ELSE 0 END) as realized_pnl,
+                SUM(CASE WHEN type = 'increase' THEN change_amount ELSE 0 END) as realized_pnl,
                 COUNT(*) as trade_count
             FROM changes 
             WHERE wallet = ? 
