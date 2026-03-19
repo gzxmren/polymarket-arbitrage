@@ -285,3 +285,100 @@ def quick_scan():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@markets_bp.route('/<market_id>/orderbook', methods=['GET'])
+def get_market_orderbook(market_id):
+    """
+    获取市场订单簿（从CLOB）
+    
+    GET /api/markets/<market_id>/orderbook
+    
+    Returns:
+        完整订单簿数据（YES和NO）
+    """
+    try:
+        if not market_id:
+            return jsonify({'success': False, 'error': 'Missing market_id'}), 400
+        
+        # 导入CLOB服务
+        from ..services.clob_service import get_clob_service
+        clob_service = get_clob_service()
+        
+        # 获取订单簿
+        order_book = clob_service.get_market_order_book(market_id)
+        if not order_book:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to fetch order book for market {market_id}'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'market_id': market_id,
+            'market_name': order_book.get('market_name', ''),
+            'slug': order_book.get('slug', ''),
+            'yes': order_book.get('yes', {}),
+            'no': order_book.get('no', {}),
+            'fetched_at': order_book.get('fetched_at', ''),
+            'source': 'CLOB'
+        })
+    
+    except Exception as e:
+        import traceback
+        print(f"Get orderbook error: {e}")
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@markets_bp.route('/<market_id>/realtime-price', methods=['GET'])
+def get_market_realtime_price(market_id):
+    """
+    获取市场实时价格（从CLOB）
+    
+    GET /api/markets/<market_id>/realtime-price
+    
+    Returns:
+        实时价格数据
+    """
+    try:
+        if not market_id:
+            return jsonify({'success': False, 'error': 'Missing market_id'}), 400
+        
+        # 导入CLOB服务
+        from ..services.clob_service import get_clob_service
+        clob_service = get_clob_service()
+        
+        # 获取实时价格
+        pair_cost_data = clob_service.get_pair_cost_prices(market_id)
+        if not pair_cost_data:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to fetch real-time prices for market {market_id}'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'market_id': market_id,
+            'market_name': pair_cost_data.get('market_name', ''),
+            'slug': pair_cost_data.get('slug', ''),
+            'yes_price': pair_cost_data.get('yes_price', 0),
+            'no_price': pair_cost_data.get('no_price', 0),
+            'pair_cost': pair_cost_data.get('pair_cost', 0),
+            'profit_potential': pair_cost_data.get('profit_potential', 0),
+            'min_depth': pair_cost_data.get('min_depth', 0),
+            'fetched_at': pair_cost_data.get('fetched_at', ''),
+            'source': 'CLOB'
+        })
+    
+    except Exception as e:
+        import traceback
+        print(f"Get realtime price error: {e}")
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

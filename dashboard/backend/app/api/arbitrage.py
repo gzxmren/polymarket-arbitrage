@@ -6,8 +6,12 @@ from datetime import datetime, timedelta
 sys.path.insert(0, str(Path(__file__).parent.parent / "models"))
 from cross_market_arbitrage import get_recent_opportunities, get_statistics
 from ..models.database import db
+from ..services.clob_service import get_clob_service
 
 arbitrage_bp = Blueprint('arbitrage', __name__)
+
+# CLOB服务实例
+clob_service = get_clob_service()
 
 
 @arbitrage_bp.route('/feedback', methods=['POST'])
@@ -133,11 +137,28 @@ def compare_arbitrage_prices():
         }
         
         if arbitrage_type == 'pair_cost':
-            # 获取Pair Cost最新价格
-            # 这里可以调用CLOB API获取实时价格
+            # 从CLOB API获取Pair Cost实时价格
+            if not market_id:
+                return jsonify({'success': False, 'error': 'Missing market_id for pair_cost'}), 400
+            
+            pair_cost_data = clob_service.get_pair_cost_prices(market_id)
+            if not pair_cost_data:
+                return jsonify({
+                    'success': False, 
+                    'error': f'Failed to fetch CLOB prices for market {market_id}'
+                }), 500
+            
             result['prices'] = {
-                'message': 'Pair Cost comparison - real-time prices would be fetched from CLOB API',
-                'market_id': market_id
+                'market_id': market_id,
+                'market_name': pair_cost_data.get('market_name', ''),
+                'slug': pair_cost_data.get('slug', ''),
+                'yes_price': pair_cost_data.get('yes_price', 0),
+                'no_price': pair_cost_data.get('no_price', 0),
+                'pair_cost': pair_cost_data.get('pair_cost', 0),
+                'profit_potential': pair_cost_data.get('profit_potential', 0),
+                'min_depth': pair_cost_data.get('min_depth', 0),
+                'fetched_at': pair_cost_data.get('fetched_at', ''),
+                'source': 'CLOB'
             }
             
         elif arbitrage_type == 'cross_market':
@@ -154,6 +175,47 @@ def compare_arbitrage_prices():
         
     except Exception as e:
         print(f"[ERROR] 对比套利价格失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@arbitrage_bp.route('/realtime-price/<market_id>', methods=['GET'])
+def get_realtime_price(market_id):
+    """
+    获取市场实时价格
+    
+    GET /api/arbitrage/realtime-price/<market_id>
+    
+    Returns:
+        实时价格数据（从CLOB获取）
+    """
+    try:
+        if not market_id:
+            return jsonify({'success': False, 'error': 'Missing market_id'}), 400
+        
+        # 从CLOB获取实时价格
+        pair_cost_data = clob_service.get_pair_cost_prices(market_id)
+        if not pair_cost_data:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to fetch real-time prices for market {market_id}'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'market_id': market_id,
+            'market_name': pair_cost_data.get('market_name', ''),
+            'slug': pair_cost_data.get('slug', ''),
+            'yes_price': pair_cost_data.get('yes_price', 0),
+            'no_price': pair_cost_data.get('no_price', 0),
+            'pair_cost': pair_cost_data.get('pair_cost', 0),
+            'profit_potential': pair_cost_data.get('profit_potential', 0),
+            'min_depth': pair_cost_data.get('min_depth', 0),
+            'fetched_at': pair_cost_data.get('fetched_at', ''),
+            'source': 'CLOB'
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取实时价格失败: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @arbitrage_bp.route('/pair-cost', methods=['GET'])
@@ -303,7 +365,7 @@ def get_arbitrage_statistics():
                 MAX(price_gap) as max_gap,
                 AVG(expected_return) as avg_return
             FROM cross_market_arbitrage 
-              AND created_at > datetime('now', '-24 hours')
+            WHERE created_at > datetime('now', '-24 hours')
         ''')
         cross_market_stats = dict(cursor.fetchone())
         
