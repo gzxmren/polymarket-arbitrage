@@ -40,7 +40,14 @@ def init_table():
     conn.close()
 
 def save_opportunity(data):
-    """保存套利机会"""
+    """保存套利机会（过滤无效数据）"""
+    # Bug fix: 过滤双方价格为0或都极低的假套利
+    poly_price = data.get('polymarket_price', 0) or 0
+    mani_price = data.get('manifold_price', 0) or 0
+    if poly_price <= 1 and mani_price <= 1:
+        # 双方价格都极低（<=1%），不是有效套利
+        return False
+    
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -51,8 +58,8 @@ def save_opportunity(data):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         data.get('event_name', ''),
-        data.get('polymarket_price', 0),
-        data.get('manifold_price', 0),
+        poly_price,
+        mani_price,
         data.get('price_gap', 0),
         data.get('expected_return', 0),
         data.get('risk_level', 'UNKNOWN'),
@@ -65,6 +72,7 @@ def save_opportunity(data):
     
     conn.commit()
     conn.close()
+    return True
 
 def get_recent_opportunities(limit=20, hours=24):
     """获取最近的套利机会"""

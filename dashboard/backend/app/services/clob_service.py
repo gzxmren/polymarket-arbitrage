@@ -1,6 +1,11 @@
 """
-Polymarket CLOB API Service
-封装 CLOB API 调用，获取真实订单簿数据，计算实时价格和价差
+Polymarket CLOB API Service (V2 兼容)
+
+封装 CLOB API 调用，获取真实订单簿数据，计算实时价格和价差。
+
+更新历史:
+- 2026-04-30: 升级为 CLOB V2 API，单次请求获取完整订单簿，
+              新增 min_order_size / tick_size / neg_risk / last_trade_price 字段。
 """
 
 import json
@@ -23,13 +28,18 @@ ssl_context.verify_mode = ssl.CERT_NONE
 
 @dataclass
 class OrderBookData:
-    """订单簿数据结构"""
+    """订单簿数据结构 (V2 兼容)"""
     market: str
     token_id: str
     bids: List[List[float]]  # [[price, size], ...]
     asks: List[List[float]]  # [[price, size], ...]
     timestamp: int
     fetched_at: str
+    # V2 新增字段
+    min_order_size: Optional[float] = None
+    tick_size: Optional[float] = None
+    neg_risk: Optional[bool] = None
+    last_trade_price: Optional[float] = None
 
 
 @dataclass
@@ -89,35 +99,44 @@ class CLOBService:
     
     def get_order_book(self, token_id: str) -> Optional[OrderBookData]:
         """
-        获取指定token的完整订单簿
-        
+        获取指定 token 的完整订单簿 (CLOB V2: 单次请求)
+
+        V2 变更: 不再分 side=buy/sell 两次请求，减少一半 API 调用。
+
         Args:
             token_id: CLOB token ID
-            
+
         Returns:
-            OrderBookData 对象
+            OrderBookData 对象（包含 V2 新增字段）
         """
-        # 获取买单簿
-        buy_data = self._fetch_clob_api(f"/book?token_id={token_id}&side=buy")
-        if not buy_data:
+        # CLOB V2: 单次请求返回完整 bids + asks
+        data = self._fetch_clob_api(f"/book?token_id={token_id}")
+        if not data:
             return None
-        
-        # 获取卖单簿
-        sell_data = self._fetch_clob_api(f"/book?token_id={token_id}&side=sell")
-        if not sell_data:
-            return None
-        
-        # 转换格式
-        bids = [[float(b["price"]), float(b["size"])] for b in buy_data.get("bids", [])]
-        asks = [[float(a["price"]), float(a["size"])] for a in sell_data.get("asks", [])]
-        
+
+        bids = [[float(b["price"]), float(b["size"])] for b in data.get("bids", [])]
+        asks = [[float(a["price"]), float(a["size"])] for a in data.get("asks", [])]
+
+        # 解析 V2 新增字段（API 可能返回空字符串 '' 或 None，统一处理）
+        def _safe_float(val):
+            if val is None or val == "":
+                return None
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+
         return OrderBookData(
-            market=buy_data.get("market", ""),
+            market=data.get("market", ""),
             token_id=token_id,
             bids=bids,
             asks=asks,
-            timestamp=buy_data.get("timestamp", 0),
-            fetched_at=datetime.now(timezone.utc).isoformat()
+            timestamp=data.get("timestamp", 0),
+            fetched_at=datetime.now(timezone.utc).isoformat(),
+            min_order_size=_safe_float(data.get("min_order_size")),
+            tick_size=_safe_float(data.get("tick_size")),
+            neg_risk=data.get("neg_risk"),
+            last_trade_price=_safe_float(data.get("last_trade_price")),
         )
     
     def calculate_price_info(self, order_book: OrderBookData) -> Optional[PriceInfo]:
@@ -160,22 +179,22 @@ class CLOBService:
     
     def get_market_prices(self, token_id: str) -> Optional[Dict]:
         """
-        获取市场实时价格（简化接口）
-        
+        获取市场实时价格（简化接口，包含 V2 新增字段）
+
         Args:
             token_id: CLOB token ID
-            
+
         Returns:
             价格信息字典
         """
         order_book = self.get_order_book(token_id)
         if not order_book:
             return None
-        
+
         price_info = self.calculate_price_info(order_book)
         if not price_info:
             return None
-        
+
         return {
             "token_id": token_id,
             "best_bid": price_info.best_bid,
@@ -186,7 +205,11 @@ class CLOBService:
             "bid_depth": price_info.bid_depth,
             "ask_depth": price_info.ask_depth,
             "min_depth": price_info.min_depth,
-            "fetched_at": order_book.fetched_at
+            "fetched_at": order_book.fetched_at,
+            # V2 新增
+            "last_trade_price": order_book.last_trade_price,
+            "min_order_size": order_book.min_order_size,
+            "tick_size": order_book.tick_size,
         }
     
     def get_markets_with_order_book(self, limit: int = 50) -> List[MarketInfo]:
