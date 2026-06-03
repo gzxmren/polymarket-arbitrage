@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main, v2.0-development, "fix/**", "feat/**"]
+  pull_request:
+    branches: [main, v2.0-development]
+
+jobs:
+  compile:
+    name: 语法编译检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: py_compile 活跃代码
+        run: |
+          python -m compileall -q 06-tools/analysis 06-tools/monitoring dashboard/backend/app scripts
+
+  unit-tests:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装测试依赖
+        run: pip install pytest
+      - name: 运行 unit 测试
+        run: python -m pytest 10-tests/unit -v
