@@ -27,10 +27,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "dashboard" / "backend" / "database" / "polymarket.db"
 BACKUP_DIR = DB_PATH.parent / "backups"
 
-# 垃圾判定条件(与 data_sync.py 价值闸门一致): 无价值 且 无持仓 且 非重点关注
+# 垃圾判定条件: 无价值 且 无持仓 且 非重点关注 且 无成交流水。
+# 注意 changes_count/total_volume 这两条: sync_changes.py 会从实时成交流抓到"有交易
+# 但暂无持仓快照"的 trade-flow 鲸鱼(跟鲸鱼策略的信号源),它们 has_activity=1 是正确的,
+# 不算垃圾。真·空壳(7.2万)是全 0 且无任何成交记录,只删这种。
 JUNK_WHERE = (
     "COALESCE(total_value,0)<=0 AND COALESCE(position_count,0)=0 "
-    "AND COALESCE(is_watched,0)=0"
+    "AND COALESCE(is_watched,0)=0 "
+    "AND COALESCE(changes_count,0)=0 AND COALESCE(total_volume,0)=0"
 )
 
 

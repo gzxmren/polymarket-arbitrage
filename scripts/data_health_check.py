@@ -25,6 +25,14 @@ DB_PATH = PROJECT_ROOT / "dashboard" / "backend" / "database" / "polymarket.db"
 JUNK_RATE_MAX = 0.05      # whales 垃圾率上限 5%
 FREELIST_RATE_MAX = 0.10  # DB 死空间上限 10%
 
+# 垃圾判定条件，必须与 scripts/cleanup_whales.py 的 JUNK_WHERE 保持一致:
+# 无价值 且 无持仓 且 非重点关注 且 无成交流水(changes_count/total_volume 均为 0)。
+JUNK_WHERE = (
+    "COALESCE(total_value,0)<=0 AND COALESCE(position_count,0)=0 "
+    "AND COALESCE(is_watched,0)=0 "
+    "AND COALESCE(changes_count,0)=0 AND COALESCE(total_volume,0)=0"
+)
+
 
 def _scalar(cur, sql, default=0):
     try:
@@ -43,20 +51,13 @@ def collect(db_path: Path) -> dict:
     page_size = _scalar(cur, "PRAGMA page_size")
 
     whales_total = _scalar(cur, "SELECT COUNT(*) FROM whales")
-    whales_junk = _scalar(
-        cur,
-        "SELECT COUNT(*) FROM whales "
-        "WHERE COALESCE(total_value,0)<=0 AND COALESCE(position_count,0)=0 "
-        "AND COALESCE(is_watched,0)=0",
-    )
+    whales_junk = _scalar(cur, f"SELECT COUNT(*) FROM whales WHERE {JUNK_WHERE}")
     whales_100k = _scalar(cur, "SELECT COUNT(*) FROM whales WHERE total_value>100000")
-    # "垃圾"统一定义为非重点关注(与 cleanup_whales.py / data_sync.py 价值闸门一致)。
-    # 重点关注鲸鱼即使当前空仓也合法保留，不计入错标。
+    # "垃圾"= 无价值/无持仓/非关注 且 无成交流水(与 cleanup_whales.py 同义)。
+    # 有 changes_count/total_volume 的是 trade-flow 鲸鱼(有交易、暂无持仓快照),合法,
+    # 它们 has_activity=1 正确,不算错标。重点关注鲸鱼即使空仓也保留。
     activity_on_junk = _scalar(
-        cur,
-        "SELECT COUNT(*) FROM whales "
-        "WHERE has_activity=1 AND COALESCE(total_value,0)<=0 AND COALESCE(position_count,0)=0 "
-        "AND COALESCE(is_watched,0)=0",
+        cur, f"SELECT COUNT(*) FROM whales WHERE has_activity=1 AND {JUNK_WHERE}"
     )
 
     conn.close()
