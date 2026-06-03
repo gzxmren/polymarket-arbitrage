@@ -34,7 +34,7 @@ def ensure_directories():
 # 阈值配置
 class Thresholds:
     """监控阈值"""
-    PAIR_COST = 0.995  # Pair Cost 套利阈值
+    PAIR_COST = 0.90  # [修复] 2026-04-21: 从0.995降低到0.90以发现更多机会
     MIN_LIQUIDITY = 100  # 最低流动性
     WHALE_TRADE = 10000  # 鲸鱼交易阈值
     WATCH_VALUE = 100000  # 关注鲸鱼持仓价值阈值
