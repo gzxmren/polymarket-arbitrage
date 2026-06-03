@@ -27,6 +27,16 @@ wheels/
 *.db
 *.sqlite
 *.sqlite3
+*.db.bak.*
+database/backups/
+**/database/backups/
+
+# Backup files (delete in P0-6 file cleanup)
+*.bak
+*.bak.*
+
+# Tool state
+.antigravitycli/
 
 # Logs
 *.log
