@@ -98,10 +98,17 @@ const QualityReportPage: React.FC = () => {
       
       setReports(reportsRes.data.data || []);
       
-      // 获取最新报告详情
-      const latestRes = await signalsAPI.getLatestReport({ type: 'weekly' });
-      if (latestRes.data.success) {
-        setLatestReport(latestRes.data.data);
+      // 获取最新报告详情（可选，失败不阻塞）
+      try {
+        const latestRes = await signalsAPI.getLatestReport({ type: 'weekly' });
+        if (latestRes.data.success) {
+          setLatestReport(latestRes.data.data);
+        } else {
+          setLatestReport(null);
+        }
+      } catch (latestError) {
+        console.log('No latest report found:', latestError);
+        setLatestReport(null);
       }
       
       setPendingSignals(pendingRes.data.data || []);
