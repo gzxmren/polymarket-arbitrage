@@ -4,6 +4,7 @@
 import sqlite3
 import json
 import os
+import sys
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -13,6 +14,15 @@ WHALE_DIR = str(Path(__file__).resolve().parents[2] / "07-data" / "whale_states"
 REPORT_DIR = str(Path(__file__).resolve().parents[2] / "07-data" / "quality_reports")
 
 os.makedirs(REPORT_DIR, exist_ok=True)
+
+# 复用 scripts/data_health_check.py 作为"结构性红线"(垃圾率/死空间/has_activity 错标)的
+# 单一事实源,避免本脚本与它的鲸鱼垃圾定义漂移。按项目惯例:可选导入,失败则降级跳过。
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+try:
+    import data_health_check as _dhc
+    HEALTH_CHECK_AVAILABLE = True
+except Exception:
+    HEALTH_CHECK_AVAILABLE = False
 
 # ========== 伪名生成（从 update_whale_names.py 复制） ==========
 ADJECTIVES = [
@@ -132,11 +142,9 @@ def check_db():
     active = cursor.fetchone()[0]
     stats['whales_active'] = active
     
-    cursor.execute("SELECT COUNT(*) FROM whales WHERE total_volume = 0 AND total_value = 0 AND has_activity = 1")
-    bad_active = cursor.fetchone()[0]
-    if bad_active > 0:
-        issues.append(f"🔴 whales: {bad_active} 条标记为活跃但 volume/value 都为0")
-    
+    # 注: "活跃但 volume/value 都为0" 的垃圾检查已并入下方"结构性红线"(has_activity 错标),
+    # 由 data_health_check 统一判定,避免与其垃圾定义漂移。
+
     cursor.execute("SELECT COUNT(*) FROM whales WHERE pseudonym = 'unknown' AND total_volume > 10000")
     unknown_big = cursor.fetchone()[0]
     if unknown_big > 0:
@@ -283,6 +291,22 @@ def check_db():
         issues.append(f"🟡 孤儿JSON文件: {orphan_json} 个不在 discovered_whales 中，需确认")
         stats['whale_json_orphan'] = orphan_json
     
+    # === 结构性红线(复用 data_health_check,单一事实源)===
+    if HEALTH_CHECK_AVAILABLE:
+        try:
+            hm = _dhc.collect(Path(DB))
+            stats['junk_rate'] = f"{hm['junk_rate']*100:.1f}%"
+            stats['db_freelist_rate'] = f"{hm['freelist_rate']*100:.1f}%"
+            stats['has_activity_on_junk'] = hm['has_activity_on_junk']
+            for name, ok, detail in _dhc.evaluate(hm):
+                if not ok:
+                    sev = '🟡' if name == 'DB 死空间率' else '🔴'
+                    issues.append(f"{sev} [结构] {name}: {detail}")
+        except Exception as e:
+            print(f"⚠️ 结构性红线检查失败(降级跳过): {e}")
+    else:
+        print("ℹ️ data_health_check 不可用,跳过结构性红线检查")
+
     # === 汇总 ===
     score = 100
     for issue in issues:
