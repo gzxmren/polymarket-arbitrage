@@ -15,6 +15,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / '06-tools/an
 
 from app.models.database import db
 
+# 导入混合数据源
+try:
+    from hybrid_data_source import HybridDataSource
+    HYBRID_SOURCE_AVAILABLE = True
+    print("✅ 混合数据源已加载")
+except ImportError as e:
+    HYBRID_SOURCE_AVAILABLE = False
+    print(f"⚠️ 混合数据源加载失败: {e}")
+
 # 尝试导入 WebSocket 服务
 try:
     from .websocket import broadcast_new_alert
@@ -32,6 +41,30 @@ class DataSyncService:
         data_dir = project_root / "07-data"
         self.whale_states_dir = data_dir / "whale_states"
         self.watchlist_file = data_dir / "whale_watchlist.json"
+        self.db_path = project_root / "dashboard" / "backend" / "database" / "polymarket.db"
+        
+        # 初始化混合数据源
+        if HYBRID_SOURCE_AVAILABLE:
+            self.hybrid_source = HybridDataSource(str(self.db_path))
+            print("✅ 混合数据源已初始化")
+        else:
+            self.hybrid_source = None
+            print("⚠️ 使用传统 JSON 数据源")
+    
+    def _get_existing_pseudonym(self, wallet):
+        """从数据库获取现有的有效 pseudonym"""
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT pseudonym FROM whales WHERE wallet = ?', (wallet,))
+            result = cursor.fetchone()
+            conn.close()
+            if result and result[0] and not result[0].startswith('0x'):
+                return result[0]
+        except Exception:
+            pass
+        return None
     
     def sync_whales(self):
         """同步鲸鱼数据（包括所有活跃鲸鱼和重点关注鲸鱼）"""
@@ -70,8 +103,12 @@ class DataSyncService:
                             })
                             total_value += pos_value
                         
-                        # 获取 pseudonym（从文件名或状态文件）
-                        pseudonym = state.get('pseudonym', wallet[:10] + '...')
+                        # 获取 pseudonym（优先保留数据库中的有效名称）
+                        db_pseudonym = self._get_existing_pseudonym(wallet)
+                        if db_pseudonym and not db_pseudonym.startswith('0x'):
+                            pseudonym = db_pseudonym
+                        else:
+                            pseudonym = state.get('pseudonym', wallet[:10] + '...')
                         
                         # 检查是否有活动（有变动）
                         has_activity = state.get('has_activity', False)
@@ -96,9 +133,17 @@ class DataSyncService:
             for wallet, whale_data in all_whales.items():
                 positions = whale_data['positions']
                 total_value = whale_data['total_value']
-                
-                # 计算集中度
-                top5_ratio = self._calculate_top5_ratio(positions)
+
+                # [P0-2] 价值闸门：跳过空行(无持仓且无价值)，避免落库垃圾数据。
+                # 重点关注鲸鱼(is_watched)始终保留。与 scripts/cleanup_whales.py 的清洗条件保持一致。
+                if total_value <= 0 and len(positions) == 0 and not whale_data['is_watched']:
+                    continue
+
+                # 计算集中度指标 (HHI, Top5, Top10)
+                metrics = self._calculate_concentration_metrics(positions)
+                top5_ratio = metrics['top5_ratio']
+                hhi = metrics['hhi']
+                top10_ratio = metrics['top10_ratio']
                 
                 # 获取收敛趋势（从 watchlist 如果有）
                 convergence_trend = ''
@@ -108,16 +153,41 @@ class DataSyncService:
                     if wallet in watchlist.get('whales', {}):
                         convergence_trend = watchlist['whales'][wallet].get('convergence_trend', '')
                 
-                # 获取变动次数
+                # 获取变动次数和交易量
                 changes_count = len(whale_data.get('changes', []))
                 
-                # 插入或更新鲸鱼数据
+                # 从 changes 表聚合交易量
+                total_volume = 0
+                try:
+                    vol_cursor = conn.cursor()
+                    vol_cursor.execute('SELECT COALESCE(SUM(change_amount), 0) FROM changes WHERE wallet = ?', (wallet,))
+                    vol_result = vol_cursor.fetchone()
+                    if vol_result:
+                        total_volume = vol_result[0]
+                except Exception:
+                    pass
+                
+                # 插入或更新鲸鱼数据（用 ON CONFLICT 避免覆盖 volume/pnl 等）
                 cursor.execute('''
-                    INSERT OR REPLACE INTO whales 
+                    INSERT INTO whales 
                     (wallet, pseudonym, total_value, position_count, top5_ratio, 
                      convergence_trend, is_watched, has_activity, total_pnl, changes_count,
-                     added_at, last_updated)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     total_volume, added_at, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(wallet) DO UPDATE SET
+                        pseudonym = CASE 
+                            WHEN excluded.pseudonym IS NOT NULL AND excluded.pseudonym != '' AND excluded.pseudonym NOT LIKE '0x%'
+                            THEN excluded.pseudonym ELSE whales.pseudonym END,
+                        total_value = excluded.total_value,
+                        position_count = excluded.position_count,
+                        top5_ratio = CASE WHEN excluded.top5_ratio > 0 THEN excluded.top5_ratio ELSE whales.top5_ratio END,
+                        convergence_trend = excluded.convergence_trend,
+                        is_watched = excluded.is_watched,
+                        has_activity = excluded.has_activity,
+                        total_pnl = CASE WHEN excluded.total_pnl != 0 THEN excluded.total_pnl ELSE COALESCE(whales.total_pnl, 0) END,
+                        changes_count = CASE WHEN excluded.changes_count > 0 THEN excluded.changes_count ELSE COALESCE(whales.changes_count, 0) END,
+                        total_volume = CASE WHEN excluded.total_volume > 0 THEN excluded.total_volume ELSE COALESCE(whales.total_volume, 0) END,
+                        last_updated = excluded.last_updated
                 ''', (
                     wallet,
                     whale_data['pseudonym'],
@@ -129,28 +199,65 @@ class DataSyncService:
                     1 if whale_data['has_activity'] else 0,
                     whale_data['total_pnl'],
                     changes_count,
+                    total_volume,
                     whale_data['last_check'],
                     datetime.now().isoformat()
                 ))
                 
-                # 更新持仓数据
+                # 更新持仓数据（保留 is_expired 标记）
+                # 跳过 end_date 超过 30 天的过期记录，避免过期持仓反复入库
                 cursor.execute('DELETE FROM positions WHERE wallet = ?', (wallet,))
+                from datetime import date, timedelta
+                stale_cutoff = date.today() - timedelta(days=30)
+                stale_skipped = 0
                 for pos in positions:
+                    # 判断是否过期
+                    is_expired = 0
+                    end_date = pos.get('end_date', '')
+                    if end_date:
+                        try:
+                            if end_date < date.today().isoformat():
+                                is_expired = 1
+                        except:
+                            pass
+                    
+                    # 跳过过期超过 30 天的持仓（避免它们下次同步时又被重新插入）
+                    if end_date:
+                        try:
+                            end = date.fromisoformat(end_date)
+                            if end < stale_cutoff:
+                                stale_skipped += 1
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                    
                     cursor.execute('''
                         INSERT INTO positions 
-                        (wallet, market, outcome, size, avg_price, cur_price, value, pnl, end_date)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (wallet, market, outcome, size, avg_price, cur_price, value, pnl, end_date, is_expired)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         wallet, pos['market'], pos['outcome'], pos['size'],
-                        pos['avg_price'], pos['cur_price'], pos['value'], pos['pnl'], pos['end_date']
+                        pos['avg_price'], pos['cur_price'], pos['value'], pos['pnl'], pos['end_date'],
+                        is_expired
                     ))
+                if stale_skipped > 0:
+                    print(f"    跳过 {stale_skipped} 条过期30天+持仓(wallet={whale_data['pseudonym'][:20]})", flush=True)
                 
                 # 记录集中度历史（只对重点关注的鲸鱼）
                 if whale_data['is_watched']:
                     cursor.execute('''
-                        INSERT INTO concentration_history (wallet, top5_ratio, timestamp)
-                        VALUES (?, ?, ?)
-                    ''', (wallet, top5_ratio, datetime.now().isoformat()))
+                        INSERT INTO concentration_history (wallet, hhi, top5_ratio, top10_ratio, timestamp)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (wallet, hhi, top5_ratio, top10_ratio, datetime.now().isoformat()))
+            
+            # 清理旧的历史数据（保留最近7天）
+            cursor.execute('''
+                DELETE FROM concentration_history 
+                WHERE timestamp < datetime('now', '-7 days')
+            ''')
+            deleted = cursor.rowcount
+            if deleted > 0:
+                print(f"   清理 {deleted} 条旧的历史记录")
             
             # 确保所有在watchlist中的鲸鱼都被标记为is_watched=1
             #（即使它们暂时没有状态文件）
@@ -159,9 +266,12 @@ class DataSyncService:
                     # 从watchlist获取基本信息
                     watchlist_data = watchlist.get('whales', {}).get(wallet, {})
                     cursor.execute('''
-                        INSERT OR REPLACE INTO whales 
+                        INSERT INTO whales 
                         (wallet, pseudonym, is_watched, added_at, last_updated)
                         VALUES (?, ?, 1, ?, ?)
+                        ON CONFLICT(wallet) DO UPDATE SET
+                            is_watched = 1,
+                            last_updated = excluded.last_updated
                     ''', (
                         wallet,
                         watchlist_data.get('pseudonym', wallet[:10] + '...'),
@@ -189,19 +299,25 @@ class DataSyncService:
         except Exception as e:
             print(f"❌ 同步失败: {e}")
     
-    def _calculate_top5_ratio(self, positions):
-        """计算Top5占比"""
+    def _calculate_concentration_metrics(self, positions):
+        """计算集中度指标 (HHI, Top5占比, Top10占比)"""
         if not positions:
-            return 0
+            return {'hhi': 0, 'top5_ratio': 0, 'top10_ratio': 0}
         
         total = sum(p['value'] for p in positions)
         if total == 0:
-            return 0
+            return {'hhi': 0, 'top5_ratio': 0, 'top10_ratio': 0}
         
-        sorted_positions = sorted(positions, key=lambda x: x['value'], reverse=True)
-        top5_value = sum(p['value'] for p in sorted_positions[:5])
+        # 计算各仓位价值占比
+        shares = [p['value'] / total for p in positions]
+        # HHI = sum of squared shares
+        hhi = sum(s * s for s in shares)
         
-        return top5_value / total
+        sorted_values = sorted([p['value'] for p in positions], reverse=True)
+        top5_ratio = sum(sorted_values[:5]) / total
+        top10_ratio = sum(sorted_values[:10]) / total
+        
+        return {'hhi': hhi, 'top5_ratio': top5_ratio, 'top10_ratio': top10_ratio}
     
     def sync_alerts(self):
         """同步警报数据（改进去重逻辑）"""
