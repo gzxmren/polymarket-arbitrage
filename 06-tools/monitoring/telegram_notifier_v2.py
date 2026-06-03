@@ -2,13 +2,16 @@
 """
 Telegram 通知器 V2
 优化版：清晰、明确、美观
+
+[修复] 2025-03-25:
+1. 添加发送重试机制（最多3次），网络错误时自动重试
 """
 
 import json
 import os
 import sys
 from urllib.request import urlopen, Request
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 from datetime import datetime
 
 # Telegram Bot 配置
@@ -36,33 +39,92 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or load_telegram_config()[1]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
 
-def send_telegram_message(message: str, parse_mode: str = "Markdown") -> bool:
-    """发送 Telegram 消息"""
+def send_telegram_message(message: str, parse_mode: str = "Markdown", max_retries: int = 2) -> bool:
+    """
+    发送 Telegram 消息
+    
+    [修复] 2025-03-25: 添加重试机制，网络错误时自动重试（最多3次）
+    [修复] 2025-04-05: 添加消息长度检查和Markdown失败回退，解决400错误
+    """
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set", file=sys.stderr)
         return False
     
-    url = f"{TELEGRAM_API}/sendMessage"
-    data = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": parse_mode,
-        "disable_web_page_preview": True
-    }
+    # [修复] 2025-04-05: 消息长度检查 - Telegram限制4096字符
+    MAX_LENGTH = 4000  # 留余量
+    if len(message) > MAX_LENGTH:
+        print(f"⚠️ 消息过长({len(message)}字符)，截断至{MAX_LENGTH}字符", file=sys.stderr)
+        message = message[:MAX_LENGTH-50] + "\n\n... (消息已截断，内容过长)"
     
-    try:
-        req = Request(
-            url,
-            data=json.dumps(data).encode('utf-8'),
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-        with urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode())
-            return result.get("ok", False)
-    except (URLError, json.JSONDecodeError) as e:
-        print(f"Error sending Telegram message: {e}", file=sys.stderr)
-        return False
+    # [修复] 2025-04-05: 尝试发送（带Markdown失败回退）
+    # 先尝试指定parse_mode，失败则尝试纯文本
+    for parse in [parse_mode, ""]:
+        for attempt in range(max_retries):
+            try:
+                url = f"{TELEGRAM_API}/sendMessage"
+                data = {
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "text": message,
+                    "parse_mode": parse,
+                    "disable_web_page_preview": True
+                }
+                
+                req = Request(
+                    url,
+                    data=json.dumps(data).encode('utf-8'),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urlopen(req, timeout=30) as resp:
+                    result = json.loads(resp.read().decode())
+                    if result.get("ok", False):
+                        return True
+                    else:
+                        error_desc = result.get('description', 'Unknown error')
+                        # Markdown解析错误，跳出重试循环，换纯文本模式
+                        # 错误示例: "can't parse entities: Can't find end of the entity starting at byte offset 183"
+                        if parse and ("can't parse" in error_desc.lower() or "parse entities" in error_desc.lower()):
+                            print(f"⚠️ Markdown解析失败，尝试纯文本模式...", file=sys.stderr)
+                            break  # 跳出重试循环，进入下一个parse模式
+                        print(f"Telegram API error: {error_desc}", file=sys.stderr)
+                        return False
+                        
+            except HTTPError as e:
+                # HTTP错误（如400 Bad Request），尝试读取错误详情
+                try:
+                    error_body = e.read().decode()
+                    error_json = json.loads(error_body)
+                    error_desc = error_json.get('description', str(e))
+                except:
+                    error_desc = str(e)
+                
+                # Markdown解析错误，跳出重试循环，换纯文本模式
+                # 错误示例: "can't parse entities: Can't find end of the entity starting at byte offset 183"
+                if parse and ("can't parse" in error_desc.lower() or "parse entities" in error_desc.lower()):
+                    print(f"⚠️ Markdown解析失败，尝试纯文本模式...", file=sys.stderr)
+                    break  # 跳出重试循环，进入下一个parse模式
+                
+                # 其他HTTP错误，按原逻辑重试
+                if attempt < max_retries - 1:
+                    import time
+                    print(f"Error sending Telegram message (attempt {attempt + 1}/{max_retries}): {error_desc}, retrying...", file=sys.stderr)
+                    time.sleep(1)
+                else:
+                    print(f"Error sending Telegram message after {max_retries} attempts: {error_desc}", file=sys.stderr)
+                    return False
+                
+            except (URLError, json.JSONDecodeError) as e:
+                if attempt < max_retries - 1:
+                    # 网络错误，等待1秒后重试
+                    import time
+                    print(f"Error sending Telegram message (attempt {attempt + 1}/{max_retries}): {e}, retrying...", file=sys.stderr)
+                    time.sleep(1)
+                else:
+                    # 最后一次尝试失败
+                    print(f"Error sending Telegram message after {max_retries} attempts: {e}", file=sys.stderr)
+                    return False
+    
+    return False
 
 
 def format_pair_cost_alert(opportunity: dict) -> str:

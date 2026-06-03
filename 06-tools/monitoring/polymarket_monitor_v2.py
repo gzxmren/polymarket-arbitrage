@@ -3,6 +3,11 @@
 Polymarket 综合监控器 V2
 整合 Pair Cost、跨平台套利、鲸鱼追踪
 支持 Telegram 通知 + 风险评估
+
+[修复] 2025-03-25:
+1. 降低做市深度阈值: 5000 -> 2000
+2. 放宽价格范围: 0.05-0.95 -> 0.02-0.98
+3. 添加分级策略支持（高流动性/低流动性市场分别处理）
 """
 
 import json
@@ -12,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # 添加分析工具路径
+# [修复] 2026-04-21: 修正路径 - analysis 在 06-tools 目录下
+# monitoring -> 06-tools (parent.parent) -> analysis
 sys.path.insert(0, str(Path(__file__).parent.parent / "analysis"))
 
 from pair_cost_scanner import scan_pair_cost_opportunities, PAIR_COST_THRESHOLD
@@ -85,16 +92,24 @@ except ImportError:
 
 # 配置
 DATA_DIR = Path(__file__).parent.parent.parent / "07-data"
-NOTIFY_IMMEDIATELY = os.getenv("NOTIFY_IMMEDIATELY", "true").lower() == "true"
+# [修复] 2026-04-17: 关闭即时通知，避免频繁打扰
+# 只通过每日报表汇总通知
+NOTIFY_IMMEDIATELY = os.getenv("NOTIFY_IMMEDIATELY", "false").lower() == "true"
 RISK_REVIEW_ENABLED = os.getenv("RISK_REVIEW_ENABLED", "true").lower() == "true"
 
 # 做市机会通知控制
 # 现在使用真实CLOB API数据，可以启用通知
 MARKET_MAKING_NOTIFY_ENABLED = os.getenv("MARKET_MAKING_NOTIFY", "true").lower() == "true"
 MARKET_MAKING_MIN_SPREAD = float(os.getenv("MARKET_MAKING_MIN_SPREAD", "0.015"))  # 最小价差1.5%
-MARKET_MAKING_MIN_DEPTH = float(os.getenv("MARKET_MAKING_MIN_DEPTH", "5000"))     # 最小深度$5000
-MARKET_MAKING_MIN_PRICE = float(os.getenv("MARKET_MAKING_MIN_PRICE", "0.05"))     # 最小价格5%
-MARKET_MAKING_MAX_PRICE = float(os.getenv("MARKET_MAKING_MAX_PRICE", "0.95"))     # 最大价格95%
+# [修复] 2025-03-25: 降低深度阈值 5000 -> 2000，避免过滤过多市场
+MARKET_MAKING_MIN_DEPTH = float(os.getenv("MARKET_MAKING_MIN_DEPTH", "2000"))     # 最小深度$2000 (原$5000)
+# [修复] 2025-03-25: 放宽价格范围 0.05-0.95 -> 0.02-0.98
+MARKET_MAKING_MIN_PRICE = float(os.getenv("MARKET_MAKING_MIN_PRICE", "0.02"))     # 最小价格2% (原5%)
+MARKET_MAKING_MAX_PRICE = float(os.getenv("MARKET_MAKING_MAX_PRICE", "0.98"))     # 最大价格98% (原95%)
+
+# [修复] 2025-03-25: 添加分级策略阈值
+MARKET_MAKING_HIGH_LIQUIDITY_THRESHOLD = float(os.getenv("MARKET_MAKING_HIGH_LIQ", "10000"))  # 高流动性阈值$10000
+MARKET_MAKING_TIER2_MIN_DEPTH = float(os.getenv("MARKET_MAKING_TIER2_DEPTH", "1000"))       # 低流动性市场深度阈值$1000
 
 
 def run_pair_cost_scan() -> dict:
@@ -589,11 +604,17 @@ def run_market_making_scan() -> dict:
             # 过滤条件检查
             # 注意：用best_bid判断极端市场，而不是mid_price
             # 因为对于买价0.001/卖价0.999的市场，mid_price=0.50是正常的
+            
+            # [修复] 2025-03-25: 分级策略 - 高流动性/低流动性分别处理
+            is_high_liquidity = min_depth >= MARKET_MAKING_HIGH_LIQUIDITY_THRESHOLD
+            effective_min_depth = MARKET_MAKING_MIN_DEPTH if is_high_liquidity else MARKET_MAKING_TIER2_MIN_DEPTH
+            
             filtered_reason = None
             if spread_pct < MARKET_MAKING_MIN_SPREAD:
                 filtered_reason = f"价差{spread_pct:.2%}<阈值"
-            elif min_depth < MARKET_MAKING_MIN_DEPTH:
-                filtered_reason = f"深度${min_depth:,.0f}<阈值"
+            elif min_depth < effective_min_depth:
+                tier_label = "高流动性" if is_high_liquidity else "低流动性"
+                filtered_reason = f"深度${min_depth:,.0f}<阈值({tier_label}:${effective_min_depth:,.0f})"
             elif best_bid < MARKET_MAKING_MIN_PRICE or best_bid > MARKET_MAKING_MAX_PRICE:
                 # 排除极端价格市场（买价接近0或1，流动性枯竭）
                 filtered_reason = f"买价{best_bid:.3f}极端(流动性枯竭)"
@@ -803,7 +824,7 @@ def main():
     print(f"CLOB API: {'✅ 可用' if CLOB_API_AVAILABLE else '❌ 不可用'}")
     print(f"做市通知: {'✅ 开启' if MARKET_MAKING_NOTIFY_ENABLED else '⚪ 关闭'}")
     print(f"鲸鱼跟随: {'✅ 可用' if WHALE_FOLLOWING_AVAILABLE else '❌ 不可用'}")
-    print(f"做市阈值: 价差>{MARKET_MAKING_MIN_SPREAD:.1%}, 深度>${MARKET_MAKING_MIN_DEPTH:,.0f}")
+    print(f"做市阈值: 价差>{MARKET_MAKING_MIN_SPREAD:.1%}, 深度>${MARKET_MAKING_MIN_DEPTH:,.0f}(高)/${MARKET_MAKING_TIER2_MIN_DEPTH:,.0f}(低)")
     print(f"价格范围: {MARKET_MAKING_MIN_PRICE:.0%}~{MARKET_MAKING_MAX_PRICE:.0%} (排除极端市场)")
     print("="*70)
     
