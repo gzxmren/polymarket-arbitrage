@@ -81,9 +81,16 @@ TOP_WHALES_LIMIT = 15        # 跟踪 top 15 聪明钱（按 PnL 排序，扩大
 POSITION_MIN_VALUE = 1000    # 持仓当前价值 >= $1000 才关注
 POSITION_CHANGE_MIN = 500    # 持仓变化 >= $500 才报告
 
-# Telegram
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "<REDACTED_TELEGRAM_TOKEN>")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "-5052636342")
+# Telegram（[P2安全] 2026-06-03: 从 .env 读，源码不含密钥）
+_env = Path(__file__).parent / '.env'
+if _env.exists():
+    for _l in _env.read_text().splitlines():
+        _l = _l.strip()
+        if _l and not _l.startswith('#') and '=' in _l:
+            _k, _v = _l.split('=', 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # 数据路径
 BASE_DIR = Path(__file__).parent.parent.parent  # polymarket-project/

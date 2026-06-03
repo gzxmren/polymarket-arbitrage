@@ -23,9 +23,17 @@ DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/
 LEADERBOARD_API = "https://data-api.polymarket.com/v1/leaderboard"
 LOG_DIR = Path('/home/xmren/.openclaw/workspace/polymarket-project/07-data/logs')
 
-# Telegram 配置 (从环境变量或配置文件读取)
-TELEGRAM_TOKEN = "<REDACTED_TELEGRAM_TOKEN>"
-TELEGRAM_CHAT_ID = "-5052636342"
+# Telegram 配置（[P2安全] 2026-06-03: 从监控 .env 读，源码不含密钥）
+import os
+_env = Path(__file__).parent.parent / 'monitoring' / '.env'
+if _env.exists():
+    for _l in _env.read_text().splitlines():
+        _l = _l.strip()
+        if _l and not _l.startswith('#') and '=' in _l:
+            _k, _v = _l.split('=', 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # SSL 上下文
 SSL_CONTEXT = ssl.create_default_context()

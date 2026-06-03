@@ -3,12 +3,12 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 加载 .env 文件
-export TELEGRAM_BOT_TOKEN="8693703622:AAGtlESUqoc4qH7qusEbOlxX8X-mlj2gwyw"
-export TELEGRAM_CHAT_ID="-5052636342"
-export NOTIFY_IMMEDIATELY="true"
-export RISK_REVIEW_ENABLED="true"
-export RISK_REVIEW_THRESHOLD="0.5"
+# 加载 .env 文件（[P2安全] 2026-06-03: 不再硬编码密钥，改为 source .env）
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    . "$SCRIPT_DIR/.env"
+    set +a
+fi
 
 # 执行命令
 cd "$SCRIPT_DIR"

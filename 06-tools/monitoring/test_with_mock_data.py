@@ -9,8 +9,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "analysis"))
 
 import os
 os.environ['MARKET_MAKING_NOTIFY'] = 'true'
-os.environ['TELEGRAM_BOT_TOKEN'] = '8693703622:AAGtlESUqoc4qH7qusEbOlxX8X-mlj2gwyw'
-os.environ['TELEGRAM_CHAT_ID'] = '-5052636342'
+# [P2安全] 2026-06-03: 从 .env 加载 Telegram 配置（密钥不入源码）
+_env = Path(__file__).parent / '.env'
+if _env.exists():
+    for _l in _env.read_text().splitlines():
+        _l = _l.strip()
+        if _l and not _l.startswith('#') and '=' in _l:
+            _k, _v = _l.split('=', 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 from telegram_notifier_v2 import send_telegram_message, format_real_market_making_signal
 
