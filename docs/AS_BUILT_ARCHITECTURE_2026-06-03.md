@@ -65,8 +65,13 @@
 | **OpenClaw cron** | `sync-changes` | **每 90 分钟** | ✅ | `changes` 表 + whales(trade-flow 行) |
 | **OpenClaw cron** | `update-whale-states` | 每 6h | ✅ | `07-data/whale_states/*.json` |
 | **OpenClaw cron** | `polymarket-daily-price-snapshot` | 每天 16:00 | ✅ | `daily_price_snapshots` |
+| **OpenClaw cron** | `data-quality-check` | 每天 8:00 | ✅ | 跑 `data_quality_check.py`(与 `scripts/data_health_check.py` 重叠,待整合) |
+| **OpenClaw cron** | `check-polycop-signal` | 每 6h | ✅ | PolyCop 信号检查 |
 | **OpenClaw cron** | `polymarket-cleanup` | 每天 3:30 | ✅ | 清理 |
 | **OpenClaw cron** | `polymarket-monitor-v2` | 每小时 | 🔴 禁用 | (重型引擎,已退役) |
+| **OpenClaw cron** | `update-whale-states`(旧) | 每 6h | 🔴 禁用 | 配置冗余:与上面启用的同名 job 重复,旧的未清 |
+
+> 注:cron 状态可在 **OpenClaw web admin UI** 直接查看执行情况,无需自建看门狗。上表为 2026-06-03 快照,以 admin UI 实时状态为准。
 | **系统 crontab** | `leaderboard_whale_tracker.py` | 周一 3:00 | ✅ | `leaderboard_*` 表 |
 | **系统 crontab** | 日志清理 | 每天 0:00 | ✅ | 删旧日志 |
 | **后端 APScheduler** | `data_sync.run_full_sync` | 每 5 分钟 | ✅ | 桥接 JSON/聚合 → SQLite(sync_whales/alerts/cross_market) |
@@ -166,7 +171,7 @@
 
 ## 8. 待办与未决（按优先级）
 
-1. ✅ ~~定位 sync_changes 触发源~~ —— 已解决(OpenClaw cron `sync-changes`,每 90 分钟)。新增需求:🟡 **给 OpenClaw polymarket 系列 cron job 加健康监控**(v2 当初就是悄悄挂掉没人知)。
+1. ✅ ~~定位 sync_changes 触发源~~ —— 已解决(OpenClaw cron `sync-changes`,每 90 分钟)。~~加健康监控看门狗~~ —— **不需要,OpenClaw web admin UI 已可查 cron 执行状态**。残留小事:清掉重复的 `update-whale-states` 禁用项;整合 `data-quality-check` cron 与 `scripts/data_health_check.py`。
 2. 🟡 **引擎去留决策**:重型 `polymarket_monitor_v2` 已被 OpenClaw cron 禁用、由 `lite` 顶替。要不要复活 v2(需先按 §1 用 CLOB orderbook 重构 Pair-Cost 算法,否则 `pair_cost_arbitrage` 永远是 0)?还是正式退役、只保留 lite?
 3. 🟡 **Phase-3 去留**:接调度让 signals/quality 系列产数据,还是删表清理?
 4. ⚙️ **P2 剩余工程化**:③ logging(scoped)→ ④ gunicorn(替换开发服务器)→ ⑤ schema 迁移规范。
