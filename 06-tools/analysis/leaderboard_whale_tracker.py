@@ -128,21 +128,9 @@ class LeaderboardWhaleTracker:
             )
         ''')
         
-        # 高优先级警报记录
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS whale_alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                wallet TEXT,
-                alert_type TEXT,
-                alert_message TEXT,
-                trade_value REAL,
-                market TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_read BOOLEAN DEFAULT 0,
-                FOREIGN KEY (wallet) REFERENCES leaderboard_whales(wallet)
-            )
-        ''')
-        
+        # [P1] 2026-06-03: 移除 whale_alerts 建表 —— 该表仅建表、无写入/读取,
+        # 与在用的 alerts 表冗余,已 DROP。告警统一走 alerts 表。
+
         # Leaderboard 趋势表 (由 LeaderboardTrendAnalyzer 管理)
         # 这里只确保表存在，实际结构由 trend analyzer 定义
         self._ensure_trends_table()

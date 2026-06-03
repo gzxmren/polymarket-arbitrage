@@ -18,12 +18,15 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# 硬编码环境变量
-os.environ['TELEGRAM_BOT_TOKEN'] = '<REDACTED_TELEGRAM_TOKEN>'
-os.environ['TELEGRAM_CHAT_ID'] = '-5052636342'
-os.environ['NOTIFY_IMMEDIATELY'] = 'true'
-os.environ['RISK_REVIEW_ENABLED'] = 'true'
-os.environ['RISK_REVIEW_THRESHOLD'] = '0.5'
+# 从 .env 加载配置（密钥不入源码；.env 已被 .gitignore 忽略）
+# [P2安全] 2026-06-03: 移除硬编码 Telegram 密钥，改从 .env 读取
+_env_file = Path(__file__).parent / '.env'
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith('#') and '=' in _line:
+            _k, _v = _line.split('=', 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 from telegram_notifier_v2 import send_summary_report
 
