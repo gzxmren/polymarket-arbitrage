@@ -11,9 +11,10 @@ import ssl
 import random
 from pathlib import Path
 from datetime import datetime
+import os
 
 # 数据库路径
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 
 # Polymarket API
 DATA_API = "https://data-api.polymarket.com"

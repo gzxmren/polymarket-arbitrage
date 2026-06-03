@@ -11,8 +11,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'dashboard/backend/app/services'))
 
 from hybrid_data_source import HybridDataSource
+import os
 
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 
 print("=" * 80)
 print("测试 DataSync V2 (混合数据源)")

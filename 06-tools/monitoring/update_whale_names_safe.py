@@ -19,9 +19,10 @@ import shutil
 import sys
 from pathlib import Path
 from datetime import datetime
+import os
 
 # 配置
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 BACKUP_DIR = Path('/tmp/polymarket_backups')
 LOG_FILE = Path('/tmp/update_whale_names.log')
 BATCH_SIZE = 100

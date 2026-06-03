@@ -11,15 +11,17 @@ PnL calculation:
   要获得准确 PnL 需要补充卖出/结算数据。
 
 数据库路径:
-  /home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db
+  <项目根>/dashboard/backend/database/polymarket.db  (或 POLYMARKET_DB 环境变量)
 """
 
 import argparse
 import sqlite3
 import sys
 from collections import defaultdict
+import os
+from pathlib import Path
 
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 
 
 def compute_wallet_pnl(conn, wallets=None):

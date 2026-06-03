@@ -14,6 +14,7 @@ import json
 import urllib.request
 from pathlib import Path
 from datetime import datetime
+import os
 
 # Remove proxy env vars to avoid issues with urllib
 for k in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
@@ -27,7 +28,7 @@ opener = urllib.request.build_opener(
     urllib.request.ProxyHandler({})
 )
 
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 DATA_API = 'https://data-api.polymarket.com'
 
 REQUEST_INTERVAL = 0.2  # 5 req/s max

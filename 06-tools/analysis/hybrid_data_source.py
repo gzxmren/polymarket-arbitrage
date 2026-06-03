@@ -21,10 +21,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from position_rebuilder import PositionRebuilder, Position
+import os
 
 # 数据库路径
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
-WHALE_STATES_DIR = Path('/home/xmren/.openclaw/workspace/polymarket-project/07-data/whale_states')
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
+WHALE_STATES_DIR = Path(__file__).resolve().parents[2] / "07-data" / "whale_states"
 
 
 @dataclass

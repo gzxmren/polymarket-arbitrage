@@ -11,8 +11,9 @@ import os
 import sqlite3
 import time
 from datetime import datetime
+from pathlib import Path
 
-DB = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 
 def main():
     start_time = time.time()
@@ -263,7 +264,7 @@ def main():
     #   sqlite3 <db_path> "PRAGMA journal_mode=DELETE; VACUUM; PRAGMA journal_mode=WAL;"
 
     # 10. 清理不活跃鲸鱼JSON文件(孤儿文件 + 已标记不活跃的鲸鱼)
-    whale_dir = '/home/xmren/.openclaw/workspace/polymarket-project/07-data/whale_states'
+    whale_dir = str(Path(__file__).resolve().parents[2] / "07-data" / "whale_states")
     if os.path.exists(whale_dir):
         # 获取数据库中所有钱包地址
         cursor.execute("SELECT wallet, has_activity FROM whales")

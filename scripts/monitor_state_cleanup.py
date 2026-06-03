@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # 配置
-STATE_FILE = Path("/home/xmren/.openclaw/workspace/polymarket-project/07-data/monitor_lite_state.json")
-BACKUP_DIR = Path("/home/xmren/.openclaw/workspace/polymarket-project/07-data/backup")
+STATE_FILE = Path(__file__).resolve().parents[1] / "07-data" / "monitor_lite_state.json"
+BACKUP_DIR = Path(__file__).resolve().parents[1] / "07-data" / "backup"
 RETENTION_DAYS = 7
 
 

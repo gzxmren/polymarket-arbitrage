@@ -21,7 +21,7 @@ import json
 def load_telegram_config():
     """从 openclaw.json 加载配置"""
     try:
-        config_path = "/home/xmren/.openclaw/openclaw.json"
+        config_path = os.environ.get("OPENCLAW_CONFIG") or os.path.expanduser("~/.openclaw/openclaw.json")
         with open(config_path) as f:
             config = json.load(f)
             telegram = config.get("channels", {}).get("telegram", {})

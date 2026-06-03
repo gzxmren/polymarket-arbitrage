@@ -687,7 +687,7 @@ def sync_leaderboard():
     try:
         import subprocess
         result = subprocess.run(
-            ['python3', '/home/xmren/.openclaw/workspace/polymarket-project/06-tools/analysis/leaderboard_whale_tracker.py', '--manual', '--notify'],
+            ['python3', str(Path(__file__).resolve().parents[4] / "06-tools" / "analysis" / "leaderboard_whale_tracker.py"), '--manual', '--notify'],
             capture_output=True,
             text=True,
             timeout=60

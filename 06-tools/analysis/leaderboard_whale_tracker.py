@@ -19,9 +19,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from leaderboard_trends import LeaderboardTrendAnalyzer
 
 # 配置
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 LEADERBOARD_API = "https://data-api.polymarket.com/v1/leaderboard"
-LOG_DIR = Path('/home/xmren/.openclaw/workspace/polymarket-project/07-data/logs')
+LOG_DIR = Path(__file__).resolve().parents[2] / "07-data" / "logs"
 
 # Telegram 配置（[P2安全] 2026-06-03: 从监控 .env 读，源码不含密钥）
 import os

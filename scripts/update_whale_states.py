@@ -16,9 +16,10 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 
 # 路径配置
-PROJECT_DIR = Path("/home/xmren/.openclaw/workspace/polymarket-project")
+PROJECT_DIR = Path(__file__).resolve().parents[1]
 WHALE_TRACKER = PROJECT_DIR / "06-tools" / "analysis" / "whale_tracker_v2.py"
 DATA_DIR = PROJECT_DIR / "07-data"
 
@@ -69,7 +70,7 @@ def main():
     # 3. 从 DB 补充高价值鲸鱼的 JSON 占位
     print(f"\n📦 从 DB 补充高价值鲸鱼 JSON 占位...", flush=True)
     
-    DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+    DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[1] / "dashboard" / "backend" / "database" / "polymarket.db"))
     try:
         conn = sqlite3.connect(DB_PATH, timeout=10)
         conn.execute('PRAGMA busy_timeout=10000')

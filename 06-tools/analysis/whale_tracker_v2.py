@@ -16,6 +16,7 @@ from urllib.error import URLError
 from datetime import datetime, timezone
 from pathlib import Path
 from collections import defaultdict
+import os
 
 DATA_API = "https://data-api.polymarket.com"
 GAMMA_API = "https://gamma-api.polymarket.com"
@@ -124,7 +125,7 @@ def ensure_db_record(wallet: str, pseudonym: str):
     使鲸鱼拥有持久身份，不依赖 API 瞬时数据。
     """
     import sqlite3
-    DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+    DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.execute('''
@@ -593,7 +594,7 @@ def main():
     conn = None
     try:
         import sqlite3
-        DB_PATH_SYNC = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+        DB_PATH_SYNC = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
         conn = sqlite3.connect(DB_PATH_SYNC)
         conn.row_factory = sqlite3.Row
 

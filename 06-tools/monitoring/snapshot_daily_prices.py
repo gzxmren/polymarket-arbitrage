@@ -19,6 +19,7 @@ import json
 import urllib.request
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 # 清除代理环境变量
 for _k in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
@@ -26,7 +27,7 @@ for _k in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY'
 
 _no_proxy_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 GAMMA_API = 'https://gamma-api.polymarket.com'
 
 # 排除的市场 slug 前缀

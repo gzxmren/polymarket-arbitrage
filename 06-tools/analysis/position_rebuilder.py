@@ -18,9 +18,10 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
+import os
 
 # 数据库路径
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 
 
 @dataclass
@@ -265,7 +266,7 @@ class PositionRebuilder:
         rebuilt_concentration = self.calculate_concentration(rebuilt)
         
         # JSON 数据
-        json_file = Path(f'/home/xmren/.openclaw/workspace/polymarket-project/07-data/whale_states/{wallet}.json')
+        json_file = Path(__file__).resolve().parents[2] / "07-data" / "whale_states" / f"{wallet}.json"
         if json_file.exists():
             import json
             with open(json_file) as f:

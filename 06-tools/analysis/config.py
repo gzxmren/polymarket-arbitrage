@@ -4,6 +4,7 @@
 集中管理所有路径和常量配置
 """
 
+import os
 from pathlib import Path
 
 # 项目根目录（06-tools/analysis/ 的父目录的父目录的父目录）
@@ -19,8 +20,10 @@ LOGS_DIR = DATA_DIR / "logs"
 WATCHLIST_FILE = DATA_DIR / "whale_watchlist.json"
 
 # Dashboard 数据库
-DASHBOARD_DB_DIR = PROJECT_ROOT / "dashboard" / "database"
-DASHBOARD_DB_FILE = DASHBOARD_DB_DIR / "polymarket.db"
+# [修正] 实际运行库在 dashboard/backend/database/; 旧的 dashboard/database/polymarket.db
+# 只是指向它的软链(易误导)。统一指向真实路径,并允许 POLYMARKET_DB 环境变量覆盖。
+DASHBOARD_DB_DIR = PROJECT_ROOT / "dashboard" / "backend" / "database"
+DASHBOARD_DB_FILE = Path(os.environ.get("POLYMARKET_DB") or (DASHBOARD_DB_DIR / "polymarket.db"))
 
 # 确保目录存在
 def ensure_directories():

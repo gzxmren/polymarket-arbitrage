@@ -9,6 +9,7 @@
 import sqlite3, json, urllib.request, time, argparse, sys
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 
 for k in ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all_proxy']:
     try: del k
@@ -16,7 +17,7 @@ for k in ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy','ALL_PROXY','all
 
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 DATA_API = "https://data-api.polymarket.com"
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 INTERVAL = 0.25
 RETRIES = 2
 

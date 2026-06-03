@@ -19,6 +19,7 @@ from typing import Optional, Dict, List, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+import os
 
 
 class TrendDirection(Enum):
@@ -758,7 +759,7 @@ def main():
     """测试主函数"""
     import os
     
-    db_path = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+    db_path = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
     
     analyzer = LeaderboardTrendAnalyzer(db_path)
     

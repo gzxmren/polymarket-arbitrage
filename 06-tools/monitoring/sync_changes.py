@@ -32,7 +32,7 @@ def _get_pnl_module():
 
 # 直接使用绝对路径的数据库
 import sqlite3
-DB_PATH = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
+DB_PATH = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
 
 def get_db_connection(retries=3):
     """获取数据库连接,带重试逻辑"""

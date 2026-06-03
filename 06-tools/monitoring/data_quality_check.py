@@ -6,10 +6,11 @@ import json
 import os
 import random
 from datetime import datetime, timedelta
+from pathlib import Path
 
-DB = '/home/xmren/.openclaw/workspace/polymarket-project/dashboard/backend/database/polymarket.db'
-WHALE_DIR = '/home/xmren/.openclaw/workspace/polymarket-project/07-data/whale_states'
-REPORT_DIR = '/home/xmren/.openclaw/workspace/polymarket-project/07-data/quality_reports'
+DB = (os.environ.get("POLYMARKET_DB") or str(Path(__file__).resolve().parents[2] / "dashboard" / "backend" / "database" / "polymarket.db"))
+WHALE_DIR = str(Path(__file__).resolve().parents[2] / "07-data" / "whale_states")
+REPORT_DIR = str(Path(__file__).resolve().parents[2] / "07-data" / "quality_reports")
 
 os.makedirs(REPORT_DIR, exist_ok=True)
 
