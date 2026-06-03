@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polymarket 智能监控系统 — 全面评审报告</title>
+<style>
+:root {
+  --bg:#0f1117; --panel:#161a23; --text:#d7dce5; --muted:#8b94a7;
+  --border:#262c39; --accent:#5b8cff; --code:#1b2030;
+  --red:#ff6b6b; --yellow:#ffd166; --orange:#ff9f43; --green:#4cd97b;
+}
+@media (prefers-color-scheme: light){
+  :root{--bg:#f6f8fc;--panel:#fff;--text:#1f2733;--muted:#5b6472;
+  --border:#e3e8f0;--accent:#2f6bff;--code:#f0f3f9;}
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+  line-height:1.7;font-size:16px;}
+.wrap{max-width:980px;margin:0 auto;padding:48px 28px 120px;}
+.content{background:var(--panel);border:1px solid var(--border);border-radius:14px;
+  padding:40px 48px;box-shadow:0 10px 40px rgba(0,0,0,.18);}
+h1{font-size:30px;line-height:1.3;margin:.2em 0 .6em;border-bottom:2px solid var(--border);padding-bottom:.4em}
+h2{font-size:23px;margin:1.8em 0 .7em;padding-top:.3em;border-top:1px solid var(--border)}
+h3{font-size:18px;margin:1.4em 0 .5em;color:var(--accent)}
+h4{font-size:16px;margin:1.2em 0 .4em;color:var(--muted)}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+p,li{color:var(--text)}
+blockquote{margin:1em 0;padding:.6em 1.1em;border-left:4px solid var(--accent);
+  background:rgba(91,140,255,.08);border-radius:0 8px 8px 0;color:var(--muted)}
+blockquote p{margin:.3em 0}
+code{background:var(--code);padding:.15em .45em;border-radius:5px;
+  font-family:"SF Mono",Menlo,Consolas,"Courier New",monospace;font-size:.88em}
+pre{background:var(--code);padding:16px 18px;border-radius:10px;overflow-x:auto;border:1px solid var(--border)}
+pre code{background:none;padding:0;font-size:.85em;line-height:1.55}
+table{border-collapse:collapse;width:100%;margin:1.2em 0;font-size:.93em;display:block;overflow-x:auto}
+th,td{border:1px solid var(--border);padding:9px 13px;text-align:left;vertical-align:top}
+th{background:rgba(91,140,255,.12);font-weight:600}
+tr:nth-child(even) td{background:rgba(127,127,127,.05)}
+hr{border:none;border-top:1px solid var(--border);margin:2.4em 0}
+ul,ol{padding-left:1.5em}
+li{margin:.25em 0}
+strong{color:var(--text);font-weight:700}
+.meta-bar{font-size:13px;color:var(--muted);margin-bottom:24px;text-align:right}
+/* emoji severity tint via text already in content */
+::-webkit-scrollbar{height:9px;width:9px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="meta-bar">本页由 PROJECT_REVIEW.md 自动生成 · 生成时间 2026-06-02 22:49</div>
+  <div class="content">
+<h1 id="polymarket">Polymarket 智能监控系统 — 全面评审报告</h1>
+<blockquote>
+<p><strong>评审时间</strong>：2026-06-02 (UTC+8)
+<strong>评审对象</strong>：<code>v2.0-development</code> 分支（最近提交 <code>8d4c5d1 Phase 3: 质量监控与自动化</code>）
+<strong>评审方法</strong>：通读源码 + 实际查询运行库（<code>dashboard/backend/database/polymarket.db</code>，138 MB）+ 核对设计文档与运行数据
+<strong>评审维度</strong>：需求覆盖 · 设计架构 · 技术实现 · 代码逻辑 · 系统部署 · <strong>数据腐化专项</strong></p>
+<p>⚠️ 本报告基于<strong>真实运行数据</strong>，非纯文档推断。关键数字均来自对生产 SQLite 库与 <code>07-data/</code> 目录的直接采样。</p>
+</blockquote>
+<hr />
+<h2 id="0">0. 评审结论速览</h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>评级</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>需求覆盖</td>
+<td>🟡 中</td>
+<td>监控/鲸鱼跟踪扎实，但套利与 Phase 3 质量自动化"实现了却没产出数据"</td>
+</tr>
+<tr>
+<td>设计架构</td>
+<td>🟡 中</td>
+<td>分层清晰、模块化好，但双存储 + 双同步实现带来一致性风险</td>
+</tr>
+<tr>
+<td>技术实现</td>
+<td>🟠 偏弱</td>
+<td>612 处 print / 0 处 logging、59+ 处宽泛 except、生产用 Werkzeug 开发服务器</td>
+</tr>
+<tr>
+<td>代码逻辑</td>
+<td>🟡 中</td>
+<td>核心算法合理，但存在 <code>has_activity</code> 单调标志 bug、循环内重复读文件</td>
+</tr>
+<tr>
+<td>系统部署</td>
+<td>🟡 中</td>
+<td>Docker/Nginx/Makefile 齐备，但无 CI、无迁移、无健康检查、备份手动</td>
+</tr>
+<tr>
+<td><strong>数据腐化</strong></td>
+<td>🔴 <strong>严重</strong></td>
+<td><strong>whales 表 97.9% 是零值垃圾行；DB 47% 是死空间从未 VACUUM；JSON/报告文件无轮转</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>最重要的三件事</strong>：
+1. 🔴 <strong><code>whales</code> 表已退化为垃圾场</strong>——72,757 行中 71,242 行（97.9%）<code>total_value=0 且 position_count=0</code>。
+2. 🔴 <strong>数据库膨胀且从不回收</strong>——138 MB 中约 47% 是 freelist 死空间。
+3. 🟠 <strong>Phase 3"质量与自动化"形同虚设</strong>——信号追踪、阈值优化、质量报告等 7 张表全部 0 行。</p>
+<hr />
+<h2 id="1">1. 需求覆盖评审</h2>
+<h3 id="11">1.1 已较好覆盖 ✅</h3>
+<table>
+<thead>
+<tr>
+<th>需求</th>
+<th>状态</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>鲸鱼识别与持仓跟踪</td>
+<td>✅ 运行中</td>
+<td><code>positions</code> 11,374 行，更新到 2026-06-02</td>
+</tr>
+<tr>
+<td>集中度/收敛分析</td>
+<td>✅ 运行中</td>
+<td><code>concentration_history</code> 67,701 行，7 天滚动</td>
+</tr>
+<tr>
+<td>重点鲸鱼 Watchlist</td>
+<td>✅</td>
+<td><code>is_watched=1</code> 281 个</td>
+</tr>
+<tr>
+<td>Telegram 通知</td>
+<td>✅</td>
+<td><code>telegram_notifier_v2</code> + 多种报告脚本</td>
+</tr>
+<tr>
+<td>Leaderboard 趋势</td>
+<td>✅</td>
+<td><code>leaderboard_whales/history/trends</code> 有数据</td>
+</tr>
+<tr>
+<td>LLM 深度分析（带缓存）</td>
+<td>✅</td>
+<td><code>whale_deep_analysis</code> 11 条，带 <code>data_hash</code>/<code>cost</code></td>
+</tr>
+<tr>
+<td>Dashboard 可视化</td>
+<td>✅</td>
+<td>8 个 API 蓝图、12+ 前端页面</td>
+</tr>
+</tbody>
+</table>
+<h3 id="12">1.2 "已实现但未产出"——需求悬空 ⚠️</h3>
+<p>V2 PRD 的核心增量（信号胜率追踪、阈值自动优化、质量监控自动化）<strong>代码已落地、表已建，但运行数据为 0</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>表 / 功能</th>
+<th>行数</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>signals</code> / <code>semantic_signals</code></td>
+<td>0</td>
+<td>语义信号无产出</td>
+</tr>
+<tr>
+<td><code>signal_results</code></td>
+<td>0</td>
+<td>信号胜率无追踪</td>
+</tr>
+<tr>
+<td><code>whale_performance</code></td>
+<td>0</td>
+<td>鲸鱼绩效未计算</td>
+</tr>
+<tr>
+<td><code>strategy_performance</code></td>
+<td>0</td>
+<td>策略绩效未计算</td>
+</tr>
+<tr>
+<td><code>quality_reports</code> / <code>quality_logs</code></td>
+<td>0</td>
+<td>质量报告未生成</td>
+</tr>
+<tr>
+<td><code>threshold_history</code></td>
+<td>0</td>
+<td>阈值自动优化未运行</td>
+</tr>
+<tr>
+<td><code>opportunity_history</code></td>
+<td>0</td>
+<td>机会历史未沉淀</td>
+</tr>
+<tr>
+<td><code>pair_cost_arbitrage</code></td>
+<td>0</td>
+<td>Pair Cost 套利零落库</td>
+</tr>
+<tr>
+<td><code>cross_market_arbitrage</code></td>
+<td>1</td>
+<td>跨市场套利仅 1 条</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>判断</strong>：Phase 3 "质量监控与自动化"提交了代码，但调度/触发链路没有真正跑起来。这恰好印证 V2 设计文档自述的痛点——"套利机会 24h 0 次、信号效果未知"。<strong>这些是当前最大的需求缺口</strong>。</p>
+</blockquote>
+<h3 id="13">1.3 范围边界 📌</h3>
+<ul>
+<li><code>01-05</code> 五个策略目录 + <code>06-tools/trading/</code> <strong>仅有 README</strong>——系统是<strong>只读/建议型</strong>，无下单执行层。这与 README 定位一致（不盲目跟单），但需明确这是"信号系统"而非"交易系统"。</li>
+</ul>
+<hr />
+<h2 id="2">2. 设计架构评审</h2>
+<h3 id="21">2.1 优点 ✅</h3>
+<ul>
+<li><strong>分层清晰</strong>：数据获取 → 分析引擎 → 风险/质量 → 通知/存储 → Dashboard，职责边界明确。</li>
+<li><strong>模块化策略</strong>：套利/鲸鱼/做市/动量/语义各自独立文件，便于单独演进。</li>
+<li><strong>能力可选加载（优雅降级）</strong>：<code>polymarket_monitor_v2.py</code> 用 <code>try/except ImportError</code>+布尔开关包裹每个子系统，单模块缺失不致命——这是<strong>很好的健壮性设计</strong>。</li>
+<li><strong>多源数据融合</strong>：<code>hybrid_data_source.py</code> 按 <code>Trades重建 → JSON → Leaderboard → 无数据</code> 优先级兜底，应对单源不全。</li>
+<li><strong>配置集中</strong>：<code>config.py</code> 作为路径/阈值单一来源（理念正确）。</li>
+<li><strong>DB 路径其实已统一</strong>：4 个 <code>*.db</code> 实为<strong>软链接</strong>指向 <code>dashboard/backend/database/polymarket.db</code>。<blockquote>
+<p>✅ 更正我此前 OVERVIEW 中"路径三处不一致"的说法——物理上是同一个库，靠 symlink 收敛。但<strong>软链接本身是隐式约定</strong>，新环境/Docker 卷挂载时极易断裂，仍属脆弱设计。</p>
+</blockquote>
+</li>
+</ul>
+<h3 id="22">2.2 不足 ⚠️</h3>
+<ol>
+<li><strong>双存储 + 双同步</strong>：<code>07-data/*.json</code>（引擎写）与 SQLite（Dashboard 读）并存，靠 <code>data_sync.py</code> 桥接，是<strong>最终一致</strong>而非强一致；同步失败时两边静默漂移。更糟的是同时存在 <code>data_sync.py</code> 与 <code>data_sync_v2.py</code> 两套实现，<strong>权威来源不明确</strong>。</li>
+<li><strong>缺少数据生命周期设计</strong>：建表用 <code>CREATE TABLE IF NOT EXISTS</code>，无 schema 版本/迁移；除 <code>concentration_history</code> 有 7 天清理外，<code>whales</code>/<code>positions_archive</code>/<code>daily_price_snapshots</code> 等无保留策略 → 直接导致第 6 节的数据腐化。</li>
+<li><strong>配置未真正收敛</strong>：19 个 <code>06-tools</code> 文件、2 个 backend 文件硬编码 <code>/home/xmren/...</code> 绝对路径，与 <code>config.py</code> 规范相悖（如 <code>hybrid_data_source.py</code> 顶部直接写死 DB_PATH）。</li>
+<li><strong>阈值双轨</strong>：<code>config.py::PAIR_COST=0.90</code> 与文档/环境变量示例的 <code>0.995</code> 不一致，运行期行为依赖于谁覆盖谁。</li>
+</ol>
+<hr />
+<h2 id="3">3. 技术实现评审</h2>
+<h3 id="31">3.1 优点 ✅</h3>
+<ul>
+<li>类型注解 + <code>@dataclass</code>（如 <code>WhaleData</code>/<code>Position</code>）在新模块中应用良好。</li>
+<li>LLM 调用带 <strong>content-hash 缓存 + 成本记录</strong>，控费意识到位。</li>
+<li>依赖在 <code>requirements.txt</code> 中<strong>固定版本</strong>，可复现。</li>
+</ul>
+<h3 id="32">3.2 不足 ⚠️</h3>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>量化证据</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>几乎不用日志</strong></td>
+<td><code>06-tools/monitoring</code> 中 <code>print()</code> <strong>612 处 / logging 0 处</strong></td>
+<td>违反 <code>PROJECT_STRUCTURE.md</code> 自定规范；生产无结构化日志、无级别、无法采集</td>
+</tr>
+<tr>
+<td><strong>宽泛/裸异常吞错</strong></td>
+<td>59 处 <code>except Exception</code> + 10 处裸 <code>except:</code></td>
+<td>错误被静默（如 <code>data_sync.py:162</code> <code>except: pass</code> 吞掉成交量计算失败）</td>
+</tr>
+<tr>
+<td><strong>生产跑开发服务器</strong></td>
+<td><code>run.py:44</code> <code>socketio.run(..., allow_unsafe_werkzeug=True)</code></td>
+<td>Werkzeug 非生产级，无 worker、无优雅退出；应上 gunicorn+eventlet</td>
+</tr>
+<tr>
+<td><strong>依赖偏旧</strong></td>
+<td>flask==3.0.0 等固定在较老版本</td>
+<td>安全/兼容更新滞后</td>
+</tr>
+<tr>
+<td><strong>源码混入临时件</strong></td>
+<td>15 个 <code>*.bak</code> / <code>*.bak.YYYYMMDD</code> 在源码树</td>
+<td>污染、易误引用</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4">4. 代码逻辑评审</h2>
+<h3 id="41">4.1 关注点（具体到行）</h3>
+<p><strong>① <code>has_activity</code> 单调标志 bug（数据正确性问题）</strong> — <code>data_sync.py:181</code></p>
+<pre><code class="language-sql">has_activity = CASE WHEN excluded.has_activity = 1 THEN 1 ELSE whales.has_activity END
+</code></pre>
+<p>该字段<strong>一旦置 1 永不复位</strong>。后果可在库中直接观测：<strong>71,152 行 <code>has_activity=1</code>，但其中绝大多数 <code>total_value=0</code></strong>——"有活动"标志已失去意义，任何基于它的查询都会被污染。</p>
+<p><strong>② 循环内重复打开同一文件（性能）</strong> — <code>data_sync.py:145-149</code>
+每只鲸鱼迭代都 <code>open(self.watchlist_file)</code> 重新读一遍 watchlist JSON（外层已读过一次），O(N) 次磁盘读，N=鲸鱼数。应提到循环外读一次。</p>
+<p><strong>③ ON CONFLICT 保留旧值会掩盖"归零"</strong> — <code>data_sync.py:178-184</code>
+<code>top5_ratio/total_volume/total_pnl/changes_count</code> 仅在新值 &gt;0 时更新，否则保留旧值。本意是防止被零覆盖，但副作用是：当一只鲸鱼真的清仓归零，旧的非零指标会<strong>僵尸式残留</strong>，与 <code>total_value=0</code> 自相矛盾。</p>
+<p><strong>④ 缺乏写入前的价值下限过滤</strong> — <code>sync_whales</code>
+零持仓/零价值的钱包仍被 <code>INSERT INTO whales</code>，没有 <code>if total_value &lt; X: continue</code> 这类闸门 → 第 6 节垃圾行的直接成因。</p>
+<h3 id="42">4.2 优点 ✅</h3>
+<ul>
+<li>集中度算法（HHI、Top5/Top10）实现简洁正确（<code>_calculate_concentration_metrics</code>），含 <code>total==0</code> 防除零。</li>
+<li>鲸鱼脏数据过滤思路存在（<code>risk_reviewer</code> 中"持仓&gt;50 且价值&lt;$1000 判异常"），方向对，只是<strong>未在落库前的 sync 层统一执行</strong>。</li>
+</ul>
+<hr />
+<h2 id="5">5. 系统部署评审</h2>
+<h3 id="51">5.1 优点 ✅</h3>
+<ul>
+<li>提供 <strong>Docker Compose（backend+frontend+nginx）+ Makefile + 部署指南</strong>，三种部署路径（Docker/手动/生产加固）。</li>
+<li><code>restart: unless-stopped</code>、SocketIO 实时推送、nginx 反代到位。</li>
+<li>敏感信息治理良好：<code>.gitignore</code> 正确排除 <code>07-data/</code>、<code>*.db</code>、<code>*.log</code>、<code>.env</code>；<strong>仓库中未发现硬编码 Telegram Token/密钥</strong>。</li>
+</ul>
+<h3 id="52">5.2 不足 ⚠️</h3>
+<ol>
+<li><strong>无 CI/CD</strong>：无自动化测试/构建/部署流水线；测试文件仅 <strong>5 个</strong>，覆盖远不足。</li>
+<li><strong>无健康检查/资源限制</strong>：<code>docker-compose.yml</code> 缺 <code>healthcheck</code>、<code>mem_limit</code>、<code>depends_on: condition</code>。</li>
+<li><strong>无 schema 迁移</strong>：靠 <code>CREATE IF NOT EXISTS</code>，字段变更需手工改库。</li>
+<li><strong>引擎守护方式脆弱</strong>：<code>start_monitor.sh</code> 用 <code>nohup ... &gt; /tmp/monitor.log</code>——重启即丢日志，未用文档所述的 systemd。</li>
+<li><strong>备份手动</strong>：138 MB 库靠 <code>cp</code> 手动/cron 备份，无校验、无异地。</li>
+<li><strong>生产 WSGI 缺位</strong>：见 3.2，未使用 gunicorn 等。</li>
+</ol>
+<hr />
+<h2 id="6">6. 🔴 数据腐化专项（核心发现）</h2>
+<blockquote>
+<p>本节为本次评审最重要的部分。所有数字均来自 2026-06-02 对运行库的实测。</p>
+</blockquote>
+<h3 id="61-whales">6.1 <code>whales</code> 表退化为垃圾场（最严重）</h3>
+<pre><code>总行数         : 72,757
+total_value=0  : 71,242  (97.9%)   ← 零值且零持仓
+  其中 &gt;$100k  :    211             ← 真正的&quot;鲸鱼&quot;
+  $10k–100k    :    508
+  $0–10k       :    796
+has_activity=1 : 71,152  ← 与零值严重矛盾（见 4.1 ①）
+</code></pre>
+<p><strong>只有约 2% 的行是有意义的数据</strong>。该表本应是"被跟踪鲸鱼"主表，却把所有出现过的钱包（疑似来自成交流/leaderboard 导入）无差别落库，且无清理。查询、统计、前端列表都要在 7 万垃圾行上过滤。</p>
+<h3 id="62">6.2 数据库膨胀且从不回收</h3>
+<pre><code>文件大小       : 138 MB
+总页数         : 33,886
+freelist 空闲页: 16,021   ≈ 47% 为删除后未回收的死空间
+</code></pre>
+<p>大量删除（如 concentration 7 天清理、归档迁移）产生的空洞<strong>从未 <code>VACUUM</code></strong>。实际有效数据可能仅 ~70 MB，一半磁盘被浪费，且影响查询缓存效率。</p>
+<h3 id="63-json">6.3 JSON / 报告文件无轮转</h3>
+<table>
+<thead>
+<tr>
+<th>位置</th>
+<th>数量</th>
+<th>问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>07-data/whale_states/*.json</code></td>
+<td>283</td>
+<td>最旧 2026-03-13（近 3 个月未更新仍在"活跃"目录）</td>
+</tr>
+<tr>
+<td><code>07-data/whale_states_archive/</code></td>
+<td>1,796</td>
+<td>归档无上限</td>
+</tr>
+<tr>
+<td><code>07-data/monitor_report_*.json</code></td>
+<td>158</td>
+<td>每次扫描落一个，从 4-17 起堆积，无清理</td>
+</tr>
+</tbody>
+</table>
+<h3 id="64">6.4 归档/快照表无保留策略</h3>
+<pre><code>positions        : 11,374
+positions_archive : 38,383   ← 归档是在用数据的 3.4 倍
+daily_price_snapshots : 39,142
+market_title_map : 46,656
+</code></pre>
+<p>归档表持续单增，无 TTL，是 6.2 死空间的来源之一。</p>
+<h3 id="65-dead-reference">6.5 配置/命名漂移（dead reference）</h3>
+<ul>
+<li><code>config.py::DBTables.SIGNALS = "semantic_signals"</code>，但实际表名为 <code>signals</code>（且为 0 行）——<strong>配置常量指向一个查询不到数据的名字</strong>，属典型的"代码与库脱节"腐化。</li>
+</ul>
+<h3 id="66">6.6 遗留垃圾文件</h3>
+<ul>
+<li>根目录 <code>polymarket_data.db</code> = <strong>0 字节</strong>（5-23 创建后从未使用）。</li>
+<li>15 个 <code>*.bak</code> 散落在 <code>06-tools/analysis</code>（含 <code>whale_tracker_v2.py.bak.20260516</code> 等带日期备份）。</li>
+</ul>
+<h3 id="67">6.7 是否存在"数据腐化"？——<strong>是，且程度严重</strong></h3>
+<p>综合判断，本项目同时存在三类经典数据腐化：
+1. <strong>结构腐化</strong>：垃圾行/僵尸标志/矛盾字段（6.1、4.1①、4.1③）。
+2. <strong>物理腐化</strong>：膨胀不回收的 SQLite（6.2）。
+3. <strong>生命周期腐化</strong>：JSON/报告/归档无轮转、无 TTL（6.3、6.4）。
+4. <strong>引用腐化</strong>：配置常量/空表与实际不符（6.5、1.2）。</p>
+<hr />
+<h2 id="7">7. 优先级改进清单</h2>
+<h3 id="p0">P0 — 数据腐化止血（本周）</h3>
+<ol>
+<li><strong>清洗 whales 表</strong>：删除 <code>total_value=0 AND position_count=0 AND is_watched=0</code> 的行（预计清掉 ~7 万行）；在 <code>sync_whales</code> 落库前加价值下限闸门。</li>
+<li><strong>修复 <code>has_activity</code> 逻辑</strong>：改为反映当前状态而非单调置位；一次性 <code>UPDATE whales SET has_activity=0 WHERE total_value=0</code>。</li>
+<li><strong><code>VACUUM</code> + 定期化</strong>：立即回收 ~47% 死空间；加每周 <code>VACUUM</code>/<code>PRAGMA optimize</code> 任务。</li>
+<li><strong>报告/状态文件轮转</strong>：<code>monitor_report_*.json</code>、<code>whale_states</code> 加保留窗口（如 14 天）与归档上限。</li>
+<li>删除根目录 0 字节 <code>polymarket_data.db</code> 与 15 个 <code>*.bak</code>。</li>
+</ol>
+<h3 id="p1">P1 — 让"已实现"真正产出（两周）</h3>
+<ol start="6">
+<li>排查 Phase 3 调度链路，使 <code>signals/signal_results/quality_reports/threshold_history</code> 等真正落数据；否则在文档中明确标注为"未启用"。</li>
+<li>统一同步实现：在 <code>data_sync.py</code> / <code>data_sync_v2.py</code> 间选定权威者，废弃另一个。</li>
+<li>修正 <code>config.DBTables.SIGNALS</code> 命名漂移；为 schema 引入版本号。</li>
+</ol>
+<h3 id="p2">P2 — 工程化（一个月）</h3>
+<ol start="9">
+<li><code>print</code> → <code>logging</code>（结构化、分级、落 <code>07-data/logs/</code>）；收敛宽泛/裸 except。</li>
+<li>生产改用 gunicorn+eventlet；docker-compose 加 healthcheck/资源限制；引入最小 CI（pytest + lint）。</li>
+<li>将 19 处硬编码绝对路径收敛到 <code>config.py</code>；用配置替代 DB symlink 约定。</li>
+</ol>
+<hr />
+<h2 id="8">8. 总评</h2>
+<p>这是一个<strong>功能丰富、迭代活跃、架构理念正确</strong>的预测市场监控系统，鲸鱼跟踪深度（持仓重建→集中度→收敛→PnL→LLM 解读）尤其是亮点，优雅降级与多源兜底体现了不错的工程直觉。</p>
+<p>但它正处于<strong>典型的"快速迭代后未做数据治理"困境</strong>：核心库已被 98% 的垃圾行淹没、近半磁盘是死空间、Phase 3 的质量自动化本身却没有在治理数据——<strong>"质量监控"模块自己最需要被质量监控</strong>。同时工程基线（日志、异常、生产 WSGI、CI、迁移）落后于功能复杂度。</p>
+<p><strong>建议</strong>：先做 P0 数据止血与回收，再补 P1 让已建表产出数据、收敛双实现，最后做 P2 工程化。当前阶段<strong>不宜在脏数据之上继续叠加新策略</strong>，否则信号可信度无从谈起。</p>
+<hr />
+<p><em>本报告基于 2026-06-02 的代码与运行数据快照，如后续已修复，请以最新状态为准。</em>
+<em>评审生成时间：2026-06-02</em></p>
+  </div>
+</div>
+</body>
+</html>

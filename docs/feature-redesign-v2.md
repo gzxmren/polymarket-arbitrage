@@ -192,13 +192,16 @@ SCAN_INTERVAL = 10分钟           # 降低频率，减少API调用
 06-tools/
 ├── analysis/
 │   ├── pair_cost_scanner.py      # 现有（优化阈值）
-│   ├── whale_tracker_v2.py       # 现有（增强行为分析）
+│   ├── whale_tracker_v2.py       # ⚠️ 已废弃（归档到 99-archive/）
 │   ├── whale_following.py        # 新增（鲸鱼跟随策略）
 │   ├── news_driven_strategy.py   # 新增（新闻驱动策略）
 │   ├── whale_behavior_predict.py # 新增（行为预测）
-│   └── historical_analyzer.py    # 新增（历史数据分析）
+│   ├── historical_analyzer.py    # 新增（历史数据分析）
+│   ├── whale_classifier.py       # ✅ 新增（多维度分类）
+│   ├── leaderboard_whale_tracker.py # ✅ 新增（排行榜跟踪）
+│   └── position_rebuilder.py     # ✅ 新增（持仓重建）
 ├── monitoring/
-│   ├── polymarket_monitor_v2.py  # 现有（调整频率10分钟）
+│   ├── polymarket_monitor_v2.py  # ⚠️ 已停止（需重启）
 │   └── strategy_evaluator.py     # 新增（策略效果评估）
 └── dashboard/
     └── api/strategy.py           # 新增（策略API）

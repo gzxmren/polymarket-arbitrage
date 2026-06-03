@@ -1,5 +1,17 @@
 # 鲸鱼深度分析（LLM）设计文档
 
+---
+
+## ⚠️ 文档状态
+
+**状态**: 🗑️ 已过时  
+**过时时间**: 2026-04-05  
+**原因**: whale_deep_analyzer.py 模块存在 bug，功能未完善，已废弃归档到 99-archive/deprecated-modules/  
+**替代方案**: 使用 whale_classifier.py (多维度评分系统) + leaderboard_whale_tracker.py (排行榜跟踪)  
+**备注**: 本文档仅供参考，新系统已实现更完善的分析功能
+
+---
+
 ## 📋 概述
 混合方案：实时分析（程序代码）+ 深度分析（LLM），用户手动触发深度分析。
 
