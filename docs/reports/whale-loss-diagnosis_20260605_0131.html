@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跟鲸鱼"为什么亏" — 通俗版排查报告 (2026-06-05)</title>
+<style>
+  :root{
+    --bg:#fafafa; --card:#fff; --ink:#1f2329; --sub:#5b6470; --line:#e6e8eb;
+    --good:#1a7f37; --bad:#cf222e; --warn:#9a6700; --accent:#2563eb; --accent-bg:#eef4ff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#0d1117;--card:#161b22;--ink:#e6edf3;--sub:#9aa4b2;--line:#283039;
+      --good:#3fb950;--bad:#f85149;--warn:#d29922;--accent:#58a6ff;--accent-bg:#11203a;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.75;font-size:16px}
+  .wrap{max-width:820px;margin:0 auto;padding:32px 20px 80px}
+  header{border-bottom:2px solid var(--line);padding-bottom:18px;margin-bottom:8px}
+  h1{font-size:26px;margin:0 0 6px}
+  .meta{color:var(--sub);font-size:13px}
+  h2{font-size:21px;margin:38px 0 10px;padding-top:8px}
+  h3{font-size:17px;margin:22px 0 6px}
+  p{margin:10px 0}
+  .lead{font-size:17px;background:var(--accent-bg);border-left:4px solid var(--accent);
+    padding:14px 16px;border-radius:8px;margin:18px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:16px 0}
+  .tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:20px;margin-right:6px}
+  .t-bug{background:#fde7e9;color:var(--bad)} .t-mid{background:#fff3d6;color:var(--warn)}
+  .t-cap{background:#e7f0ff;color:var(--accent)}
+  @media (prefers-color-scheme: dark){
+    .t-bug{background:#3a1115}.t-mid{background:#3a2f0a}.t-cap{background:#11203a}}
+  .good{color:var(--good);font-weight:700} .bad{color:var(--bad);font-weight:700}
+  .warn{color:var(--warn);font-weight:700}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14.5px}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left}
+  th{background:var(--accent-bg);font-weight:600}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .analogy{background:var(--card);border:1px dashed var(--accent);border-radius:12px;padding:16px 20px;margin:16px 0}
+  .analogy h3{margin-top:0;color:var(--accent)}
+  .bars{margin:10px 0}
+  .bar-row{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:14px}
+  .bar-row .lab{width:120px;color:var(--sub);flex:none;text-align:right}
+  .bar{height:22px;border-radius:5px;min-width:2px}
+  .bar.pos{background:linear-gradient(90deg,#3fb950,#1a7f37)}
+  .bar.neg{background:linear-gradient(90deg,#f85149,#cf222e)}
+  .bar-row .val{font-variant-numeric:tabular-nums;font-weight:700}
+  .takeaway{background:var(--accent-bg);border:1px solid var(--accent);border-radius:12px;
+    padding:18px 22px;margin:24px 0}
+  code{background:var(--line);padding:1px 6px;border-radius:5px;font-size:90%}
+  footer{margin-top:50px;border-top:1px solid var(--line);padding-top:16px;color:var(--sub);font-size:13px}
+  ul{padding-left:22px} li{margin:5px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>🐋 跟着大户买,到底赚不赚钱?</h1>
+  <div class="meta">通俗版排查报告 · 2026-06-05 01:31 · Polymarket 智能监控项目 / 回测引擎</div>
+</header>
+
+<p class="lead">
+一句话:之前回测说"跟鲸鱼亏 2.29%"。这次刨到底,发现是<b>三层原因叠在一起</b>——
+一个把账算错的程序 bug、一个跟错了对象的策略毛病、还有一个最扎心的真相:
+<b>有肉吃的地方,桌子太小,坐不下大钱。</b>
+</p>
+
+<div class="analogy">
+  <h3>先用大白话讲清楚</h3>
+  <p>把"跟鲸鱼"想象成<b>跟着赌场里的大佬下注</b>。我们一直想知道:照着他下,我能不能跟着赚?
+  之前的账本说会亏。这次拆开看,亏的原因分三层,一层比一层深:</p>
+</div>
+
+<h2><span class="tag t-bug">第 1 层</span>账算错了 —— 不是真亏</h2>
+<div class="card">
+<p>旧的回测程序有个 bug:它假设<b>"大佬下多大注,我们就跟多大注"</b>。
+大佬一把砸 50 万美金,程序就当我们也砸 50 万,然后狠狠扣一笔<b>"冲击成本"</b>
+(一次买太猛会把价格自己买贵)。</p>
+<p>可我们是小散户,跟单怎么可能下 50 万?这笔罚款是<b>凭空捏造</b>的,硬生生把账算亏了。
+真相是:容量限制只该让我们"<b>能投的钱变少</b>",不该凭空扣一笔收益。</p>
+<p>✅ <b>修好后:</b>同一批 5972 笔交易,账面从 <span class="bad">−1.56%</span>
+直接变 <span class="good">+2.61%</span>(扣掉的就是那笔捏造的冲击成本)。</p>
+</div>
+
+<h2><span class="tag t-mid">第 2 层</span>跟错了对象 —— 大佬六成在买"没肉的单"</h2>
+<div class="card">
+<p>看清楚大佬都在买什么后发现:<b>64% 的单子是在"几乎已成定局"的事件上加注</b>
+(比如某事已经 95% 会发生,他还买进)。</p>
+<p>这种单子<b>上涨空间被焊死</b>(最多赚 5%),可万一翻车就<b>亏到底</b>——
+典型的"在压路机前面捡硬币"。无脑全跟,等于大部分时间陪他做这种没肉吃的买卖。</p>
+<p>✅ <b>只挑"便宜的 + 快到期的"市场跟</b>(避开那些贵的大热门),账面立刻好看很多:</p>
+<table>
+  <tr><th>持有方式</th><th>无脑全跟</th><th>精选过滤后</th></tr>
+  <tr><td>持有 1 天</td><td class="num">+5.85%</td><td class="num good">+52.40%</td></tr>
+  <tr><td>持有到结算</td><td class="num">+2.61%</td><td class="num good">+18.48%</td></tr>
+</table>
+<p class="meta">⚠️ 这里有个尾巴:这两个"挑选标准"是从同一个月数据里挑的,有"事后诸葛亮"嫌疑。
+我做了样本外检验(把数据切两半各验一次),结果两半几乎一致 —— 说明这个规律<b>不是碰运气</b>。</p>
+</div>
+
+<h2><span class="tag t-cap">第 3 层</span>最扎心 —— 有肉的桌子太小,坐不下大钱</h2>
+<div class="card">
+<p>上面的 +18%、+52% 是<b>"每笔算一票"</b>的平均。问题是:<b>真正赚大钱的那些单,全在冷门到没人玩的小市场里。</b>
+你想下 1000 块都下不进去,顶多塞 30 块。</p>
+<p>把账按"<b>实际能投进去多少钱</b>"重新加权算总账,收益<b>又变负了</b>:</p>
+<table>
+  <tr><th>口径</th><th>每笔一票(账面)</th><th>按实际投入加权(真实)</th></tr>
+  <tr><td>持有 1 天 · 精选</td><td class="num">+52.40%</td><td class="num bad">−0.85%</td></tr>
+  <tr><td>持有到结算 · 精选</td><td class="num">+18.48%</td><td class="num bad">−4.36%</td></tr>
+</table>
+<p>最赚的那 2% 单子,平均<b>只能下 30~42 美金</b>(其它单平均能下两三百)。换句话说:
+<b>你越想把钱铺大,收益掉得越快。</b>这是一条标准的"容量衰减曲线":</p>
+
+<div class="bars">
+  <div class="bar-row"><span class="lab">每单上限 $30</span><div class="bar pos" style="width:46%"></div><span class="val good">+15.4%</span></div>
+  <div class="bar-row"><span class="lab">每单上限 $100</span><div class="bar pos" style="width:27%"></div><span class="val good">+8.9%</span></div>
+  <div class="bar-row"><span class="lab">每单上限 $1000</span><div class="bar neg" style="width:3%"></div><span class="val bad">−0.45%</span></div>
+  <div class="bar-row"><span class="lab">不限(照搬大佬)</span><div class="bar neg" style="width:15%"></div><span class="val bad">−4.36%</span></div>
+</div>
+<p class="meta">钱越大,收益越低,$1000/笔 左右就归零了。</p>
+</div>
+
+<h2>🎯 最终结论</h2>
+<div class="takeaway">
+<p style="margin-top:0"><b>"跟鲸鱼"不是想法错,是规模做不大:</b></p>
+<ul>
+  <li>① 旧回测有 <b>bug</b>,凭空罚冲击成本,把账算亏了 —— <span class="good">已修</span>。</li>
+  <li>② 无脑全跟,六成在买没肉的大热门;<b>挑便宜+快到期的跟</b>,账面能赚不少。</li>
+  <li>③ 但赚钱的单全在<b>铺不开钱的小市场</b>,真按投入加权 ≈ 持平到小亏。</li>
+</ul>
+<p style="margin-bottom:0"><b>能赚钱的窗口很窄:</b>每单 30~100 美金的<b>微仓</b>能赚十几个点,
+但绝对金额很小(一个月铺几万块、赚几千),而且<b>一放大就归零</b>。
+对小金额能玩,对真金白银的规模 —— 这条路不通。</p>
+</div>
+
+<h2>🔧 这次具体做了什么(给技术存档)</h2>
+<div class="card">
+<table>
+  <tr><th>文件</th><th>动作</th></tr>
+  <tr><td><code>engine/portfolio.py</code></td><td>修 bug:容量改成"吞吐上限",不再用大佬全额仓位罚冲击</td></tr>
+  <tr><td><code>engine/costs.py</code></td><td>文档化新口径;冲击模型标注为"主动超配研究专用,默认不用"</td></tr>
+  <tr><td><code>strategies/selective_whale.py</code></td><td>新增精选过滤(价区间+到期天数+钱包白名单,全是入场时已知,无前视)</td></tr>
+  <tr><td><code>run_selective_whale.py</code></td><td>新增:精选 vs 基线对比 + 价格扫描</td></tr>
+  <tr><td><code>diagnose_follow_whale.py</code></td><td>新增:成本归因诊断脚本</td></tr>
+  <tr><td><code>test_backtest_engine.py</code></td><td>测试 34 → <b>40 全绿</b>(含 bug 回归测试 + 精选过滤测试)</td></tr>
+</table>
+<p><b>最高优先的下一步:</b>给回测指标加"<b>按资金加权</b>"的收益口径。
+现在所有判决都是"每笔一票",会系统性高估 —— 这是让结论变诚实的地基。</p>
+</div>
+
+<footer>
+本报告为通俗版讲解,完整数据与方法见
+<code>docs/BACKTEST_DESIGN_2026-06-04.md</code>、
+<code>08-backtests/diagnose_follow_whale.py</code> 及
+<code>memory/2026-06-05.md</code> 工作日志。<br>
+诚实声明:样本仅约 1 个月、逐日价格粒度、仅二元 Yes/No 市场、信号来自被监控名单(选择偏差)。
+结论需在此前提下解读,后续应靠引擎持续采集更多数据复核。
+</footer>
+
+</div>
+</body>
+</html>
