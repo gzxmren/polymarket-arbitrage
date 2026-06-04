@@ -6,9 +6,13 @@ Roadmap 阶段 B 核心:缺成本模型,关于"能否赚钱"的一切都是猜�
 默认假设(见 docs/BACKTEST_DESIGN_2026-06-04.md §4):
 - 交易手续费:0%(Polymarket 现货撮合历史上 0 fee;保留参数位)。
 - 滑点垫:在入场价上叠加 slippage_bps 的保守损耗(买入按更差价成交)。
-- Gas:每笔固定 gas_usd(Polygon)。摊到名义本金上成为收益拖累。
+- Gas:每笔固定 gas_usd(Polygon)。摊到我们实际部署的本金(deployable)上成为收益拖累。
 - 容量:单信号可部署本金 ≤ 市场容量(volume_24h 代理)的 capacity_frac。
-        超出部分按线性冲击惩罚(超额比例 × impact_coef)。
+
+冲击模型(2026-06-05 修正):
+  默认 portfolio 把容量当"吞吐上限"——我们最多放到 deployable=min(想跟, 容量),
+  既然不超过容量就不产生冲击。impact_drag 仅保留给"主动超配(强行吃超过容量的量)"的研究场景,
+  默认收益路径不调用它(旧实现误用鲸鱼全额 notional 罚冲击,把账算亏了)。
 """
 
 from __future__ import annotations
@@ -56,8 +60,9 @@ class CostModel:
 
     def impact_drag(self, want_notional: float, market_cap_usd: float) -> float:
         """
-        超容量冲击拖累(占收益的比例)。
-        若想吃的量超过容量上限,超额比例越大,冲击惩罚越大。
+        超容量冲击拖累(占收益的比例)。仅用于"主动超配"研究场景:
+        若强行吃超过容量上限的量,超额比例越大,冲击惩罚越大。
+        ⚠️ 默认 portfolio 不调用此项(容量按吞吐上限处理,不超配即无冲击)。
         """
         cap = self.capacity_frac * max(market_cap_usd, 0.0)
         if cap <= 0 or want_notional <= cap:

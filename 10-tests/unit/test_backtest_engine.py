@@ -182,8 +182,20 @@ class TestSimulateOne:
         r = simulate_one(sig, self.ps, BASE, "realistic", "+1d")
         # base 档:入场价被滑点抬高、net 应低于零成本的 gross
         assert r.entry_price > 0.2
-        assert r.net_ret < r.gross_ret      # gas+冲击拖累
+        assert r.net_ret < r.gross_ret      # gas 拖累(冲击已不计)
         assert r.deployable == pytest.approx(BASE.capacity_frac * 100)
+
+    def test_capacity_is_throughput_not_impact_haircut(self):
+        """2026-06-05 修复回归:大额 notional + 薄容量不再被 impact 罚收益。
+        net 只比 gross 少一个 gas(摊到 deployable),而非 ~0.5 的冲击扣血。"""
+        # notional 远超容量:cap_abs = 0.02*100 = 2;deployable = min(10000,2)=2
+        sig = make_signal(outcome="Yes", sig_date="2026-05-09", notional=10000.0)
+        r = simulate_one(sig, self.ps, BASE, "realistic", "+1d")
+        assert r.deployable == pytest.approx(2.0)            # 容量上限封顶
+        gas = BASE.gas_usd / r.deployable                    # gas 摊到 deployable
+        assert r.net_ret == pytest.approx(r.gross_ret - gas) # 仅 gas,无 impact
+        # 反证:若仍按旧模型罚冲击,net 会比这低 ~0.5
+        assert r.net_ret > r.gross_ret - 0.1
 
 
 class TestRunBacktest:
@@ -235,13 +247,13 @@ class TestPearson:
         assert pearson([1, 2], [3, 4]) is None
 
 
-def _tr(wallet, net):
+def _tr(wallet, net, deployable=10.0):
     """最小 TradeResult(只填 whale_alpha 用到的字段)。"""
     from engine.portfolio import TradeResult
     return TradeResult(
         wallet=wallet, market="m", outcome="Yes", sig_date=date(2026, 5, 9),
         horizon="resolution", entry_date=date(2026, 5, 9), entry_price=0.5,
-        mark_date=date(2026, 5, 13), mark_price=0.6, deployable=10.0,
+        mark_date=date(2026, 5, 13), mark_price=0.6, deployable=deployable,
         gross_ret=net, net_ret=net, markable_days=5, resolved=True)
 
 
@@ -255,9 +267,25 @@ class TestWhaleAlpha:
         wa = whale_alpha(results, min_trades=3)
         wallets = [w.wallet for w in wa]
         assert "0xRARE" not in wallets            # 出现次数不足被过滤
-        assert wallets == ["0xWIN", "0xLOSE"]     # 按净均值降序
+        assert wallets == ["0xWIN", "0xLOSE"]     # deployable 均等 → 资金加权=等权,降序
         assert wa[0].mean_net == pytest.approx(0.2)
+        assert wa[0].mean_net_cw == pytest.approx(0.2)   # 均等容量下两口径一致
         assert wa[0].win_rate == pytest.approx(2 / 3)
+
+    def test_sort_by_capital_weighted_not_equal_weighted(self):
+        """资金加权排序应区别于等权:大赢家若在薄市场(deployable 小)则排名被压低。"""
+        results = [
+            # 0xTHIN:等权高(+0.5)但赢的那笔只能下 $1,亏的能下 $99 → 资金加权≈亏
+            _tr("0xTHIN", 1.0, deployable=1.0), _tr("0xTHIN", 0.0, deployable=99.0),
+            # 0xFAT:等权低(+0.1)但都是大额、稳定正 → 资金加权也 +0.1
+            _tr("0xFAT", 0.1, deployable=100.0), _tr("0xFAT", 0.1, deployable=100.0),
+        ]
+        wa = whale_alpha(results, min_trades=2)
+        by = {w.wallet: w for w in wa}
+        assert by["0xTHIN"].mean_net == pytest.approx(0.5)          # 等权高
+        assert by["0xTHIN"].mean_net_cw == pytest.approx(0.01)      # (1*1+0*99)/100
+        assert by["0xFAT"].mean_net_cw == pytest.approx(0.1)
+        assert [w.wallet for w in wa] == ["0xFAT", "0xTHIN"]        # 资金加权下 FAT 排前
 
 
 class TestHorizonSummaryAndVerdict:
@@ -284,11 +312,50 @@ class TestHorizonSummaryAndVerdict:
         assert "1-2d" in s["by_markable_days"]
         assert s["total_deployable"] == pytest.approx(15.0)
 
-    def test_verdict_positive_negative_insufficient(self):
+    def test_capital_weighted_vs_equal_weighted(self):
+        """资金加权按 deployable 加权,与等权不同;edge 若在薄市场会被打回。"""
+        from engine.metrics import horizon_summary
+        from engine.portfolio import TradeResult
+        # 一笔小钱大赚(deployable=10, net=+1.0)、一笔大钱小亏(deployable=90, net=-0.1)
+        results = [
+            TradeResult("0xa", "m", "Yes", date(2026, 5, 9), "resolution",
+                        date(2026, 5, 9), 0.5, date(2026, 5, 13), 1.0,
+                        10.0, 1.0, 1.0, markable_days=5, resolved=True),
+            TradeResult("0xb", "m", "Yes", date(2026, 5, 9), "resolution",
+                        date(2026, 5, 9), 0.5, date(2026, 5, 10), 0.45,
+                        90.0, -0.1, -0.1, markable_days=5, resolved=True),
+        ]
+        s = horizon_summary(results)
+        # 等权 = (1.0 + -0.1)/2 = 0.45;资金加权 = (1.0*10 + -0.1*90)/100 = 0.01
+        assert s["net"]["mean"] == pytest.approx(0.45)
+        cw = s["capital_weighted"]
+        assert cw["mean_net"] == pytest.approx(0.01)
+        assert cw["deployable"] == pytest.approx(100.0)
+        # 按资金胜率:只有 deployable=10 的赚 → 10/100
+        assert cw["win_rate"] == pytest.approx(0.10)
+
+    def test_cap_stats_zero_deployable(self):
+        from engine.metrics import _cap_stats
+        from engine.portfolio import TradeResult
+        r = TradeResult("0xa", "m", "Yes", date(2026, 5, 9), "resolution",
+                        date(2026, 5, 9), 0.5, date(2026, 5, 13), 0.6,
+                        0.0, 0.2, 0.2, markable_days=5, resolved=True)
+        cw = _cap_stats([r])
+        assert cw["mean_net"] is None and cw["deployable"] == 0.0
+
+    def test_verdict_three_states(self):
         from engine.metrics import verdict
-        assert verdict({"n": 10, "mean": 0.1, "win_rate": 0.5}).startswith("⚠️")  # n<30
+        # 样本不足
+        assert verdict({"n": 10, "mean": 0.1, "win_rate": 0.5}).startswith("⚠️")
+        # 🔴 等权就亏(无论资金加权)
+        assert "🔴" in verdict({"n": 50, "mean": -0.05, "win_rate": 0.2}, 0.1)
+        # 🟢 资金加权为正 → 可放大
+        assert "🟢" in verdict({"n": 50, "mean": 0.05, "win_rate": 0.4}, 0.03)
+        # 🟡 等权正但资金加权≤0 → 仅微仓(本次核心发现)
+        v = verdict({"n": 50, "mean": 0.18, "win_rate": 0.2}, -0.04)
+        assert "🟡" in v and "仅微仓" in v
+        # 无容量数据时退回等权(向后兼容旧调用)
         assert "🟢" in verdict({"n": 50, "mean": 0.05, "win_rate": 0.4})
-        assert "🔴" in verdict({"n": 50, "mean": -0.05, "win_rate": 0.2})
 
 
 # ============================================================
@@ -369,3 +436,64 @@ class TestConnect:
         from engine.data import connect
         with pytest.raises(FileNotFoundError):
             connect("/nonexistent/path/to.db")
+
+
+# ============================================================
+# strategies/selective_whale.py — 精选过滤(全部入场时已知条件)
+# ============================================================
+
+class TestSelectiveWhale:
+    def _tr(self, wallet="0xa", entry=0.5, entry_date="2026-05-09", market="m1"):
+        from engine.portfolio import TradeResult
+        return TradeResult(
+            wallet=wallet, market=market, outcome="Yes",
+            sig_date=_to_date(entry_date), horizon="resolution",
+            entry_date=_to_date(entry_date), entry_price=entry,
+            mark_date=_to_date("2026-05-20"), mark_price=0.6,
+            deployable=10.0, gross_ret=0.1, net_ret=0.1,
+            markable_days=5, resolved=True)
+
+    def _prices(self, end_date="2026-05-20"):
+        return {"m1": make_series([("2026-05-09", 0.5)], end_date=end_date)}
+
+    def test_entry_price_bounds(self):
+        from strategies.selective_whale import passes
+        pr = self._prices()
+        assert passes(self._tr(entry=0.5), pr, max_entry_price=0.85)
+        assert not passes(self._tr(entry=0.90), pr, max_entry_price=0.85)  # 太贵剔除
+        assert not passes(self._tr(entry=0.02), pr, min_entry_price=0.05)  # 太便宜剔除
+        # 边界:max 为开区间,min 为闭区间
+        assert not passes(self._tr(entry=0.85), pr, max_entry_price=0.85)
+        assert passes(self._tr(entry=0.05), pr, min_entry_price=0.05)
+
+    def test_dte_filter_uses_end_date_not_lookahead(self):
+        from strategies.selective_whale import passes, days_to_resolution
+        tr = self._tr(entry_date="2026-05-09")
+        # end_date=05-20 → dte=11 天
+        assert days_to_resolution(tr, self._prices("2026-05-20")) == 11
+        assert passes(tr, self._prices("2026-05-20"), max_dte=14)      # 11<=14 通过
+        assert not passes(tr, self._prices("2026-06-30"), max_dte=14)  # 52>14 剔除
+
+    def test_dte_none_end_date_excluded(self):
+        from strategies.selective_whale import passes, days_to_resolution
+        tr = self._tr()
+        pr = {"m1": make_series([("2026-05-09", 0.5)], end_date=None)}
+        assert days_to_resolution(tr, pr) is None
+        assert not passes(tr, pr, max_dte=14)   # 到期日未知 → 不算短周期,剔除
+        assert passes(tr, pr)                   # 无 dte 约束时不受影响
+
+    def test_wallet_allowlist(self):
+        from strategies.selective_whale import passes
+        pr = self._prices()
+        assert passes(self._tr(wallet="0xWIN"), pr, wallets={"0xWIN"})
+        assert not passes(self._tr(wallet="0xBAD"), pr, wallets={"0xWIN"})
+
+    def test_filter_results_combines_conditions(self):
+        from strategies.selective_whale import filter_results
+        pr = self._prices("2026-05-20")
+        rs = [
+            self._tr(wallet="0xa", entry=0.5),     # 通过
+            self._tr(wallet="0xa", entry=0.95),    # 太贵
+        ]
+        out = filter_results(rs, pr, max_entry_price=0.85, max_dte=14)
+        assert len(out) == 1 and out[0].entry_price == 0.5

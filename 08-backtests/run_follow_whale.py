@@ -55,6 +55,9 @@ def _print_horizon(h: str, summ: dict):
         print(f"    中位 {_fmt(net['median'],1)}  类夏普 {_fmt(net['sharpe_like'])}  "
               f"区间[{_fmt(net['min'],1)}, {_fmt(net['max'],1)}]  "
               f"可部署本金 ${summ['total_deployable']:,.0f}")
+        cw = summ["capital_weighted"]
+        print(f"    📊 资金加权净均值 {_fmt(cw['mean_net'],1)}  "
+              f"(按资金胜率 {_fmt(cw['win_rate'],1)})  ← 可放大口径,诚实之锚")
     ro = summ["resolved_only_net"]
     if ro["n"]:
         print(f"    (仅已结算 n={ro['n']}: 净均值 {_fmt(ro['mean'],1)} 胜率 {_fmt(ro['win_rate'],1)})")
@@ -122,22 +125,23 @@ def main():
             summ = horizon_summary(results[h])
             _print_horizon(h, summ)
             cost_block["horizons"][h] = summ
-            cost_block["verdict"][h] = verdict(summ["net"])
+            cost_block["verdict"][h] = verdict(
+                summ["net"], summ["capital_weighted"]["mean_net"])
 
         # 鲸鱼 alpha:以 resolution(无则 +7d)为主口径
         primary = "resolution" if "resolution" in results else args.horizons[-1]
         wa = whale_alpha(results[primary], min_trades=args.min_whale_trades)
-        print(f"\n  🐋 鲸鱼 alpha(口径={primary}, 最小{args.min_whale_trades}单, 取 top/bottom）")
+        print(f"\n  🐋 鲸鱼 alpha(口径={primary}, 最小{args.min_whale_trades}单, 按资金加权排序）")
         if wa:
             print("    最值得跟 ↑")
             for w in wa[:args.top_whales]:
-                print(f"      {w.wallet[:10]}…  n={w.n:3d}  净均值 {_fmt(w.mean_net,1)}  "
-                      f"胜率 {_fmt(w.win_rate,1)}")
+                print(f"      {w.wallet[:10]}…  n={w.n:3d}  资金加权 {_fmt(w.mean_net_cw,1)}  "
+                      f"等权 {_fmt(w.mean_net,1)}  胜率 {_fmt(w.win_rate,1)}")
             if len(wa) > args.top_whales:
                 print("    最该避开 ↓")
                 for w in wa[-5:]:
-                    print(f"      {w.wallet[:10]}…  n={w.n:3d}  净均值 {_fmt(w.mean_net,1)}  "
-                          f"胜率 {_fmt(w.win_rate,1)}")
+                    print(f"      {w.wallet[:10]}…  n={w.n:3d}  资金加权 {_fmt(w.mean_net_cw,1)}  "
+                          f"等权 {_fmt(w.mean_net,1)}  胜率 {_fmt(w.win_rate,1)}")
         else:
             print("    (无鲸鱼达到最小出现次数门槛)")
         cost_block["whale_alpha_primary_horizon"] = primary

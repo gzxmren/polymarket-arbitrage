@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from engine.costs import PRESETS
 from engine.data import connect, load_price_series
-from engine.metrics import pearson
+from engine.metrics import _cap_stats, pearson
 from engine.portfolio import run_backtest
 from strategies.follow_whale import generate_signals
 
@@ -96,9 +96,12 @@ def main():
 
     # ---- 基线:test 段无差别跟全部 ----
     base = _agg([r.net_ret for r in test_res])
+    base_cw = _cap_stats(test_res)
     print(f"\n【基线】test 段无差别跟全部鲸鱼:")
-    print(f"  n={base['n']}  净均值 {base['mean']*100:+.2f}%  "
+    print(f"  n={base['n']}  等权净 {base['mean']*100:+.2f}%  "
           f"中位 {base['median']*100:+.2f}%  胜率 {base['win_rate']*100:.1f}%")
+    if base_cw["mean_net"] is not None:
+        print(f"  资金加权净 {base_cw['mean_net']*100:+.2f}%(诚实之锚)")
 
     # ---- 选拔:train 段赢家 ----
     train_tbl = _whale_table(train_res, args.min_train_trades)
@@ -109,12 +112,15 @@ def main():
     # ---- 样本外检验:test 段只跟被选中的鲸鱼 ----
     sel_test = [r for r in test_res if r.wallet in selected]
     sel = _agg([r.net_ret for r in sel_test])
+    sel_cw = _cap_stats(sel_test)
     print(f"\n【样本外检验】test 段只跟'训练赢家':")
     if sel["n"]:
-        print(f"  n={sel['n']}  净均值 {sel['mean']*100:+.2f}%  "
+        print(f"  n={sel['n']}  等权净 {sel['mean']*100:+.2f}%  "
               f"中位 {sel['median']*100:+.2f}%  胜率 {sel['win_rate']*100:.1f}%")
+        if sel_cw["mean_net"] is not None:
+            print(f"  资金加权净 {sel_cw['mean_net']*100:+.2f}%(诚实之锚)")
         delta = (sel["mean"] - base["mean"]) * 100
-        print(f"  vs 基线: {delta:+.2f} 个百分点 "
+        print(f"  vs 基线(等权): {delta:+.2f} 个百分点 "
               f"({'选拔有效✅' if delta > 0 else '选拔无效❌'})")
     else:
         print("  ⚠️ 训练赢家在 test 段无可标记交易 → 无法样本外验证(数据不足)。")

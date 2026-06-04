@@ -9,6 +9,13 @@
 
 持有期标记:+Nd 用 entry_date+N 之后第一个快照价;resolution 用终值价(收敛 0/1)。
 预测市场持仓 = 以 entry 价买 outcome,每股结算时值 0 或 1 → 收益率 = (mark-entry)/entry。
+
+容量口径(2026-06-05 修正,见 diagnose_follow_whale.py):
+  容量是"吞吐上限"(我们最多放到 deployable=min(想跟的量, 容量)),不是"每笔收益扣血"。
+  既然我们从不超过容量,就不产生市场冲击 → 收益率(%)与下单规模无关,只被滑点(已并入入场价)
+  和固定 gas(摊到我们实际部署的 deployable 本金,而非鲸鱼全额 notional)拖累。
+  旧实现用鲸鱼全额 notional 去罚 impact,等于假设我们照搬鲸鱼 $几十万的单去打深度——
+  那不是策略亏,是建模把账算亏了。容量的真实代价是"能部署的钱更少"(体现在 total_deployable)。
 """
 
 from __future__ import annotations
@@ -107,8 +114,10 @@ def simulate_one(
 
     gross = (mark_price - entry_price) / entry_price
 
+    # 容量=吞吐上限:我们最多放到 deployable;不超过容量 → 无冲击。
+    # 成本只剩固定 gas,摊到我们实际部署的本金(deployable),而非鲸鱼全额 notional。
     deployable = cost.deployable(sig.notional, cap)
-    net = gross - cost.gas_drag(sig.notional) - cost.impact_drag(sig.notional, cap)
+    net = gross - cost.gas_drag(deployable)
 
     return TradeResult(
         wallet=sig.wallet, market=sig.market, outcome=sig.outcome,
