@@ -11,6 +11,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "06-tools" / "analysis"))
 sys.path.insert(0, str(PROJECT_ROOT / "06-tools" / "monitoring"))
+sys.path.insert(0, str(PROJECT_ROOT / "08-backtests"))  # 回测 engine 包(相对导入)
 
 
 # 测试 fixtures

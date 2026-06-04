@@ -17,7 +17,7 @@ jobs:
           python-version: "3.11"
       - name: py_compile 活跃代码
         run: |
-          python -m compileall -q 06-tools/analysis 06-tools/monitoring dashboard/backend/app scripts
+          python -m compileall -q 06-tools/analysis 06-tools/monitoring dashboard/backend/app scripts 08-backtests
 
   unit-tests:
     name: 单元测试
