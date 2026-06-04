@@ -67,3 +67,8 @@ dashboard/build/
 .env
 .env.local
 .env.*.local
+
+# 回测产物 + 测试工具临时文件
+08-backtests/results/
+.coverage
+.hypothesis/
