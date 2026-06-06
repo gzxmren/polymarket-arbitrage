@@ -50,13 +50,15 @@ class APIConfig:
     DATA_API = "https://data-api.polymarket.com"
     
 # 数据库表名
+# 注: 本类当前全项目无引用(预留常量)。改名时务必同步真实表名,避免与 SQL 字面量漂移。
 class DBTables:
     """数据库表名"""
     WHALES = "whales"
     POSITIONS = "positions"
     CHANGES = "changes"
     ALERTS = "alerts"
-    SIGNALS = "semantic_signals"
+    SIGNALS = "signals"                    # Phase-3 质量/自动化信号表(真实存在,当前为空)
+    SEMANTIC_SIGNALS = "semantic_signals"  # semantic_scanner.py 按需自建的语义套利表
 
 if __name__ == "__main__":
     print("项目配置信息:")

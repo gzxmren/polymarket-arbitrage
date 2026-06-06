@@ -55,12 +55,16 @@ cd dashboard && make test                             # backend pytest (dashboar
 
 ## Known data-integrity issues (state, not aspiration)
 
-A 2026-06 review against the live DB found significant data corruption; treat existing data as suspect and **do not stack new strategies on top of dirty data**:
-- `whales` table is ~98% garbage rows (`total_value=0, position_count=0`) — `data_sync.py::sync_whales` lacks a value gate before insert.
-- DB is ~47% freelist dead space (never VACUUMed).
-- `has_activity` has a monotonic set-once bug in `data_sync.py` (`CASE WHEN excluded.has_activity=1 THEN 1 ELSE ... END` never resets to 0).
-- Phase-3 "quality & automation" tables (`signals`, `signal_results`, `whale_performance`, `strategy_performance`, `quality_reports`, `threshold_history`, `opportunity_history`) are all empty — code merged but the scheduling chain isn't running.
-- `config.DBTables.SIGNALS='semantic_signals'` but the real table is `signals` — name drift.
-- No file rotation: hundreds of `monitor_report_*.json`, `whale_states/*.json`, and `positions_archive` (3.4× `positions`) accumulate without TTL.
+A 2026-06 review flagged data corruption. **Re-verified against the live DB on 2026-06-06 — most items are already remediated.** Authoritative check: `python3 scripts/data_health_check.py` (junk 0.0% / dead-space 0.5% / has_activity-mislabel 0 as of 2026-06-06).
 
-Full analysis: `PROJECT_REVIEW.md` and `PROJECT_OVERVIEW.md` at repo root.
+RESOLVED (verified):
+- ~~`whales` table ~98% garbage~~ → **junk rate now 0.0%** (only 1 truly-empty row of 3035). The original "98% garbage" used a flawed predicate (`total_value=0 AND position_count=0`): that catches *trade-flow whales* (real `total_volume`/`changes_count`, just no current position snapshot — these are the follow-whale signal source and are **not** garbage). `data_sync.py::sync_whales` now has a value gate (`[P0-2]`, ~line 137); `scripts/cleanup_whales.py` deletes only true empties (`changes_count=0 AND total_volume=0`).
+- ~~~47% freelist dead space~~ → **0.5% now** (DB VACUUMed; ~51 MB, was ~138 MB).
+- ~~`has_activity` set-once bug~~ → main `data_sync.py` path now direct-assigns (`has_activity = excluded.has_activity`, can reset to 0). `sync_changes.py` hardcodes `=1` but only for wallets with a change this batch (correct, not a bug — see inline comment).
+- ~~`config.DBTables.SIGNALS` name drift~~ → fixed: `SIGNALS='signals'`, added `SEMANTIC_SIGNALS='semantic_signals'`. NB: the whole `DBTables` class has **0 references** project-wide (reserved constants only).
+
+STILL OPEN:
+- Phase-3 "quality & automation" tables (`signals`, `signal_results`, `whale_performance`, `strategy_performance`, `quality_reports`, `threshold_history`, `opportunity_history`) are all empty — code merged but the scheduling chain isn't running. (This is an unfinished feature, not corruption.)
+- No file/archive rotation/TTL: `07-data` ≈ 286 MB / ~2200 files; `monitor_report_*.json`, `whale_states/*.json`, and `positions_archive` (~38.6k rows, 3.4× `positions`) accumulate. Housekeeping only — disk, not correctness.
+
+Full analysis: `PROJECT_REVIEW.md` (+ 2026-06-06 correction note at top) and `PROJECT_OVERVIEW.md`.

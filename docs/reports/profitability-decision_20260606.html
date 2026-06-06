@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>决策文档：本项目能否在 Polymarket 实盘盈利？(2026-06-06)</title>
+<style>
+  :root{
+    --bg:#fafafa; --card:#fff; --ink:#1f2329; --sub:#5b6470; --line:#e6e8eb;
+    --good:#1a7f37; --bad:#cf222e; --warn:#9a6700; --accent:#2563eb; --accent-bg:#eef4ff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#0d1117;--card:#161b22;--ink:#e6edf3;--sub:#9aa4b2;--line:#283039;
+      --good:#3fb950;--bad:#f85149;--warn:#d29922;--accent:#58a6ff;--accent-bg:#11203a;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.75;font-size:16px}
+  .wrap{max-width:860px;margin:0 auto;padding:32px 20px 80px}
+  header{border-bottom:2px solid var(--line);padding-bottom:18px;margin-bottom:8px}
+  h1{font-size:26px;margin:0 0 6px}
+  .meta{color:var(--sub);font-size:13px}
+  h2{font-size:21px;margin:38px 0 10px;padding-top:8px;border-top:1px solid var(--line)}
+  h3{font-size:17px;margin:22px 0 6px}
+  p{margin:10px 0}
+  .lead{font-size:17px;background:var(--accent-bg);border-left:4px solid var(--accent);
+    padding:14px 16px;border-radius:8px;margin:18px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:16px 0}
+  .tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:20px;margin-right:6px}
+  .t-no{background:#fde7e9;color:var(--bad)} .t-mid{background:#fff3d6;color:var(--warn)}
+  .t-ok{background:#e3f7e8;color:var(--good)}
+  @media (prefers-color-scheme: dark){
+    .t-no{background:#3a1115}.t-mid{background:#3a2f0a}.t-ok{background:#0f2a17}}
+  .good{color:var(--good);font-weight:700} .bad{color:var(--bad);font-weight:700}
+  .warn{color:var(--warn);font-weight:700}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14.5px}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--accent-bg);font-weight:600}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;font-weight:700;padding:2px 10px;border-radius:20px;font-size:13px}
+  .pill-no{background:#fde7e9;color:var(--bad)} .pill-ok{background:#e3f7e8;color:var(--good)} .pill-mid{background:#fff3d6;color:var(--warn)}
+  @media (prefers-color-scheme: dark){.pill-no{background:#3a1115}.pill-ok{background:#0f2a17}.pill-mid{background:#3a2f0a}}
+  blockquote{margin:14px 0;padding:10px 16px;border-left:4px solid var(--warn);background:var(--card);border-radius:8px;color:var(--sub)}
+  .redline{border:1px dashed var(--bad);border-radius:12px;padding:14px 18px;margin:16px 0;background:var(--card)}
+  .redline h3{color:var(--bad);margin-top:0}
+  ol,ul{margin:10px 0 10px 4px;padding-left:22px}
+  li{margin:6px 0}
+  code{background:var(--accent-bg);padding:1px 6px;border-radius:5px;font-size:13.5px}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--sub);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>这个项目能否在 Polymarket 实盘盈利？</h1>
+  <div class="meta">决策文档 · 2026-06-06 (UTC+8) · 基于 live DB / 回测结果 / 代码实测 · 配套 MD：<code>docs/DECISION_PROFITABILITY_2026-06-06.md</code></div>
+</header>
+
+<div class="lead">
+<b>一句话结论：</b>当前证据与"实盘盈利"目标<b>冲突</b>。修数据、修 bug、补工程债都基本做完，但<b>这些都不是赚钱的瓶颈</b>——
+瓶颈是<b>还没有任何一个策略通过"真金白银（资金加权）为正"的测试</b>。继续做"修复类"工作不会让这个数字由负转正。
+</div>
+
+<h2>1. 实盘盈利需要三根支柱：1 根够，2 根缺</h2>
+
+<div class="card">
+<h3><span class="pill pill-no">❌ 缺</span> 支柱① 一个"扛得住真实资金"的盈利策略 —— 真正的拦路虎</h3>
+<p>最新回测（<code>selective_whale_20260605</code>，+1d）摊开看：</p>
+<table>
+<tr><th>口径</th><th class="num">均值/信号</th><th class="num">胜率</th><th>含义</th></tr>
+<tr><td>等权（每个信号 1 票）</td><td class="num good">+52.4%</td><td class="num">51.0%</td><td>看着很美</td></tr>
+<tr><td><b>资金加权（每元投入）</b></td><td class="num bad">−0.85%</td><td class="num">44.8%</td><td><b>放大即亏</b></td></tr>
+</table>
+<blockquote>脚本自身判决：🟡 仅微仓可行：等权 +52.40%/信号 但资金加权 −0.85%/每元投入 ≤0——<b>edge 集中在铺不开钱的薄市场，放大即亏。</b></blockquote>
+<p>三个策略全部未通过真实资金测试，病根一致：</p>
+<table>
+<tr><th>策略</th><th>结果</th><th>病根</th></tr>
+<tr><td>跟鲸鱼 base/resolution</td><td><span class="bad">🔴 净 −2.29% / 胜率 19.5%</span></td><td>64% 信号是鲸鱼在 ≥0.85 高价买准定局，上行封顶</td></tr>
+<tr><td>跨市场套利 C-2</td><td><span class="bad">🔴 暂砍</span></td><td>真等价对已被套到 &lt;1¢、规格错配</td></tr>
+<tr><td>精选（过滤后）</td><td><span class="warn">🟡 等权 +52% / 资金加权 −0.85%</span></td><td>edge 在薄市场，上规模被成本+深度吃光</td></tr>
+</table>
+<p><b>共同结论：</b>能赚的钱都藏在<b>薄市场 + 彩票型分布</b>（极少数 36~40 倍大赢家撑起均值）里，一上规模就消失。这不是 bug，是<b>还没找到真 edge</b>。</p>
+</div>
+
+<div class="card">
+<h3><span class="pill pill-no">❌ 缺</span> 支柱② 下单 / 执行能力</h3>
+<p><code>06-tools/trading/</code> 只有一个 README。整个系统是<b>只读 / 建议性</b>的：能监控、报警、回测，但<b>没有一行下单代码</b>。
+实盘还需从零建：CLOB 私钥签名下单、成交回报、持仓对账、风控限额、熔断开关、密钥安全。</p>
+</div>
+
+<div class="card">
+<h3><span class="pill pill-ok">✅ 够</span> 支柱③ 干净的数据底座</h3>
+<p>2026-06-06 实测：垃圾率 0.0% / 死空间 0.5% / has_activity 错标 0。<b>但这从来不是赚钱的瓶颈。</b></p>
+</div>
+
+<h2>2. "整个项目的修复"修到哪了？</h2>
+<ul>
+<li><b>当监控 / 研究平台看：</b>相当完整、能跑——分层清晰、回测引擎可用、鲸鱼分析有深度。修复类工作<b>大头已完成</b>，边际收益递减。</li>
+<li><b>当实盘盈利机器看：</b><b>还在第 1 步原地踏步</b>——<code>先验证再投</code>，而验证结果一直是"未通过"。</li>
+</ul>
+
+<h2>3. 三条路（方向选择）</h2>
+<table>
+<tr><th>路</th><th>是什么</th><th>前提 / 风险</th></tr>
+<tr><td><b>路1</b> 继续找 edge（纯研究）</td><td>在回测引擎上试新假设，目标=<b>资金加权净收益转正</b></td><td>可能试很多都是负的；纯离线，零资金风险</td></tr>
+<tr><td><b>路2</b> 微仓真实盘验证</td><td>建最小执行层+严格风控，几百刀真钱验证"等权 edge"是否真实存在</td><td>回测≠实盘；薄市场+彩票分布→小样本噪声极大，可能既不显著又亏样本钱</td></tr>
+<tr><td><b>路3</b> 暂不投实盘</td><td>继续当监控/学习工具，等找到真信号</td><td>零风险，但目标搁置</td></tr>
+</table>
+
+<h2>4. 推荐路线：<span style="color:var(--accent)">2 为台、1 为目标（混合）</span></h2>
+<p>用户倾向"在 2 的基础上推进 1"。合理，<b>但必须把路2 定位成"测量仪器"，不是"赚钱手段"。</b></p>
+
+<h3>4.1 为什么这个组合成立</h3>
+<ul>
+<li><b>回测 ≠ 实盘：</b>真实成交、滑点、薄市场冲击，正是资金加权回测在"估算"的东西。微仓实盘给的是<b>地面真值</b>。</li>
+<li><b>执行层早晚要建：</b>用<b>封顶+熔断</b>的最小版先建，安全且提前还工程债。</li>
+<li>用真实（小额）实验迭代"找 edge"，比纯靠历史回测更接近实战。</li>
+</ul>
+
+<h3>4.2 必须先讲清的风险（别自欺）</h3>
+<ul>
+<li>edge 在<b>薄市场</b>：即便微仓也可能自己推动价格；</li>
+<li>等权 +52% 是<b>彩票型</b>（靠极少数大赢家）：几百刀、几十笔样本<b>统计上证明不了 edge</b>，且很可能在等到赢家前先连亏一串；</li>
+<li>执行层=真金白银+私钥签名+操作风险，<b>不是写个脚本就完</b>。</li>
+<li><b>结论：路2 阶段一的目的是"校准仪器 + 验证执行假设"，不是盈利。</b></li>
+</ul>
+
+<h3>4.3 分阶段 + 硬门槛（Go / No-Go）</h3>
+<table>
+<tr><th>阶段</th><th>内容</th><th>进入下一阶段的硬门槛</th></tr>
+<tr><td><b>P0 离线（路1）</b></td><td>把"精选 edge"打磨到资金加权 ≥0 的候选；选可执行薄市场子集</td><td>至少 1 个候选 OOS 资金加权 ≥0</td></tr>
+<tr><td><b>P1 影子盘</b></td><td>不下真单，按实时盘口记录"若下单会如何成交"，对齐回测假设</td><td>影子盘成交假设与回测偏差 &lt; 阈值</td></tr>
+<tr><td><b>P2 微仓实盘（路2 台）</b></td><td>极小资金（先 $100~300）、单笔封顶、日亏熔断、人工确认每单</td><td>N 笔后复盘：执行假设成立 <b>且</b> 未触发熔断</td></tr>
+<tr><td><b>P3 谨慎放大</b></td><td>仅当 P2 执行无偏差 <b>且</b> 资金加权期望仍为正，才小步加仓</td><td>每步都要资金加权为正 + 风控达标</td></tr>
+</table>
+
+<div class="redline">
+<h3>⛔ 绝对红线</h3>
+<p>任何阶段先设<b>总资金上限</b>和<b>最大可承受亏损</b>；先建<b>熔断 / kill-switch</b> 再下第一单；私钥/密钥按现有 <code>.gitignore</code> 隔离规范处理，<b>绝不入库</b>。</p>
+</div>
+
+<h2>5. 回答："我们能否在 2 的基础上推进 1？"</h2>
+<div class="card">
+<p><b>能，而且推荐——但带三个前置条件：</b></p>
+<ol>
+<li><b>先把路2 定位成测量仪器</b>（校准执行假设），不是盈利来源；</li>
+<li><b>路1 先在离线产出至少一个"资金加权 ≥0"的候选</b>，再让路2 去实盘验证它（否则就是拿真钱去赌一个回测已知为负的东西）；</li>
+<li><b>执行层从"最小封顶+熔断"建起</b>，每阶段卡 Go/No-Go 硬门槛。</li>
+</ol>
+<p style="margin-top:12px">换句话说：不是"先建执行层去碰运气"，而是 <b>离线把候选磨到不亏 → 用微仓真实盘验证它是不是真的不亏 → 才谈放大</b>。</p>
+</div>
+
+<h2>6. 建议的下一步（落地动作）</h2>
+<p>第 1 步是<b>纯离线、零资金风险</b>，可立刻开干；第 2 步起涉及真钱/私钥，<b>需用户明确授权后再动</b>。</p>
+<ol>
+<li><b>(P0，离线)</b> "精选 edge 资金加权攻坚"：系统性扫参数/市场子集，看能否找到 OOS 资金加权 ≥0 的候选，产出候选清单+判决。</li>
+<li><b>(P1，离线)</b> 若有候选，搭<b>影子盘/纸面执行</b>框架（读实时盘口、模拟成交、不下真单），对齐回测假设。</li>
+<li><b>(P2，需授权)</b> 仅当 P0/P1 通过，才设计<b>最小执行层 + 风控/熔断</b>，微仓实盘。</li>
+</ol>
+
+<footer>
+当前等待用户拍板：是否从第 1 步（离线攻坚资金加权候选）开始。<br>
+本文为决策记录，不构成投资建议；预测市场高效，历史回测不保证未来收益。
+</footer>
+</div>
+</body>
+</html>

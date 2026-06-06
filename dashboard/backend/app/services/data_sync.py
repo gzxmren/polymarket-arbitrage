@@ -134,8 +134,10 @@ class DataSyncService:
                 positions = whale_data['positions']
                 total_value = whale_data['total_value']
 
-                # [P0-2] 价值闸门：跳过空行(无持仓且无价值)，避免落库垃圾数据。
-                # 重点关注鲸鱼(is_watched)始终保留。与 scripts/cleanup_whales.py 的清洗条件保持一致。
+                # [P0-2] 价值闸门：whale_states 来源若无持仓且无价值且非重点关注，跳过不落库。
+                # 注: 此闸门只拦 whale_states 来源的新空行；trade-flow 鲸鱼(有成交量/笔数但暂无
+                # 持仓快照)由 sync_changes.py 维护、不经此路径，故此处无需再查 changes_count/total_volume。
+                # 删除存量空壳见 scripts/cleanup_whales.py(判据更严: 还要求 changes_count=0 且 total_volume=0)。
                 if total_value <= 0 and len(positions) == 0 and not whale_data['is_watched']:
                     continue
 
@@ -168,6 +170,12 @@ class DataSyncService:
                     pass
                 
                 # 插入或更新鲸鱼数据（用 ON CONFLICT 避免覆盖 volume/pnl 等）
+                # 语义说明(防误改):
+                #  - has_activity / total_value / position_count = 直接赋值 → 能归零(已修复评审反馈的
+                #    set-once bug,数据来自 whale_state JSON,权威)。
+                #  - total_pnl / changes_count / total_volume = "保优"语义: 仅当本次传入>0/非0才覆盖,
+                #    否则保留旧值。这是有意为之——本路径不重算这三项(传 0/空),避免被冲掉。代价: 真值
+                #    若确实回落到 0/空不会刷新(罕见,可接受)。
                 cursor.execute('''
                     INSERT INTO whales 
                     (wallet, pseudonym, total_value, position_count, top5_ratio, 

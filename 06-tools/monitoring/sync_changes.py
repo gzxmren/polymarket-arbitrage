@@ -138,6 +138,9 @@ def save_changes_to_db(trades):
                 wallet, pseudonym, now_iso, _ = row
                 wallet_volume = sum(r[6] for r in changes_data if r[0] == wallet)
                 wallet_trades = sum(1 for r in changes_data if r[0] == wallet)
+                # has_activity 恒为 1: 本循环只处理"本批确有成交"的钱包,标 1 语义正确,不是 set-once bug。
+                # 这些是 trade-flow 鲸鱼(有成交量/笔数但暂无持仓快照),total_value/position_count 留默认 0,
+                # 由 cleanup_whales.py 明确判定为"非垃圾"(见其 JUNK_WHERE 注释),不会被清洗。
                 cursor.execute('''
                     INSERT INTO whales (wallet, pseudonym, last_updated, total_volume, changes_count, has_activity)
                     VALUES (?, ?, ?, ?, ?, 1)

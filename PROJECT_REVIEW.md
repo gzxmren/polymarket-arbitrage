@@ -1,5 +1,11 @@
 # Polymarket 智能监控系统 — 全面评审报告
 
+> 🟩 **2026-06-06 复核更正（置顶）**：本报告"数据腐化专项"的多数结论**已过时/已修复**。复核 live DB(`data_health_check.py`)：
+> 垃圾率 **0.0%**(非 98%)、死空间 **0.5%**(非 47%)、has_activity 错标 **0**。
+> 其中"whales 98% 垃圾"判据本身有误——`total_value=0 AND position_count=0` 会把**有真实成交量/笔数、仅无当前持仓快照的 trade-flow 鲸鱼**(跟鲸鱼信号源)误判为垃圾;真·空壳仅 1 行。
+> 修复已落地:`data_sync.py` 价值闸门(P0-2) + `scripts/cleanup_whales.py`(正确判据) + VACUUM。
+> 仍开放项:Phase-3 七张空表(未接调度,非腐化)、无 TTL 文件/归档轮转(磁盘卫生)。下文原文保留作历史记录。
+
 > **评审时间**：2026-06-02 (UTC+8)
 > **评审对象**：`v2.0-development` 分支（最近提交 `8d4c5d1 Phase 3: 质量监控与自动化`）
 > **评审方法**：通读源码 + 实际查询运行库（`dashboard/backend/database/polymarket.db`，138 MB）+ 核对设计文档与运行数据
