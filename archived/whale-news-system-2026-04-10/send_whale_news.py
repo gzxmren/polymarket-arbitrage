@@ -17,7 +17,7 @@ from whale_news_connector import WhaleNewsConnector
 from telegram_notifier_v2 import send_telegram_message
 
 # 数据目录
-DATA_DIR = Path(__file__).parent.parent.parent / "07-data"
+from config import DATA_DIR
 WHALE_STATES_DIR = DATA_DIR / "whale_states"
 
 

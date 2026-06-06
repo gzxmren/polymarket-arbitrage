@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 """
-Pair Cost 策略回测框架
+[DEPRECATED 2026-06-04] 假回测,勿用。
+
+本脚本无成本模型/无持仓/无结算,核心仅一行拍脑袋公式
+  simulated_count = count * (1 + (0.995 - threshold) * 100)
+统计的是"机会出现次数"而非扣成本后期望,违反 Roadmap 铁律「信回测数字」。
+
+替代:通用回测引擎 08-backtests/engine/ + 策略插件 strategies/。
+Pair-Cost 历史上无法回测(从未存盘口),需 Stage C-3 做实时 CLOB 盘口采集后重写。
+设计见 docs/BACKTEST_DESIGN_2026-06-04.md。
+
+Pair Cost 策略回测框架(旧)
 测试不同阈值下的策略效果
 """
 
@@ -17,8 +27,10 @@ except ImportError:
     print("Warning: pandas not installed, using basic data structures")
 
 # 配置
-DATA_DIR = "/home/xmren/.openclaw/workspace/polymarket-project/07-data"
-REPORT_DIR = "/home/xmren/.openclaw/workspace/polymarket-project/07-data"
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "06-tools/analysis"))
+from config import DATA_DIR, LOGS_DIR as REPORT_DIR
 
 
 def load_historical_data(days=7):

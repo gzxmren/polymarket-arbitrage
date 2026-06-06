@@ -111,6 +111,56 @@ class Database:
             )
         ''')
         
+        # 套利反馈表（人工确认）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS arbitrage_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                arbitrage_id INTEGER,
+                arbitrage_type TEXT,  -- 'pair_cost' 或 'cross_market'
+                feedback_type TEXT,   -- 'confirmed' 或 'error'
+                feedback_text TEXT,
+                user_notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Pair Cost 套利表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS pair_cost_arbitrage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                market_id TEXT,
+                market_name TEXT,
+                yes_price REAL,
+                no_price REAL,
+                sum_price REAL,
+                profit_potential REAL,
+                liquidity REAL,
+                detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'active',
+                is_read BOOLEAN DEFAULT 0
+            )
+        ''')
+        
+        # 跨平台套利表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS cross_market_arbitrage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_name TEXT NOT NULL,
+                polymarket_price REAL,
+                manifold_price REAL,
+                price_gap REAL,
+                expected_return REAL,
+                risk_level TEXT,
+                risk_score REAL,
+                audit_status TEXT,
+                match_rate REAL,
+                polymarket_url TEXT,
+                manifold_url TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_read BOOLEAN DEFAULT 0
+            )
+        ''')
+        
         conn.commit()
         conn.close()
         print("✅ 数据库初始化完成")

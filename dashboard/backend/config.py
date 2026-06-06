@@ -1,5 +1,13 @@
 import os
 from datetime import timedelta
+from pathlib import Path
+
+# 项目根目录
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+# 数据目录
+DATA_DIR = PROJECT_ROOT / "07-data"
+NEWS_CACHE_DIR = DATA_DIR / "news_cache"
 
 class Config:
     # Flask

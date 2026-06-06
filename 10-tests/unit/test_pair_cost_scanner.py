@@ -118,12 +118,12 @@ class TestThresholds:
     
     def test_pair_cost_threshold(self):
         """测试 Pair Cost 阈值"""
-        assert PAIR_COST_THRESHOLD == 0.99
+        assert PAIR_COST_THRESHOLD == 0.90  # V3: 降低到0.90以发现更多机会
         assert isinstance(PAIR_COST_THRESHOLD, float)
     
     def test_min_liquidity(self):
         """测试最低流动性"""
-        assert MIN_LIQUIDITY == 1000
+        assert MIN_LIQUIDITY == 100  # V2: 降低到100，小市场也有价值
         assert isinstance(MIN_LIQUIDITY, (int, float))
 
 
@@ -153,16 +153,16 @@ class TestEdgeCases:
             "id": "123",
             "question": "Test",
             "slug": "test",
-            "outcomePrices": ["0.50", "0.48"],  # Pair Cost = 0.98
+            "outcomePrices": ["0.45", "0.44"],  # Pair Cost = 0.89 (< 0.90 阈值)
             "liquidity": 100000,
             "volume": 50000,
             "endDate": "2026-12-31"
         }
-        
+
         result = calculate_pair_cost(market)
-        
+
         assert result["is_opportunity"] is True
-        assert abs(result["profit_pct"] - 2.0) < 0.001
+        assert abs(result["profit_pct"] - 11.0) < 0.001
 
 
 if __name__ == "__main__":

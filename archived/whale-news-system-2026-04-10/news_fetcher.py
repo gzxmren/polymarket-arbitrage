@@ -23,11 +23,12 @@ class NewsFetcher:
         })
         
         # RSS源配置
+        # Note: Reuters 返回 HTML 而不是 RSS，已禁用
         self.rss_sources = {
             "reuters": {
                 "name": "Reuters",
                 "url": "https://www.reutersagency.com/feed/?taxonomy=markets&post_type=reuters-best",
-                "enabled": True
+                "enabled": False  # 返回 HTML 而不是 RSS
             },
             "bbc": {
                 "name": "BBC",
@@ -43,12 +44,36 @@ class NewsFetcher:
                 "name": "Wall Street Journal",
                 "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
                 "enabled": True
+            },
+            # 体育新闻源
+            "bbc_sport": {
+                "name": "BBC Sport",
+                "url": "http://feeds.bbci.co.uk/sport/rss.xml",
+                "enabled": True
+            },
+            "espn": {
+                "name": "ESPN",
+                "url": "https://www.espn.com/espn/rss/news",
+                "enabled": True
+            },
+            "espn_soccer": {
+                "name": "ESPN Soccer",
+                "url": "https://www.espn.com/soccer/rss",
+                "enabled": True
+            },
+            # Google News 搜索 RSS（动态关键词搜索）
+            "google_news": {
+                "name": "Google News",
+                "url": "https://news.google.com/rss",
+                "enabled": True,
+                "is_search": True  # 标记为搜索型RSS
             }
         }
     
     def fetch_rss_news(self, source: str, keywords: List[str], hours: int = 6) -> List[Dict]:
         """
         从RSS源抓取新闻
+        支持Google News搜索
         """
         if source not in self.rss_sources:
             return []
@@ -59,12 +84,23 @@ class NewsFetcher:
         
         try:
             print(f"   抓取 {config['name']} RSS...")
-            feed = feedparser.parse(config["url"])
+            
+            # Google News 搜索需要特殊处理
+            if config.get("is_search") and keywords:
+                # 构建Google News搜索URL
+                import urllib.parse
+                query = " OR ".join(keywords[:3])  # 最多3个关键词
+                encoded_query = urllib.parse.quote(query)
+                url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+            else:
+                url = config["url"]
+            
+            feed = feedparser.parse(url)
             
             news_list = []
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
             
-            for entry in feed.entries[:20]:  # 只检查最近20条
+            for entry in feed.entries[:30]:  # 检查最近30条
                 # 解析发布时间
                 published = entry.get('published_parsed') or entry.get('updated_parsed')
                 if published:
@@ -79,20 +115,44 @@ class NewsFetcher:
                 title = entry.get('title', '')
                 summary = entry.get('summary', '')
                 
-                # 关键词匹配
-                content = (title + " " + summary).lower()
-                matched_keywords = [kw for kw in keywords if kw.lower() in content]
+                # Google News的特殊处理 - 不需要严格关键词匹配，因为搜索已经过滤
+                if config.get("is_search"):
+                    matched_keywords = keywords[:3]  # 使用搜索关键词
+                else:
+                    # 关键词匹配 - 处理空格分隔的搜索词
+                    content = (title + " " + summary).lower()
+                    # 将空格分隔的关键词拆分为单个词
+                    all_keywords = []
+                    for kw in keywords:
+                        if ' ' in kw:
+                            all_keywords.extend(kw.split())
+                        else:
+                            all_keywords.append(kw)
+                    matched_keywords = [kw for kw in all_keywords if kw.lower() in content and len(kw) > 2]
                 
                 if matched_keywords:
                     # 清理HTML标签
                     summary_clean = BeautifulSoup(summary, 'html.parser').get_text()[:200]
+                    
+                    # 获取链接 - Google News链接会过期，需要特殊处理
+                    raw_url = entry.get('link', '')
+                    url = raw_url
+                    
+                    # Google News的链接是临时token链接，会过期
+                    # 尝试提取真实链接或标记为过期
+                    if config.get("is_search") and 'news.google.com' in raw_url:
+                        # Google News RSS链接是临时的，会返回400
+                        # 使用搜索链接代替（用户可手动搜索）
+                        import urllib.parse
+                        search_query = urllib.parse.quote(title[:50])
+                        url = f"https://www.google.com/search?q={search_query}&tbm=nws"
                     
                     news_list.append({
                         "source": config["name"],
                         "author": entry.get('author', config["name"]),
                         "title": title,
                         "summary": summary_clean,
-                        "url": entry.get('link', ''),
+                        "url": url,
                         "published_at": pub_time.isoformat(),
                         "matched_keywords": matched_keywords,
                         "sentiment": self._analyze_sentiment(title + " " + summary_clean)
@@ -273,16 +333,24 @@ class NewsFetcher:
         
         all_news = []
         
-        # RSS源
-        for source in ["reuters", "bbc", "cnn", "wsj"]:
-            news = self.fetch_rss_news(source, keywords, hours)
-            all_news.extend(news)
+        # RSS源 - 多源聚合，避免过度依赖单一源 - 2026-04-07
+        # Google News（搜索全面，但链接会过期，已转换为搜索链接）
+        google_news = self.fetch_rss_news("google_news", keywords, hours)
+        all_news.extend(google_news)
         
-        # Twitter
-        twitter_news = self.fetch_twitter_news(keywords, hours)
-        all_news.extend(twitter_news)
+        # BBC（可靠，链接永久）
+        bbc_news = self.fetch_rss_news("bbc", keywords, hours)
+        all_news.extend(bbc_news)
         
-        # NewsAPI
+        # CNN（可用，链接永久）
+        cnn_news = self.fetch_rss_news("cnn", keywords, hours)
+        all_news.extend(cnn_news)
+        
+        # WSJ（可用，链接永久）
+        wsj_news = self.fetch_rss_news("wsj", keywords, hours)
+        all_news.extend(wsj_news)
+        
+        # NewsAPI（需要 API key）
         newsapi_news = self.fetch_newsapi(keywords, hours)
         all_news.extend(newsapi_news)
         

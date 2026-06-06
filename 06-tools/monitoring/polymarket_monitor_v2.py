@@ -3,6 +3,11 @@
 Polymarket 综合监控器 V2
 整合 Pair Cost、跨平台套利、鲸鱼追踪
 支持 Telegram 通知 + 风险评估
+
+[修复] 2025-03-25:
+1. 降低做市深度阈值: 5000 -> 2000
+2. 放宽价格范围: 0.05-0.95 -> 0.02-0.98
+3. 添加分级策略支持（高流动性/低流动性市场分别处理）
 """
 
 import json
@@ -12,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # 添加分析工具路径
+# [修复] 2026-04-21: 修正路径 - analysis 在 06-tools 目录下
+# monitoring -> 06-tools (parent.parent) -> analysis
 sys.path.insert(0, str(Path(__file__).parent.parent / "analysis"))
 
 from pair_cost_scanner import scan_pair_cost_opportunities, PAIR_COST_THRESHOLD
@@ -41,6 +48,14 @@ try:
 except ImportError:
     WATCHLIST_AVAILABLE = False
     print("⚠️  Whale watchlist not available")
+
+# 导入鲸鱼跟随策略（V2新增）
+try:
+    from whale_following import WhaleFollowingStrategy, format_signal_telegram
+    WHALE_FOLLOWING_AVAILABLE = True
+except ImportError:
+    WHALE_FOLLOWING_AVAILABLE = False
+    print("⚠️  Whale following strategy not available")
 
 # 导入CLOB API（真实订单簿）
 try:
@@ -77,16 +92,24 @@ except ImportError:
 
 # 配置
 DATA_DIR = Path(__file__).parent.parent.parent / "07-data"
-NOTIFY_IMMEDIATELY = os.getenv("NOTIFY_IMMEDIATELY", "true").lower() == "true"
+# [修复] 2026-04-17: 关闭即时通知，避免频繁打扰
+# 只通过每日报表汇总通知
+NOTIFY_IMMEDIATELY = os.getenv("NOTIFY_IMMEDIATELY", "false").lower() == "true"
 RISK_REVIEW_ENABLED = os.getenv("RISK_REVIEW_ENABLED", "true").lower() == "true"
 
 # 做市机会通知控制
 # 现在使用真实CLOB API数据，可以启用通知
 MARKET_MAKING_NOTIFY_ENABLED = os.getenv("MARKET_MAKING_NOTIFY", "true").lower() == "true"
 MARKET_MAKING_MIN_SPREAD = float(os.getenv("MARKET_MAKING_MIN_SPREAD", "0.015"))  # 最小价差1.5%
-MARKET_MAKING_MIN_DEPTH = float(os.getenv("MARKET_MAKING_MIN_DEPTH", "5000"))     # 最小深度$5000
-MARKET_MAKING_MIN_PRICE = float(os.getenv("MARKET_MAKING_MIN_PRICE", "0.05"))     # 最小价格5%
-MARKET_MAKING_MAX_PRICE = float(os.getenv("MARKET_MAKING_MAX_PRICE", "0.95"))     # 最大价格95%
+# [修复] 2025-03-25: 降低深度阈值 5000 -> 2000，避免过滤过多市场
+MARKET_MAKING_MIN_DEPTH = float(os.getenv("MARKET_MAKING_MIN_DEPTH", "2000"))     # 最小深度$2000 (原$5000)
+# [修复] 2025-03-25: 放宽价格范围 0.05-0.95 -> 0.02-0.98
+MARKET_MAKING_MIN_PRICE = float(os.getenv("MARKET_MAKING_MIN_PRICE", "0.02"))     # 最小价格2% (原5%)
+MARKET_MAKING_MAX_PRICE = float(os.getenv("MARKET_MAKING_MAX_PRICE", "0.98"))     # 最大价格98% (原95%)
+
+# [修复] 2025-03-25: 添加分级策略阈值
+MARKET_MAKING_HIGH_LIQUIDITY_THRESHOLD = float(os.getenv("MARKET_MAKING_HIGH_LIQ", "10000"))  # 高流动性阈值$10000
+MARKET_MAKING_TIER2_MIN_DEPTH = float(os.getenv("MARKET_MAKING_TIER2_DEPTH", "1000"))       # 低流动性市场深度阈值$1000
 
 
 def run_pair_cost_scan() -> dict:
@@ -143,6 +166,36 @@ def run_pair_cost_scan() -> dict:
                     send_telegram_message(risk_message)
             else:
                 approved_opportunities.append(opp)
+            
+            # 保存到数据库
+            try:
+                import sqlite3
+                from pathlib import Path
+                
+                db_path = Path(__file__).parent.parent.parent / "dashboard/backend/database/polymarket.db"
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT INTO pair_cost_arbitrage 
+                    (market_id, market_name, yes_price, no_price, sum_price, profit_potential, liquidity, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    opp.get('market_id', ''),
+                    opp.get('question', '')[:200],
+                    opp.get('yes_price', 0),
+                    opp.get('no_price', 0),
+                    opp.get('yes_price', 0) + opp.get('no_price', 0),
+                    opp.get('profit', 0),
+                    opp.get('liquidity', 0),
+                    'approved' if (not RISK_REVIEW_ENABLED or review['approved']) else 'pending'
+                ))
+                
+                conn.commit()
+                conn.close()
+                print(f"      💾 已保存到数据库")
+            except Exception as e:
+                print(f"      ⚠️  保存数据库失败: {e}")
             
             # 发送机会通知（只有通过审核的）
             if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
@@ -223,6 +276,65 @@ def run_cross_market_scan() -> dict:
             if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
                 if not RISK_REVIEW_ENABLED or review['approved']:
                     send_cross_market_alert(opp)
+            
+            # 保存到 Dashboard 数据库
+            try:
+                import sqlite3
+                from pathlib import Path
+                
+                db_path = Path(__file__).parent.parent.parent / "dashboard/backend/database/polymarket.db"
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                # 确保表存在
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS cross_market_arbitrage (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_name TEXT NOT NULL,
+                        polymarket_price REAL,
+                        manifold_price REAL,
+                        price_gap REAL,
+                        expected_return REAL,
+                        risk_level TEXT,
+                        risk_score REAL,
+                        audit_status TEXT,
+                        match_rate REAL,
+                        polymarket_url TEXT,
+                        manifold_url TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        is_read BOOLEAN DEFAULT 0
+                    )
+                ''')
+                
+                # 正确获取 URL（从嵌套对象中）
+                poly_url = opp.get('polymarket', {}).get('url', '') if isinstance(opp.get('polymarket'), dict) else opp.get('poly_url', '')
+                manifold_url = opp.get('manifold', {}).get('url', '') if isinstance(opp.get('manifold'), dict) else opp.get('manifold_url', '')
+                
+                # 插入数据
+                cursor.execute('''
+                    INSERT INTO cross_market_arbitrage 
+                    (event_name, polymarket_price, manifold_price, price_gap, expected_return,
+                     risk_level, risk_score, audit_status, match_rate, polymarket_url, manifold_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    opp.get('question', '')[:200],
+                    opp.get('polymarket', {}).get('price', opp.get('poly_price', 0)) * 100,
+                    opp.get('manifold', {}).get('price', opp.get('manifold_price', 0)) * 100,
+                    opp.get('gap', 0) * 100,
+                    opp.get('gap', 0) * 100 * 0.8,  # 扣除手续费后约 80%
+                    review.get('risk_level', 'UNKNOWN') if RISK_REVIEW_AVAILABLE else 'UNKNOWN',
+                    review.get('risk_score', 0) if RISK_REVIEW_AVAILABLE else 0,
+                    'approved' if review.get('approved', True) else 'rejected',
+                    opp.get('similarity', 0) * 100,
+                    poly_url,
+                    manifold_url
+                ))
+                
+                conn.commit()
+                conn.close()
+                print(f"      💾 已保存到 Dashboard 数据库")
+            except Exception as e:
+                print(f"      ⚠️ 保存失败：{e}")
     else:
         print("\n⚪ 未发现套利机会")
     
@@ -492,11 +604,17 @@ def run_market_making_scan() -> dict:
             # 过滤条件检查
             # 注意：用best_bid判断极端市场，而不是mid_price
             # 因为对于买价0.001/卖价0.999的市场，mid_price=0.50是正常的
+            
+            # [修复] 2025-03-25: 分级策略 - 高流动性/低流动性分别处理
+            is_high_liquidity = min_depth >= MARKET_MAKING_HIGH_LIQUIDITY_THRESHOLD
+            effective_min_depth = MARKET_MAKING_MIN_DEPTH if is_high_liquidity else MARKET_MAKING_TIER2_MIN_DEPTH
+            
             filtered_reason = None
             if spread_pct < MARKET_MAKING_MIN_SPREAD:
                 filtered_reason = f"价差{spread_pct:.2%}<阈值"
-            elif min_depth < MARKET_MAKING_MIN_DEPTH:
-                filtered_reason = f"深度${min_depth:,.0f}<阈值"
+            elif min_depth < effective_min_depth:
+                tier_label = "高流动性" if is_high_liquidity else "低流动性"
+                filtered_reason = f"深度${min_depth:,.0f}<阈值({tier_label}:${effective_min_depth:,.0f})"
             elif best_bid < MARKET_MAKING_MIN_PRICE or best_bid > MARKET_MAKING_MAX_PRICE:
                 # 排除极端价格市场（买价接近0或1，流动性枯竭）
                 filtered_reason = f"买价{best_bid:.3f}极端(流动性枯竭)"
@@ -615,6 +733,88 @@ def send_summary(report: dict):
     send_summary_report(stats)
 
 
+def run_whale_following_scan() -> dict:
+    """运行鲸鱼跟随策略扫描（V2新增）"""
+    print("\n" + "="*70)
+    print("🐋 运行鲸鱼跟随策略...")
+    print("="*70)
+    
+    if not WHALE_FOLLOWING_AVAILABLE:
+        print("\n⚪ 鲸鱼跟随策略不可用")
+        return {"signals": 0, "details": []}
+    
+    try:
+        strategy = WhaleFollowingStrategy()
+        signals = strategy.scan()
+        
+        if signals:
+            print(f"\n✅ 发现 {len(signals)} 个鲸鱼跟随信号")
+            
+            # 发送Telegram通知
+            if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
+                from telegram_notifier_v2 import send_telegram_message
+                for signal in signals[:3]:  # 最多发送3个
+                    message = format_signal_telegram(signal)
+                    send_telegram_message(message)
+                    print(f"   📱 已发送信号: {signal.whale.pseudonym}")
+            
+            # 记录信号到数据库
+            save_signals_to_db(signals)
+        else:
+            print("\n⚪ 未发现鲸鱼跟随信号")
+        
+        return {
+            "signals": len(signals),
+            "details": [{
+                'whale': s.whale.pseudonym,
+                'market': s.market,
+                'direction': s.direction,
+                'confidence': s.confidence
+            } for s in signals]
+        }
+    except Exception as e:
+        print(f"\n❌ 鲸鱼跟随策略错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"signals": 0, "details": [], "error": str(e)}
+
+
+def save_signals_to_db(signals: list):
+    """保存信号到数据库"""
+    try:
+        import sqlite3
+        from pathlib import Path
+        
+        db_path = Path(__file__).parent.parent.parent / "dashboard/backend/database/polymarket.db"
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        for signal in signals:
+            cursor.execute('''
+                INSERT INTO signals 
+                (type, wallet, market, direction, confidence, suggested_position, 
+                 expected_price_change, suggested_holding_hours, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                signal.type,
+                signal.whale.wallet,
+                signal.market,
+                signal.direction,
+                signal.confidence,
+                signal.suggested_position,
+                signal.expected_return,
+                48,  # 建议持有48小时
+                'pending',
+                signal.created_at.isoformat()
+            ))
+        
+        conn.commit()
+        conn.close()
+        print(f"   💾 已保存 {len(signals)} 个信号到数据库")
+    except Exception as e:
+        print(f"   ⚠️  保存信号失败: {e}")
+
+
 def main():
     print("🚀 Polymarket 综合监控器 V2")
     print("="*70)
@@ -623,7 +823,8 @@ def main():
     print(f"即时通知: {'✅ 开启' if NOTIFY_IMMEDIATELY else '⚪ 关闭'}")
     print(f"CLOB API: {'✅ 可用' if CLOB_API_AVAILABLE else '❌ 不可用'}")
     print(f"做市通知: {'✅ 开启' if MARKET_MAKING_NOTIFY_ENABLED else '⚪ 关闭'}")
-    print(f"做市阈值: 价差>{MARKET_MAKING_MIN_SPREAD:.1%}, 深度>${MARKET_MAKING_MIN_DEPTH:,.0f}")
+    print(f"鲸鱼跟随: {'✅ 可用' if WHALE_FOLLOWING_AVAILABLE else '❌ 不可用'}")
+    print(f"做市阈值: 价差>{MARKET_MAKING_MIN_SPREAD:.1%}, 深度>${MARKET_MAKING_MIN_DEPTH:,.0f}(高)/${MARKET_MAKING_TIER2_MIN_DEPTH:,.0f}(低)")
     print(f"价格范围: {MARKET_MAKING_MIN_PRICE:.0%}~{MARKET_MAKING_MAX_PRICE:.0%} (排除极端市场)")
     print("="*70)
     
@@ -631,12 +832,14 @@ def main():
     pair_cost_result = run_pair_cost_scan()
     cross_market_result = run_cross_market_scan()
     whale_result = run_whale_tracking()
+    whale_following_result = run_whale_following_scan()  # V2新增
     news_result = run_news_monitoring()
     correlation_result = run_correlation_analysis()
     market_making_result = run_market_making_scan()
     
     # 保存报告
     report = save_report(pair_cost_result, cross_market_result, whale_result, news_result, correlation_result, market_making_result)
+    report['whale_following'] = whale_following_result  # 添加到报告
     
     # 发送汇总
     print("\n" + "="*70)

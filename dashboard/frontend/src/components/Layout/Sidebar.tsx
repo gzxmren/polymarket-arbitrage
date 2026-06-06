@@ -6,7 +6,12 @@ import {
   TeamOutlined,
   LineChartOutlined,
   BellOutlined,
-  SettingOutlined
+  SettingOutlined,
+  ExperimentOutlined,
+  ThunderboltOutlined,
+  TrophyOutlined,
+  CrownOutlined,
+  TrendingUpOutlined
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
@@ -18,8 +23,13 @@ const Sidebar: React.FC = () => {
   const menuItems = [
     { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
     { key: '/whales', icon: <TeamOutlined />, label: '鲸鱼跟踪' },
+    { key: '/leaderboard-whales', icon: <CrownOutlined />, label: '顶级鲸鱼' },
+    { key: '/leaderboard-trends', icon: <TrendingUpOutlined />, label: '趋势分析' },
     { key: '/arbitrage', icon: <LineChartOutlined />, label: '套利机会' },
+    { key: '/semantic-arbitrage', icon: <ExperimentOutlined />, label: '语义套利' },
+    { key: '/news-driven', icon: <ThunderboltOutlined />, label: '新闻驱动' },
     { key: '/alerts', icon: <BellOutlined />, label: '警报中心' },
+    { key: '/quality-report', icon: <TrophyOutlined />, label: '质量报告' },
     { key: '/settings', icon: <SettingOutlined />, label: '设置' },
   ];
 

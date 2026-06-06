@@ -12,7 +12,10 @@ from datetime import datetime, timedelta
 from telegram_notifier_v2 import send_telegram_message
 
 # 配置
-DATA_DIR = "/home/xmren/.openclaw/workspace/polymarket-project/07-data"
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "analysis"))
+from config import DATA_DIR
 ALERT_THRESHOLD_HOURS = 6  # 连续6小时无机会告警
 
 

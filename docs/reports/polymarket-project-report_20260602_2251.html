@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polymarket 项目说明 & 评审报告</title>
+<style>
+:root{--bg:#0f1117;--panel:#161a23;--text:#d7dce5;--muted:#8b94a7;--border:#262c39;
+ --accent:#5b8cff;--code:#1b2030;--side:#12151d;--sidehover:#1d2230;}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8fc;--panel:#fff;--text:#1f2733;
+ --muted:#5b6472;--border:#e3e8f0;--accent:#2f6bff;--code:#f0f3f9;--side:#fbfcfe;--sidehover:#eef2fb;}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);
+ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Arial,sans-serif;
+ line-height:1.7;font-size:16px;}
+/* layout */
+.app{display:flex;min-height:100vh}
+.sidebar{width:288px;flex-shrink:0;background:var(--side);border-right:1px solid var(--border);
+ position:sticky;top:0;height:100vh;overflow-y:auto;padding:22px 14px 60px}
+.brand{font-size:15px;font-weight:700;padding:6px 10px 14px;color:var(--text)}
+.brand small{display:block;font-weight:400;color:var(--muted);font-size:12px;margin-top:4px}
+.nav-group{margin-bottom:18px}
+.nav-title{font-size:13px;font-weight:700;color:var(--accent);text-transform:uppercase;
+ letter-spacing:.04em;padding:6px 10px;cursor:pointer;border-radius:7px}
+.nav-title:hover{background:var(--sidehover)}
+.nav-link{display:block;font-size:13.5px;color:var(--muted);text-decoration:none;
+ padding:5px 10px 5px 18px;border-radius:7px;border-left:2px solid transparent;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-link:hover{background:var(--sidehover);color:var(--text)}
+.nav-link.active{color:var(--accent);border-left-color:var(--accent);background:var(--sidehover);font-weight:600}
+.main{flex:1;min-width:0;display:flex;justify-content:center}
+.content{max-width:920px;width:100%;padding:42px 46px 140px}
+.meta-bar{font-size:13px;color:var(--muted);margin-bottom:18px;text-align:right}
+section.doc{margin-bottom:60px}
+section.doc+section.doc{border-top:3px dashed var(--border);padding-top:30px}
+h1{font-size:29px;line-height:1.3;margin:.2em 0 .6em;border-bottom:2px solid var(--border);padding-bottom:.4em}
+h2{font-size:22px;margin:1.7em 0 .7em;padding-top:.3em;scroll-margin-top:20px}
+h3{font-size:17.5px;margin:1.3em 0 .5em;color:var(--accent);scroll-margin-top:20px}
+h4{font-size:15.5px;margin:1.1em 0 .4em;color:var(--muted)}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+blockquote{margin:1em 0;padding:.6em 1.1em;border-left:4px solid var(--accent);
+ background:rgba(91,140,255,.08);border-radius:0 8px 8px 0;color:var(--muted)}
+blockquote p{margin:.3em 0}
+code{background:var(--code);padding:.15em .45em;border-radius:5px;
+ font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.88em}
+pre{background:var(--code);padding:16px 18px;border-radius:10px;overflow-x:auto;border:1px solid var(--border)}
+pre code{background:none;padding:0;font-size:.84em;line-height:1.55}
+table{border-collapse:collapse;width:100%;margin:1.2em 0;font-size:.92em;display:block;overflow-x:auto}
+th,td{border:1px solid var(--border);padding:9px 13px;text-align:left;vertical-align:top}
+th{background:rgba(91,140,255,.12);font-weight:600}
+tr:nth-child(even) td{background:rgba(127,127,127,.05)}
+hr{border:none;border-top:1px solid var(--border);margin:2.2em 0}
+ul,ol{padding-left:1.5em}li{margin:.25em 0}
+strong{font-weight:700}
+.topbtn{position:fixed;right:22px;bottom:22px;background:var(--accent);color:#fff;
+ border:none;border-radius:50%;width:46px;height:46px;font-size:20px;cursor:pointer;
+ box-shadow:0 6px 18px rgba(0,0,0,.3);opacity:.85}
+.topbtn:hover{opacity:1}
+.menu-toggle{display:none}
+::-webkit-scrollbar{height:9px;width:9px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+@media (max-width:860px){
+ .sidebar{position:fixed;left:-300px;z-index:50;transition:left .25s;box-shadow:0 0 30px rgba(0,0,0,.4)}
+ .sidebar.open{left:0}
+ .content{padding:60px 20px 120px}
+ .menu-toggle{display:block;position:fixed;top:14px;left:14px;z-index:60;
+  background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:15px;cursor:pointer}
+}
+</style>
+</head>
+<body>
+<button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰ 目录</button>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">Polymarket 智能监控系统<small>说明文档 &amp; 评审报告</small></div>
+    <div class="nav-group"><div class="nav-title" data-doc="doc-overview">项目总说明</div><a class="nav-link" href="#overview-h0" data-target="overview-h0">目录</a>
+<a class="nav-link" href="#overview-h1" data-target="overview-h1">1. 一句话定位</a>
+<a class="nav-link" href="#overview-h2" data-target="overview-h2">2. 系统设计（Design）</a>
+<a class="nav-link" href="#overview-h6" data-target="overview-h6">3. 代码实现（Implementation）</a>
+<a class="nav-link" href="#overview-h12" data-target="overview-h12">4. 数据层设计</a>
+<a class="nav-link" href="#overview-h16" data-target="overview-h16">5. Dashboard（Web 应用）</a>
+<a class="nav-link" href="#overview-h20" data-target="overview-h20">6. 部署与运行（Deployment）</a>
+<a class="nav-link" href="#overview-h25" data-target="overview-h25">7. 配置与环境变量</a>
+<a class="nav-link" href="#overview-h28" data-target="overview-h28">8. 运维、监控与故障排除</a>
+<a class="nav-link" href="#overview-h29" data-target="overview-h29">9. 演进历史与现状评估</a>
+<a class="nav-link" href="#overview-h33" data-target="overview-h33">10. 快速上手清单</a></div>
+<div class="nav-group"><div class="nav-title" data-doc="doc-review">评审报告</div><a class="nav-link" href="#review-h0" data-target="review-h0">0. 评审结论速览</a>
+<a class="nav-link" href="#review-h1" data-target="review-h1">1. 需求覆盖评审</a>
+<a class="nav-link" href="#review-h5" data-target="review-h5">2. 设计架构评审</a>
+<a class="nav-link" href="#review-h8" data-target="review-h8">3. 技术实现评审</a>
+<a class="nav-link" href="#review-h11" data-target="review-h11">4. 代码逻辑评审</a>
+<a class="nav-link" href="#review-h14" data-target="review-h14">5. 系统部署评审</a>
+<a class="nav-link" href="#review-h17" data-target="review-h17">6. 🔴 数据腐化专项（核心发现）</a>
+<a class="nav-link" href="#review-h25" data-target="review-h25">7. 优先级改进清单</a>
+<a class="nav-link" href="#review-h29" data-target="review-h29">8. 总评</a></div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="meta-bar">本页由 PROJECT_OVERVIEW.md + PROJECT_REVIEW.md 合并生成 · 2026-06-02 22:51</div>
+      <section class="doc" id="doc-overview"><h1>Polymarket 智能监控系统 — 项目总说明文档</h1>
+<blockquote>
+<p><strong>文档生成时间</strong>：2026-06-02 (UTC+8)
+<strong>对应代码分支</strong>：<code>v2.0-development</code>
+<strong>最近提交</strong>：<code>8d4c5d1 Phase 3: 质量监控与自动化</code>
+<strong>撰写说明</strong>：本文档基于对仓库现有代码、设计文档与配置的通读整理，旨在系统性讲解项目的<strong>设计理念、技术实现与部署运行</strong>三个层面。</p>
+</blockquote>
+<hr />
+<h2 id="overview-h0">目录</h2>
+<ol>
+<li><a href="#1-一句话定位">一句话定位</a></li>
+<li><a href="#2-系统设计design">系统设计（Design）</a></li>
+<li><a href="#3-代码实现implementation">代码实现（Implementation）</a></li>
+<li><a href="#4-数据层设计">数据层设计</a></li>
+<li><a href="#5-dashboardweb-应用">Dashboard（Web 应用）</a></li>
+<li><a href="#6-部署与运行deployment">部署与运行（Deployment）</a></li>
+<li><a href="#7-配置与环境变量">配置与环境变量</a></li>
+<li><a href="#8-运维监控与故障排除">运维、监控与故障排除</a></li>
+<li><a href="#9-演进历史与现状评估">演进历史与现状评估</a></li>
+<li><a href="#10-快速上手清单">快速上手清单</a></li>
+</ol>
+<hr />
+<h2 id="overview-h1">1. 一句话定位</h2>
+<p><strong>Polymarket 智能监控系统</strong>是一个面向预测市场（以 Polymarket 为主，兼顾 Manifold / Metaculus / Kalshi）的<strong>自动化监控、套利发现与"鲸鱼"（大户）行为跟踪</strong>平台。它由三部分组成：</p>
+<ul>
+<li><strong>离线监控引擎</strong>（Python，定时扫描）——发现套利机会、跟踪大户、推送 Telegram 警报；</li>
+<li><strong>Web Dashboard</strong>（Flask + React）——把监控产出的数据可视化，并提供深度分析、信号管理、质量监控等交互能力；</li>
+<li><strong>共享数据层</strong>（JSON 状态文件 + SQLite 数据库）——连接上述两部分。</li>
+</ul>
+<p>项目当前处于 <strong>V2.0 开发阶段</strong>，已完成 Dashboard 的 Phase 1~3（数据连接、语义套利引擎、质量监控自动化）。</p>
+<hr />
+<h2 id="overview-h2">2. 系统设计（Design）</h2>
+<h3 id="overview-h3">2.1 核心设计目标</h3>
+<p>V2 设计文档（<code>docs/V2-design-integrated.md</code>）中明确诊断了 V1 的核心痛点并据此设计 V2：</p>
+<table>
+<thead>
+<tr>
+<th>V1 问题</th>
+<th>现状</th>
+<th>V2 应对</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>套利机会稀少</td>
+<td>24h 内 0 次</td>
+<td>放宽阈值 + 引入语义套利</td>
+</tr>
+<tr>
+<td>策略过于基础</td>
+<td>仅 Pair Cost + 跨平台</td>
+<td>新增鲸鱼跟随、新闻驱动、动量等策略</td>
+</tr>
+<tr>
+<td>数据未充分利用</td>
+<td>历史数据沉睡</td>
+<td>引入 SQLite + Dashboard 沉淀分析</td>
+</tr>
+<tr>
+<td>鲸鱼跟踪浅层</td>
+<td>仅记录持仓</td>
+<td>持仓重建、集中度、收敛趋势、PnL、深度 LLM 分析</td>
+</tr>
+<tr>
+<td>信号效果未知</td>
+<td>无胜率追踪</td>
+<td>信号追踪表 + 阈值自动优化 + 质量报告</td>
+</tr>
+</tbody>
+</table>
+<h3 id="overview-h4">2.2 分层架构</h3>
+<pre><code>┌──────────────────────────────────────────────────────────────┐
+│                      外部数据源（External APIs）               │
+│   Polymarket(Gamma/Data/CLOB) · Manifold · Metaculus · Kalshi │
+│   新闻 RSS（BBC 等） · Leaderboard                            │
+└───────────────────────────┬──────────────────────────────────┘
+                            ↓ 抓取
+┌──────────────────────────────────────────────────────────────┐
+│                  数据获取 &amp; 重建层（06-tools/analysis）        │
+│  clob_api · cross_market_scanner · whale_tracker_v2 ·        │
+│  position_rebuilder · hybrid_data_source · leaderboard_*     │
+└───────────────────────────┬──────────────────────────────────┘
+                            ↓ 计算
+┌──────────────────────────────────────────────────────────────┐
+│                       分析引擎层                              │
+│  套利: pair_cost_scanner · semantic_arbitrage               │
+│  大户: whale_classifier · whale_watchlist · whale_following  │
+│  指标: kelly_criterion · vwap_calculator · correlation_matrix│
+│  做市: market_maker · 动量: momentum_strategy               │
+└───────────────────────────┬──────────────────────────────────┘
+                            ↓ 评估 &amp; 过滤
+┌──────────────────────────────────────────────────────────────┐
+│              风险评估 &amp; 质量监控层                            │
+│  risk_reviewer · data_quality_check · threshold_optimizer    │
+└──────────────┬───────────────────────────────┬───────────────┘
+               ↓ 通知                          ↓ 持久化
+┌──────────────────────────┐    ┌─────────────────────────────┐
+│  通知输出层               │    │  数据存储层                  │
+│  telegram_notifier_v2     │    │  07-data/*.json (状态)       │
+│  send_summary 等          │    │  dashboard SQLite DB         │
+└──────────────────────────┘    └──────────────┬──────────────┘
+                                                ↓ 读取/同步
+                              ┌─────────────────────────────────┐
+                              │   Web Dashboard (Flask + React) │
+                              │   API 蓝图 · SocketIO · 前端页面 │
+                              └─────────────────────────────────┘
+</code></pre>
+<h3 id="overview-h5">2.3 关键设计概念</h3>
+<h4>A. 套利策略</h4>
+<ul>
+<li><strong>Pair Cost 套利</strong>：同一事件 <code>YES + NO</code> 价格之和 &lt; 阈值时存在无风险价差。阈值在 <code>config.py::Thresholds.PAIR_COST</code> 中定义，<strong>当前为 0.90</strong>（2026-04-21 从 0.995 下调以发现更多机会）。</li>
+<li><strong>跨平台套利</strong>（<code>cross_market_scanner.py</code>）：将不同平台描述相同事件的市场做匹配，价差 &gt; <code>MIN_GAP_THRESHOLD</code>（5%）即视为机会。</li>
+<li><strong>语义套利</strong>（<code>semantic_arbitrage.py</code> / Dashboard <code>semantic.py</code>）：V2 引入，用语义关系（蕴含、互斥、逻辑链）发现"非字面相同但逻辑相关"的市场间错价，是 V2 的核心增量。</li>
+<li><strong>做市机会</strong>（<code>market_maker.py</code>）：基于真实 CLOB 订单簿，买卖价差 &gt; 1.5%、深度达标且价格非极端（避开 &lt;2% / &gt;98%）时提示。</li>
+</ul>
+<h4>B. 鲸鱼（大户）跟踪体系</h4>
+<p>这是项目沉淀最深的模块，逐层递进：</p>
+<ol>
+<li><strong>识别</strong>：24h 交易量 &gt; $5,000 或单笔 &gt; $500 即视为活跃鲸鱼（<code>whale_tracker_v2.py</code>）。</li>
+<li><strong>持仓重建</strong>：<code>position_rebuilder.py</code> 从成交流重建持仓；<code>hybrid_data_source.py</code> 按 <strong>Trades 重建 → JSON 备份 → Leaderboard 参考 → 无数据</strong> 的优先级提供统一数据，解决单一数据源不全/滞后的问题。</li>
+<li><strong>重点关注（Watchlist）</strong>：持仓 &gt; $100k，或（24h 变动 &gt; 5 次且持仓 &gt; $50k）自动加入重点列表（<code>whale_watchlist.py</code>）。</li>
+<li><strong>集中度与收敛</strong>：计算 HHI 指数、Top5/Top10 占比，判断策略从"分散 → 集中"的收敛趋势（converging/diverging/stable），用作信号强度参考。</li>
+<li><strong>鲸鱼跟随策略</strong>（<code>whale_following.py</code>）：对历史胜率 &gt; 60% 的"聪明钱"，在其大额加仓时生成带置信度的跟单建议。</li>
+<li><strong>深度分析</strong>（Dashboard <code>whale_deep_analyzer.py</code>）：调用 LLM（DeepSeek / OpenAI）生成自然语言深度解读，结果带 <code>data_hash</code> 缓存以控成本。</li>
+</ol>
+<h4>C. 风险评估与质量监控</h4>
+<ul>
+<li><code>risk_reviewer.py</code>：对每个机会/信号打风险分（LOW &lt; 25% / MEDIUM 25–50% / HIGH &gt; 50%），并检查市场是否过期、数据是否异常（如持仓 &gt; 50 个但总值 &lt; $1000 判为脏数据）。</li>
+<li><strong>Phase 3 质量自动化</strong>：<code>data_quality_check.py</code> + Dashboard <code>quality_report.py</code> + <code>threshold_optimizer.py</code>，对信号胜率做追踪并自动建议/应用阈值优化。</li>
+</ul>
+<hr />
+<h2 id="overview-h6">3. 代码实现（Implementation）</h2>
+<h3 id="overview-h7">3.1 仓库目录约定</h3>
+<p>项目采用<strong>数字前缀</strong>组织目录（详见 <code>PROJECT_STRUCTURE.md</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>目录</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>00-learning/</code></td>
+<td>学习资料</td>
+</tr>
+<tr>
+<td><code>01~05-*</code></td>
+<td>五类策略的研究/文档目录（Pair Cost / 跨市场 / 动量 / 鲸鱼跟随 / 情绪逆向）</td>
+</tr>
+<tr>
+<td><code>06-tools/</code></td>
+<td><strong>核心代码</strong>：<code>analysis/</code>（分析）、<code>monitoring/</code>（监控与通知）、<code>trading/</code>（交易，预留）</td>
+</tr>
+<tr>
+<td><code>07-data/</code></td>
+<td><strong>统一数据目录</strong>：<code>logs/</code>、<code>whale_states/</code>、<code>news_cache/</code>、<code>quality_reports/</code> 及各类 JSON</td>
+</tr>
+<tr>
+<td><code>08-backtests/</code></td>
+<td>回测框架</td>
+</tr>
+<tr>
+<td><code>09-docs/</code> / <code>docs/</code></td>
+<td>用户文档 / 设计文档</td>
+</tr>
+<tr>
+<td><code>10-tests/</code></td>
+<td>单元 / 集成 / e2e 测试</td>
+</tr>
+<tr>
+<td><code>dashboard/</code></td>
+<td>Web 仪表盘（backend + frontend + database）</td>
+</tr>
+<tr>
+<td><code>database/</code></td>
+<td>主数据库副本</td>
+</tr>
+<tr>
+<td><code>99-archive/</code>、<code>archived/</code></td>
+<td>已废弃模块与历史备份</td>
+</tr>
+</tbody>
+</table>
+<h3 id="overview-h8">3.2 路径与配置统一</h3>
+<p><code>06-tools/analysis/config.py</code> 是路径与阈值的<strong>单一事实来源</strong>：</p>
+<ul>
+<li>通过 <code>Path(__file__).parent...</code> 计算 <code>PROJECT_ROOT</code>，再派生 <code>DATA_DIR</code>、<code>WHALE_STATES_DIR</code>、<code>WATCHLIST_FILE</code>、<code>DASHBOARD_DB_FILE</code> 等；</li>
+<li><code>Thresholds</code> 类集中所有阈值；<code>APIConfig</code> 集中 API 端点；<code>DBTables</code> 集中表名；</li>
+<li><strong>规范</strong>：禁止硬编码绝对路径、禁止各文件重复定义路径（<code>PROJECT_STRUCTURE.md</code> 明确）。<blockquote>
+<p>⚠️ 实测注记：部分较新模块（如 <code>hybrid_data_source.py</code>、<code>sync_changes.py</code>）仍内联了绝对路径，属于待收敛到 <code>config.py</code> 的技术债。</p>
+</blockquote>
+</li>
+</ul>
+<h3 id="overview-h9">3.3 监控主程序</h3>
+<p><strong><code>06-tools/monitoring/polymarket_monitor_v2.py</code></strong>（约 864 行）是离线引擎的入口，设计上采用"<strong>能力可选加载</strong>"模式——所有子模块用 <code>try/except ImportError</code> 包裹并设布尔开关（<code>WATCHLIST_AVAILABLE</code>、<code>CLOB_API_AVAILABLE</code>、<code>RISK_REVIEW_AVAILABLE</code> 等），使得任一模块缺失时主程序仍可降级运行。</p>
+<p>单次扫描流程（默认每 5 分钟）：</p>
+<pre><code>1. 获取市场数据（Polymarket 500 + Manifold 100 + Metaculus 50）
+2. Pair Cost 扫描 + Kelly 仓位评估
+3. 跨平台套利匹配
+4. 鲸鱼追踪（取最近 ~1000 笔成交 → 识别 → 分析持仓/变动/集中度 → 更新 watchlist）
+5. 风险评估与异常数据过滤
+6. 发送 Telegram 通知 + 写 JSON 报告
+</code></pre>
+<p>启动脚本 <code>start_monitor.sh</code> 用 <code>nohup</code> 后台拉起，并设置 <code>PYTHONPATH</code> 指向 <code>06-tools/analysis</code>。</p>
+<h3 id="overview-h10">3.4 监控目录主要模块</h3>
+<ul>
+<li>通知：<code>telegram_notifier_v2.py</code>、<code>send_summary.py</code>、<code>send_top_whales_report_v2.py</code>、<code>send_watchlist_summary.py</code></li>
+<li>数据同步/回填：<code>sync_changes.py</code>、<code>backfill_*.py</code>（pnl / 集中度 / 市场标题 / 鲸鱼名等历史数据补齐）</li>
+<li>运维：<code>health_checker.py</code>、<code>error_monitor.py</code>、<code>data_quality_check.py</code>、<code>cleanup_stale_data.py</code></li>
+<li>信号：<code>check_polycop_signal.py</code>（"PolyCop" 评分信号，见 <code>docs/PolyCop_*.md</code> 系列）</li>
+</ul>
+<h3 id="overview-h11">3.5 技术栈</h3>
+<ul>
+<li><strong>后端 / 引擎</strong>：Python 3.12+，<code>requests</code>、<code>apscheduler</code>，类型注解 + f-string。</li>
+<li><strong>Dashboard 后端</strong>：Flask 3 + Flask-CORS + Flask-SocketIO + python-dotenv（见 <code>dashboard/backend/requirements.txt</code>）。</li>
+<li><strong>前端</strong>：React 18 + TypeScript + Ant Design + <code>@ant-design/charts</code>/<code>recharts</code> + axios + socket.io-client（CRA <code>react-scripts</code>）。</li>
+<li><strong>数据库</strong>：SQLite。</li>
+</ul>
+<hr />
+<h2 id="overview-h12">4. 数据层设计</h2>
+<h3 id="overview-h13">4.1 两类存储</h3>
+<ol>
+<li><strong>JSON 状态文件</strong>（<code>07-data/</code>）：鲸鱼状态 <code>whale_states/*.json</code>、重点列表 <code>whale_watchlist.json</code>、扫描报告 <code>monitor_report_*.json</code>、新闻缓存、质量报告等——监控引擎直接读写。</li>
+<li><strong>SQLite 数据库</strong>：Dashboard 的核心存储。注意存在多处库路径，需保持一致：
+   - 配置约定主库：<code>dashboard/database/polymarket.db</code>，备份 <code>database/polymarket.db</code>；
+   - 实际后端运行库：<code>dashboard/backend/database/polymarket.db</code>（<code>data_sync.py</code>、<code>hybrid_data_source.py</code> 使用）。<blockquote>
+<p>⚠️ 数据库路径不统一是已知技术债，部署/同步时务必确认实际使用的库文件。</p>
+</blockquote>
+</li>
+</ol>
+<h3 id="overview-h14">4.2 SQLite 表结构（<code>dashboard/backend/app/models/database.py</code>）</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>用途</th>
+<th>关键字段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>whales</code></td>
+<td>鲸鱼主表</td>
+<td>wallet(PK)、pseudonym、total_value、position_count、top5_ratio、convergence_trend、is_watched、total_pnl、total_volume</td>
+</tr>
+<tr>
+<td><code>positions</code></td>
+<td>持仓明细</td>
+<td>wallet(FK)、market、outcome、size、avg_price、cur_price、value、pnl、end_date</td>
+</tr>
+<tr>
+<td><code>changes</code></td>
+<td>仓位变动流</td>
+<td>wallet(FK)、type、market、old_size/new_size、change_amount、timestamp</td>
+</tr>
+<tr>
+<td><code>concentration_history</code></td>
+<td>集中度时序</td>
+<td>wallet(FK)、hhi、top5_ratio、top10_ratio、timestamp</td>
+</tr>
+<tr>
+<td><code>alerts</code></td>
+<td>警报</td>
+<td>type、title、message、data、is_read</td>
+</tr>
+<tr>
+<td><code>whale_deep_analysis</code></td>
+<td>LLM 深度分析缓存</td>
+<td>wallet(PK)、content、model、data_hash、cost、expires_at</td>
+</tr>
+<tr>
+<td><code>arbitrage_feedback</code></td>
+<td>套利人工确认</td>
+<td>arbitrage_id、arbitrage_type、feedback_type(confirmed/error)</td>
+</tr>
+<tr>
+<td>（另有）<code>semantic_signals</code> / 信号追踪相关表</td>
+<td>语义信号与胜率追踪</td>
+<td>见 <code>signal_tracking.py</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="overview-h15">4.3 数据同步</h3>
+<ul>
+<li><strong>引擎 → DB</strong>：<code>dashboard/backend/app/services/data_sync.py</code>（及 <code>data_sync_v2.py</code>）将 <code>07-data/</code> 的 JSON 与混合数据源写入 SQLite；由 <code>scheduler.py</code>（APScheduler）每 5 分钟触发一次 <code>run_full_sync()</code>，启动时立即执行一次。</li>
+<li><strong>changes 专项同步</strong>：<code>run_sync_changes.sh</code> → <code>sync_changes.py</code>。</li>
+</ul>
+<hr />
+<h2 id="overview-h16">5. Dashboard（Web 应用）</h2>
+<h3 id="overview-h17">5.1 后端结构（<code>dashboard/backend/app/</code>）</h3>
+<p>应用工厂 <code>create_app()</code>（<code>app/__init__.py</code>）注册 8 个 API 蓝图：</p>
+<table>
+<thead>
+<tr>
+<th>蓝图</th>
+<th>前缀</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>whales</code></td>
+<td><code>/api/whales</code></td>
+<td>鲸鱼列表/详情/历史/PnL/集中度趋势/深度分析/信号/Leaderboard 趋势（最大蓝图，30+ 端点）</td>
+</tr>
+<tr>
+<td><code>markets</code></td>
+<td><code>/api/markets</code></td>
+<td>活跃市场、扫描、订单簿、实时价格</td>
+</tr>
+<tr>
+<td><code>arbitrage</code></td>
+<td><code>/api/arbitrage</code></td>
+<td>Pair Cost / 跨市场机会、人工反馈、价格对比、统计</td>
+</tr>
+<tr>
+<td><code>alerts</code></td>
+<td><code>/api/alerts</code></td>
+<td>警报列表/已读/统计</td>
+</tr>
+<tr>
+<td><code>summary</code></td>
+<td><code>/api/summary</code></td>
+<td>首页汇总</td>
+</tr>
+<tr>
+<td><code>settings</code></td>
+<td><code>/api/settings</code></td>
+<td>设置读写</td>
+</tr>
+<tr>
+<td><code>semantic</code></td>
+<td><code>/api/semantic</code></td>
+<td>语义套利扫描、关系图</td>
+</tr>
+<tr>
+<td><code>signals</code></td>
+<td><code>/api/signals</code></td>
+<td>信号统计/追踪/阈值优化/质量报告</td>
+</tr>
+</tbody>
+</table>
+<p><strong>服务层</strong>（<code>app/services/</code>）：<code>data_sync*</code>、<code>scheduler</code>、<code>clob_service</code>、<code>semantic_arbitrage</code>、<code>whale_analyzer</code>、<code>whale_deep_analyzer</code>、<code>quality_report</code>、<code>threshold_optimizer</code>、<code>notification</code>、<code>websocket</code>。</p>
+<p>实时推送通过 <code>Flask-SocketIO</code>（<code>websocket.py</code> 的 <code>broadcast_new_alert</code> 等）。</p>
+<h3 id="overview-h18">5.2 前端页面（<code>dashboard/frontend/src/pages/</code>）</h3>
+<p>Dashboard（首页）、Whales / WhaleDetail（鲸鱼）、Arbitrage / SemanticArbitrage（套利）、Alerts（警报）、LeaderboardWales / LeaderboardTrends（榜单趋势）、NewsDriven（新闻驱动）、QualityReport（质量报告）、Settings（设置）。图表组件 <code>ConcentrationChart</code>、<code>PnLChart</code>；服务封装 <code>services/api.ts</code>（axios）与 <code>services/socket.ts</code>（SocketIO）。</p>
+<h3 id="overview-h19">5.3 后端启动</h3>
+<p><code>dashboard/backend/run.py</code>：手动解析 <code>.env</code> → <code>create_app()</code> → 启动 <code>DataScheduler</code> → <code>socketio.run(host=0.0.0.0, port=5000)</code>。若配置了 <code>DEEPSEEK_API_KEY</code> / <code>OPENAI_API_KEY</code> 则启用真实 LLM，否则走模拟模式。</p>
+<hr />
+<h2 id="overview-h20">6. 部署与运行（Deployment）</h2>
+<h3 id="overview-h21">6.1 离线监控引擎</h3>
+<pre><code class="language-bash"># 一键启动（后台 nohup）
+./start_monitor.sh
+# 日志
+tail -f /tmp/monitor.log        # 启动日志
+tail -f 07-data/logs/monitor.log # 运行日志
+
+# 定时同步 changes（建议加入 crontab）
+./run_sync_changes.sh
+</code></pre>
+<p>引擎本身的"每 5 分钟"循环由进程内逻辑/外部 cron 驱动（生产建议用 cron 或 systemd 守护 <code>polymarket_monitor_v2.py</code>）。</p>
+<h3 id="overview-h22">6.2 Dashboard — Docker（推荐，见 <code>docs/deployment-guide-v2.md</code>）</h3>
+<p><code>dashboard/docker-compose.yml</code> 定义三服务：</p>
+<table>
+<thead>
+<tr>
+<th>服务</th>
+<th>端口</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>backend</code></td>
+<td>5000</td>
+<td>Flask；挂载 <code>./database</code> 与只读 <code>../07-data</code></td>
+</tr>
+<tr>
+<td><code>frontend</code></td>
+<td>3000</td>
+<td>React 构建产物</td>
+</tr>
+<tr>
+<td><code>nginx</code></td>
+<td>80</td>
+<td>反代 backend + frontend（<code>nginx.conf</code>）</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-bash">cd dashboard
+# 配置 .env（TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID / FLASK_ENV / SECRET_KEY）
+docker-compose up -d --build
+docker-compose ps
+docker-compose logs -f
+# 访问：http://&lt;server-ip&gt;/ ；API：http://&lt;server-ip&gt;/api/
+</code></pre>
+<p><code>dashboard/Makefile</code> 提供 <code>make deploy / dev / logs / backup / update</code> 快捷命令。</p>
+<h3 id="overview-h23">6.3 Dashboard — 手动部署</h3>
+<pre><code class="language-bash"># 后端
+cd dashboard/backend
+python3 -m venv venv &amp;&amp; source venv/bin/activate
+pip install -r requirements.txt
+python3 run.py            # http://localhost:5000
+
+# 前端
+cd dashboard/frontend
+npm install
+npm run build
+npx serve -s build -l 3000
+</code></pre>
+<h3 id="overview-h24">6.4 生产加固</h3>
+<ul>
+<li><strong>SSL</strong>：<code>certbot --nginx -d your-domain.com</code>；</li>
+<li><strong>守护</strong>：systemd（<code>polymarket-dashboard</code> 服务）+ <code>restart: unless-stopped</code>；</li>
+<li><strong>备份</strong>：<code>cron</code> 每日 <code>cp polymarket.db backups/polymarket.db.$(date +%Y%m%d)</code>。</li>
+</ul>
+<hr />
+<h2 id="overview-h25">7. 配置与环境变量</h2>
+<h3 id="overview-h26">7.1 监控引擎环境变量</h3>
+<pre><code class="language-bash">export TELEGRAM_BOT_TOKEN=&quot;your-token&quot;
+export TELEGRAM_CHAT_ID=&quot;-5052636342&quot;
+export PAIR_COST_THRESHOLD=&quot;0.995&quot;      # 注意：config.py 默认已为 0.90
+export MIN_GAP_THRESHOLD=&quot;0.05&quot;
+export MARKET_MAKING_MIN_SPREAD=&quot;0.015&quot;
+export MARKET_MAKING_MIN_DEPTH=&quot;5000&quot;
+export NOTIFY_IMMEDIATELY=&quot;true&quot;
+export RISK_REVIEW_ENABLED=&quot;true&quot;
+export MARKET_MAKING_NOTIFY=&quot;true&quot;
+</code></pre>
+<h3 id="overview-h27">7.2 Dashboard <code>.env</code></h3>
+<pre><code>TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=-5052636342
+FLASK_ENV=production
+SECRET_KEY=change_this_key
+DEEPSEEK_API_KEY=...   # 或 OPENAI_API_KEY，启用 LLM 深度分析
+</code></pre>
+<blockquote>
+<p>阈值的<strong>单一来源是 <code>config.py</code></strong>；环境变量为运行期覆盖。两者目前默认值不一致（如 Pair Cost），以代码默认 0.90 为准。</p>
+</blockquote>
+<hr />
+<h2 id="overview-h28">8. 运维、监控与故障排除</h2>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>收不到通知</td>
+<td>检查 <code>TELEGRAM_BOT_TOKEN</code>/<code>CHAT_ID</code>；<code>tail -f 07-data/logs/monitor.log</code></td>
+</tr>
+<tr>
+<td>Metaculus API 报错</td>
+<td>已知 SSL 间歇问题，不影响 Polymarket+Manifold 核心</td>
+</tr>
+<tr>
+<td>异常数据（持仓多但价值低）</td>
+<td><code>risk_reviewer</code> 自动过滤（持仓 &gt; 50 且价值 &lt; $1000），日志显示"⚠️ 数据异常，跳过"</td>
+</tr>
+<tr>
+<td>测试数据污染生产</td>
+<td>测试须带 <code>--test</code>，使用 <code>/tmp/</code> 临时文件</td>
+</tr>
+<tr>
+<td>Dashboard 库为空/对不上</td>
+<td>确认实际库路径（<code>dashboard/backend/database/polymarket.db</code>）；必要时 <code>db.init_db()</code> 重建</td>
+</tr>
+<tr>
+<td>数据库锁/陈旧</td>
+<td><code>cleanup_stale_data.py</code>、<code>Whale_States_Stale_Analysis.md</code></td>
+</tr>
+</tbody>
+</table>
+<p>日志技巧：<code>grep "Error" 07-data/logs/monitor.log</code>、<code>grep "🐋" 07-data/logs/monitor.log</code>。
+专项运维脚本：<code>health_checker.py</code>、<code>error_monitor.py</code>、<code>data_quality_check.py</code>。</p>
+<hr />
+<h2 id="overview-h29">9. 演进历史与现状评估</h2>
+<h3 id="overview-h30">9.1 版本里程碑（git 历史）</h3>
+<pre><code>46295a2 初始：套利监控系统
+b9c5370 加入 7 套交易策略 + 监控系统
+c71a2b2 新闻系统 + Dashboard 整合 + V2 设计文档
+14305a5 V2-Day1：环境准备 + 基础优化
+2e50b6f V2-Day2：鲸鱼跟随策略
+119c026 Dashboard Phase 1：套利页/鲸鱼详情/警报数据连接
+6131ca7 Phase 2：语义套利引擎 + 跨平台同步 + 人工确认 + 图表数据
+5c2c4b6 集成 CLOB API 到 Dashboard 后端
+8d4c5d1 Phase 3：质量监控与自动化   ← 当前
+</code></pre>
+<h3 id="overview-h31">9.2 当前工作区状态（未提交）</h3>
+<p><code>v2.0-development</code> 分支有大量未提交改动与新增文件：
+- 新增分析模块：<code>hybrid_data_source.py</code>、<code>leaderboard_trends.py</code>、<code>leaderboard_whale_tracker.py</code>、<code>position_rebuilder.py</code>、<code>whale_classifier.py</code>、<code>database/</code> 等；
+- 多个 <code>backfill_*.py</code> 历史数据回填脚本；
+- 已删除并被 <code>.bak</code> 替代的旧模块（<code>news_fetcher.py</code>、<code>whale_news_connector.py</code>）。</p>
+<blockquote>
+<p>建议：整理 <code>.bak</code>、<code>.bak.YYYYMMDD</code> 临时文件后再提交，明确哪些进入 V2 主线。</p>
+</blockquote>
+<h3 id="overview-h32">9.3 已识别技术债</h3>
+<ol>
+<li><strong>数据库路径三处不一致</strong>（config / backend / 备份），易踩坑；</li>
+<li><strong>绝对路径硬编码</strong>仍存在于部分新模块，未完全收敛到 <code>config.py</code>；</li>
+<li><strong>阈值默认值在代码与文档/环境变量间不一致</strong>（Pair Cost 0.90 vs 0.995）；</li>
+<li>根目录存在空的 <code>polymarket_data.db</code>（0 字节），疑似遗留；</li>
+<li>大量 <code>.bak</code>/归档文件混在源码目录中。</li>
+</ol>
+<hr />
+<h2 id="overview-h33">10. 快速上手清单</h2>
+<pre><code class="language-bash"># 0. 查看项目配置（验证路径）
+python3 06-tools/analysis/config.py
+
+# 1. 启动离线监控引擎
+export TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=...
+./start_monitor.sh &amp;&amp; tail -f /tmp/monitor.log
+
+# 2. 启动 Dashboard（开发）
+cd dashboard/backend &amp;&amp; python3 -m venv venv &amp;&amp; source venv/bin/activate \
+  &amp;&amp; pip install -r requirements.txt &amp;&amp; python3 run.py      # :5000
+cd ../frontend &amp;&amp; npm install &amp;&amp; npm start                   # :3000
+
+# 3. 或 Docker 一键
+cd dashboard &amp;&amp; docker-compose up -d --build                 # :80
+
+# 4. 跑测试
+pytest 10-tests/            # 或 06-tools/analysis 下的 test_*.py
+</code></pre>
+<p><strong>推荐阅读顺序</strong>（深入源码时）：
+<code>PROJECT_STRUCTURE.md</code> → <code>06-tools/analysis/config.py</code> → <code>06-tools/monitoring/polymarket_monitor_v2.py</code> → <code>docs/V2-design-integrated.md</code> → <code>dashboard/backend/app/__init__.py</code> → <code>dashboard/backend/app/models/database.py</code> → <code>docs/deployment-guide-v2.md</code>。</p>
+<hr />
+<p><em>本文档由代码通读自动整理，如与最新代码冲突，以代码为准。</em>
+<em>生成时间：2026-06-02</em></p></section>
+<section class="doc" id="doc-review"><h1>Polymarket 智能监控系统 — 全面评审报告</h1>
+<blockquote>
+<p><strong>评审时间</strong>：2026-06-02 (UTC+8)
+<strong>评审对象</strong>：<code>v2.0-development</code> 分支（最近提交 <code>8d4c5d1 Phase 3: 质量监控与自动化</code>）
+<strong>评审方法</strong>：通读源码 + 实际查询运行库（<code>dashboard/backend/database/polymarket.db</code>，138 MB）+ 核对设计文档与运行数据
+<strong>评审维度</strong>：需求覆盖 · 设计架构 · 技术实现 · 代码逻辑 · 系统部署 · <strong>数据腐化专项</strong></p>
+<p>⚠️ 本报告基于<strong>真实运行数据</strong>，非纯文档推断。关键数字均来自对生产 SQLite 库与 <code>07-data/</code> 目录的直接采样。</p>
+</blockquote>
+<hr />
+<h2 id="review-h0">0. 评审结论速览</h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>评级</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>需求覆盖</td>
+<td>🟡 中</td>
+<td>监控/鲸鱼跟踪扎实，但套利与 Phase 3 质量自动化"实现了却没产出数据"</td>
+</tr>
+<tr>
+<td>设计架构</td>
+<td>🟡 中</td>
+<td>分层清晰、模块化好，但双存储 + 双同步实现带来一致性风险</td>
+</tr>
+<tr>
+<td>技术实现</td>
+<td>🟠 偏弱</td>
+<td>612 处 print / 0 处 logging、59+ 处宽泛 except、生产用 Werkzeug 开发服务器</td>
+</tr>
+<tr>
+<td>代码逻辑</td>
+<td>🟡 中</td>
+<td>核心算法合理，但存在 <code>has_activity</code> 单调标志 bug、循环内重复读文件</td>
+</tr>
+<tr>
+<td>系统部署</td>
+<td>🟡 中</td>
+<td>Docker/Nginx/Makefile 齐备，但无 CI、无迁移、无健康检查、备份手动</td>
+</tr>
+<tr>
+<td><strong>数据腐化</strong></td>
+<td>🔴 <strong>严重</strong></td>
+<td><strong>whales 表 97.9% 是零值垃圾行；DB 47% 是死空间从未 VACUUM；JSON/报告文件无轮转</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>最重要的三件事</strong>：
+1. 🔴 <strong><code>whales</code> 表已退化为垃圾场</strong>——72,757 行中 71,242 行（97.9%）<code>total_value=0 且 position_count=0</code>。
+2. 🔴 <strong>数据库膨胀且从不回收</strong>——138 MB 中约 47% 是 freelist 死空间。
+3. 🟠 <strong>Phase 3"质量与自动化"形同虚设</strong>——信号追踪、阈值优化、质量报告等 7 张表全部 0 行。</p>
+<hr />
+<h2 id="review-h1">1. 需求覆盖评审</h2>
+<h3 id="review-h2">1.1 已较好覆盖 ✅</h3>
+<table>
+<thead>
+<tr>
+<th>需求</th>
+<th>状态</th>
+<th>证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>鲸鱼识别与持仓跟踪</td>
+<td>✅ 运行中</td>
+<td><code>positions</code> 11,374 行，更新到 2026-06-02</td>
+</tr>
+<tr>
+<td>集中度/收敛分析</td>
+<td>✅ 运行中</td>
+<td><code>concentration_history</code> 67,701 行，7 天滚动</td>
+</tr>
+<tr>
+<td>重点鲸鱼 Watchlist</td>
+<td>✅</td>
+<td><code>is_watched=1</code> 281 个</td>
+</tr>
+<tr>
+<td>Telegram 通知</td>
+<td>✅</td>
+<td><code>telegram_notifier_v2</code> + 多种报告脚本</td>
+</tr>
+<tr>
+<td>Leaderboard 趋势</td>
+<td>✅</td>
+<td><code>leaderboard_whales/history/trends</code> 有数据</td>
+</tr>
+<tr>
+<td>LLM 深度分析（带缓存）</td>
+<td>✅</td>
+<td><code>whale_deep_analysis</code> 11 条，带 <code>data_hash</code>/<code>cost</code></td>
+</tr>
+<tr>
+<td>Dashboard 可视化</td>
+<td>✅</td>
+<td>8 个 API 蓝图、12+ 前端页面</td>
+</tr>
+</tbody>
+</table>
+<h3 id="review-h3">1.2 "已实现但未产出"——需求悬空 ⚠️</h3>
+<p>V2 PRD 的核心增量（信号胜率追踪、阈值自动优化、质量监控自动化）<strong>代码已落地、表已建，但运行数据为 0</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>表 / 功能</th>
+<th>行数</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>signals</code> / <code>semantic_signals</code></td>
+<td>0</td>
+<td>语义信号无产出</td>
+</tr>
+<tr>
+<td><code>signal_results</code></td>
+<td>0</td>
+<td>信号胜率无追踪</td>
+</tr>
+<tr>
+<td><code>whale_performance</code></td>
+<td>0</td>
+<td>鲸鱼绩效未计算</td>
+</tr>
+<tr>
+<td><code>strategy_performance</code></td>
+<td>0</td>
+<td>策略绩效未计算</td>
+</tr>
+<tr>
+<td><code>quality_reports</code> / <code>quality_logs</code></td>
+<td>0</td>
+<td>质量报告未生成</td>
+</tr>
+<tr>
+<td><code>threshold_history</code></td>
+<td>0</td>
+<td>阈值自动优化未运行</td>
+</tr>
+<tr>
+<td><code>opportunity_history</code></td>
+<td>0</td>
+<td>机会历史未沉淀</td>
+</tr>
+<tr>
+<td><code>pair_cost_arbitrage</code></td>
+<td>0</td>
+<td>Pair Cost 套利零落库</td>
+</tr>
+<tr>
+<td><code>cross_market_arbitrage</code></td>
+<td>1</td>
+<td>跨市场套利仅 1 条</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>判断</strong>：Phase 3 "质量监控与自动化"提交了代码，但调度/触发链路没有真正跑起来。这恰好印证 V2 设计文档自述的痛点——"套利机会 24h 0 次、信号效果未知"。<strong>这些是当前最大的需求缺口</strong>。</p>
+</blockquote>
+<h3 id="review-h4">1.3 范围边界 📌</h3>
+<ul>
+<li><code>01-05</code> 五个策略目录 + <code>06-tools/trading/</code> <strong>仅有 README</strong>——系统是<strong>只读/建议型</strong>，无下单执行层。这与 README 定位一致（不盲目跟单），但需明确这是"信号系统"而非"交易系统"。</li>
+</ul>
+<hr />
+<h2 id="review-h5">2. 设计架构评审</h2>
+<h3 id="review-h6">2.1 优点 ✅</h3>
+<ul>
+<li><strong>分层清晰</strong>：数据获取 → 分析引擎 → 风险/质量 → 通知/存储 → Dashboard，职责边界明确。</li>
+<li><strong>模块化策略</strong>：套利/鲸鱼/做市/动量/语义各自独立文件，便于单独演进。</li>
+<li><strong>能力可选加载（优雅降级）</strong>：<code>polymarket_monitor_v2.py</code> 用 <code>try/except ImportError</code>+布尔开关包裹每个子系统，单模块缺失不致命——这是<strong>很好的健壮性设计</strong>。</li>
+<li><strong>多源数据融合</strong>：<code>hybrid_data_source.py</code> 按 <code>Trades重建 → JSON → Leaderboard → 无数据</code> 优先级兜底，应对单源不全。</li>
+<li><strong>配置集中</strong>：<code>config.py</code> 作为路径/阈值单一来源（理念正确）。</li>
+<li><strong>DB 路径其实已统一</strong>：4 个 <code>*.db</code> 实为<strong>软链接</strong>指向 <code>dashboard/backend/database/polymarket.db</code>。<blockquote>
+<p>✅ 更正我此前 OVERVIEW 中"路径三处不一致"的说法——物理上是同一个库，靠 symlink 收敛。但<strong>软链接本身是隐式约定</strong>，新环境/Docker 卷挂载时极易断裂，仍属脆弱设计。</p>
+</blockquote>
+</li>
+</ul>
+<h3 id="review-h7">2.2 不足 ⚠️</h3>
+<ol>
+<li><strong>双存储 + 双同步</strong>：<code>07-data/*.json</code>（引擎写）与 SQLite（Dashboard 读）并存，靠 <code>data_sync.py</code> 桥接，是<strong>最终一致</strong>而非强一致；同步失败时两边静默漂移。更糟的是同时存在 <code>data_sync.py</code> 与 <code>data_sync_v2.py</code> 两套实现，<strong>权威来源不明确</strong>。</li>
+<li><strong>缺少数据生命周期设计</strong>：建表用 <code>CREATE TABLE IF NOT EXISTS</code>，无 schema 版本/迁移；除 <code>concentration_history</code> 有 7 天清理外，<code>whales</code>/<code>positions_archive</code>/<code>daily_price_snapshots</code> 等无保留策略 → 直接导致第 6 节的数据腐化。</li>
+<li><strong>配置未真正收敛</strong>：19 个 <code>06-tools</code> 文件、2 个 backend 文件硬编码 <code>/home/xmren/...</code> 绝对路径，与 <code>config.py</code> 规范相悖（如 <code>hybrid_data_source.py</code> 顶部直接写死 DB_PATH）。</li>
+<li><strong>阈值双轨</strong>：<code>config.py::PAIR_COST=0.90</code> 与文档/环境变量示例的 <code>0.995</code> 不一致，运行期行为依赖于谁覆盖谁。</li>
+</ol>
+<hr />
+<h2 id="review-h8">3. 技术实现评审</h2>
+<h3 id="review-h9">3.1 优点 ✅</h3>
+<ul>
+<li>类型注解 + <code>@dataclass</code>（如 <code>WhaleData</code>/<code>Position</code>）在新模块中应用良好。</li>
+<li>LLM 调用带 <strong>content-hash 缓存 + 成本记录</strong>，控费意识到位。</li>
+<li>依赖在 <code>requirements.txt</code> 中<strong>固定版本</strong>，可复现。</li>
+</ul>
+<h3 id="review-h10">3.2 不足 ⚠️</h3>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>量化证据</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>几乎不用日志</strong></td>
+<td><code>06-tools/monitoring</code> 中 <code>print()</code> <strong>612 处 / logging 0 处</strong></td>
+<td>违反 <code>PROJECT_STRUCTURE.md</code> 自定规范；生产无结构化日志、无级别、无法采集</td>
+</tr>
+<tr>
+<td><strong>宽泛/裸异常吞错</strong></td>
+<td>59 处 <code>except Exception</code> + 10 处裸 <code>except:</code></td>
+<td>错误被静默（如 <code>data_sync.py:162</code> <code>except: pass</code> 吞掉成交量计算失败）</td>
+</tr>
+<tr>
+<td><strong>生产跑开发服务器</strong></td>
+<td><code>run.py:44</code> <code>socketio.run(..., allow_unsafe_werkzeug=True)</code></td>
+<td>Werkzeug 非生产级，无 worker、无优雅退出；应上 gunicorn+eventlet</td>
+</tr>
+<tr>
+<td><strong>依赖偏旧</strong></td>
+<td>flask==3.0.0 等固定在较老版本</td>
+<td>安全/兼容更新滞后</td>
+</tr>
+<tr>
+<td><strong>源码混入临时件</strong></td>
+<td>15 个 <code>*.bak</code> / <code>*.bak.YYYYMMDD</code> 在源码树</td>
+<td>污染、易误引用</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="review-h11">4. 代码逻辑评审</h2>
+<h3 id="review-h12">4.1 关注点（具体到行）</h3>
+<p><strong>① <code>has_activity</code> 单调标志 bug（数据正确性问题）</strong> — <code>data_sync.py:181</code></p>
+<pre><code class="language-sql">has_activity = CASE WHEN excluded.has_activity = 1 THEN 1 ELSE whales.has_activity END
+</code></pre>
+<p>该字段<strong>一旦置 1 永不复位</strong>。后果可在库中直接观测：<strong>71,152 行 <code>has_activity=1</code>，但其中绝大多数 <code>total_value=0</code></strong>——"有活动"标志已失去意义，任何基于它的查询都会被污染。</p>
+<p><strong>② 循环内重复打开同一文件（性能）</strong> — <code>data_sync.py:145-149</code>
+每只鲸鱼迭代都 <code>open(self.watchlist_file)</code> 重新读一遍 watchlist JSON（外层已读过一次），O(N) 次磁盘读，N=鲸鱼数。应提到循环外读一次。</p>
+<p><strong>③ ON CONFLICT 保留旧值会掩盖"归零"</strong> — <code>data_sync.py:178-184</code>
+<code>top5_ratio/total_volume/total_pnl/changes_count</code> 仅在新值 &gt;0 时更新，否则保留旧值。本意是防止被零覆盖，但副作用是：当一只鲸鱼真的清仓归零，旧的非零指标会<strong>僵尸式残留</strong>，与 <code>total_value=0</code> 自相矛盾。</p>
+<p><strong>④ 缺乏写入前的价值下限过滤</strong> — <code>sync_whales</code>
+零持仓/零价值的钱包仍被 <code>INSERT INTO whales</code>，没有 <code>if total_value &lt; X: continue</code> 这类闸门 → 第 6 节垃圾行的直接成因。</p>
+<h3 id="review-h13">4.2 优点 ✅</h3>
+<ul>
+<li>集中度算法（HHI、Top5/Top10）实现简洁正确（<code>_calculate_concentration_metrics</code>），含 <code>total==0</code> 防除零。</li>
+<li>鲸鱼脏数据过滤思路存在（<code>risk_reviewer</code> 中"持仓&gt;50 且价值&lt;$1000 判异常"），方向对，只是<strong>未在落库前的 sync 层统一执行</strong>。</li>
+</ul>
+<hr />
+<h2 id="review-h14">5. 系统部署评审</h2>
+<h3 id="review-h15">5.1 优点 ✅</h3>
+<ul>
+<li>提供 <strong>Docker Compose（backend+frontend+nginx）+ Makefile + 部署指南</strong>，三种部署路径（Docker/手动/生产加固）。</li>
+<li><code>restart: unless-stopped</code>、SocketIO 实时推送、nginx 反代到位。</li>
+<li>敏感信息治理良好：<code>.gitignore</code> 正确排除 <code>07-data/</code>、<code>*.db</code>、<code>*.log</code>、<code>.env</code>；<strong>仓库中未发现硬编码 Telegram Token/密钥</strong>。</li>
+</ul>
+<h3 id="review-h16">5.2 不足 ⚠️</h3>
+<ol>
+<li><strong>无 CI/CD</strong>：无自动化测试/构建/部署流水线；测试文件仅 <strong>5 个</strong>，覆盖远不足。</li>
+<li><strong>无健康检查/资源限制</strong>：<code>docker-compose.yml</code> 缺 <code>healthcheck</code>、<code>mem_limit</code>、<code>depends_on: condition</code>。</li>
+<li><strong>无 schema 迁移</strong>：靠 <code>CREATE IF NOT EXISTS</code>，字段变更需手工改库。</li>
+<li><strong>引擎守护方式脆弱</strong>：<code>start_monitor.sh</code> 用 <code>nohup ... &gt; /tmp/monitor.log</code>——重启即丢日志，未用文档所述的 systemd。</li>
+<li><strong>备份手动</strong>：138 MB 库靠 <code>cp</code> 手动/cron 备份，无校验、无异地。</li>
+<li><strong>生产 WSGI 缺位</strong>：见 3.2，未使用 gunicorn 等。</li>
+</ol>
+<hr />
+<h2 id="review-h17">6. 🔴 数据腐化专项（核心发现）</h2>
+<blockquote>
+<p>本节为本次评审最重要的部分。所有数字均来自 2026-06-02 对运行库的实测。</p>
+</blockquote>
+<h3 id="review-h18">6.1 <code>whales</code> 表退化为垃圾场（最严重）</h3>
+<pre><code>总行数         : 72,757
+total_value=0  : 71,242  (97.9%)   ← 零值且零持仓
+  其中 &gt;$100k  :    211             ← 真正的&quot;鲸鱼&quot;
+  $10k–100k    :    508
+  $0–10k       :    796
+has_activity=1 : 71,152  ← 与零值严重矛盾（见 4.1 ①）
+</code></pre>
+<p><strong>只有约 2% 的行是有意义的数据</strong>。该表本应是"被跟踪鲸鱼"主表，却把所有出现过的钱包（疑似来自成交流/leaderboard 导入）无差别落库，且无清理。查询、统计、前端列表都要在 7 万垃圾行上过滤。</p>
+<h3 id="review-h19">6.2 数据库膨胀且从不回收</h3>
+<pre><code>文件大小       : 138 MB
+总页数         : 33,886
+freelist 空闲页: 16,021   ≈ 47% 为删除后未回收的死空间
+</code></pre>
+<p>大量删除（如 concentration 7 天清理、归档迁移）产生的空洞<strong>从未 <code>VACUUM</code></strong>。实际有效数据可能仅 ~70 MB，一半磁盘被浪费，且影响查询缓存效率。</p>
+<h3 id="review-h20">6.3 JSON / 报告文件无轮转</h3>
+<table>
+<thead>
+<tr>
+<th>位置</th>
+<th>数量</th>
+<th>问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>07-data/whale_states/*.json</code></td>
+<td>283</td>
+<td>最旧 2026-03-13（近 3 个月未更新仍在"活跃"目录）</td>
+</tr>
+<tr>
+<td><code>07-data/whale_states_archive/</code></td>
+<td>1,796</td>
+<td>归档无上限</td>
+</tr>
+<tr>
+<td><code>07-data/monitor_report_*.json</code></td>
+<td>158</td>
+<td>每次扫描落一个，从 4-17 起堆积，无清理</td>
+</tr>
+</tbody>
+</table>
+<h3 id="review-h21">6.4 归档/快照表无保留策略</h3>
+<pre><code>positions        : 11,374
+positions_archive : 38,383   ← 归档是在用数据的 3.4 倍
+daily_price_snapshots : 39,142
+market_title_map : 46,656
+</code></pre>
+<p>归档表持续单增，无 TTL，是 6.2 死空间的来源之一。</p>
+<h3 id="review-h22">6.5 配置/命名漂移（dead reference）</h3>
+<ul>
+<li><code>config.py::DBTables.SIGNALS = "semantic_signals"</code>，但实际表名为 <code>signals</code>（且为 0 行）——<strong>配置常量指向一个查询不到数据的名字</strong>，属典型的"代码与库脱节"腐化。</li>
+</ul>
+<h3 id="review-h23">6.6 遗留垃圾文件</h3>
+<ul>
+<li>根目录 <code>polymarket_data.db</code> = <strong>0 字节</strong>（5-23 创建后从未使用）。</li>
+<li>15 个 <code>*.bak</code> 散落在 <code>06-tools/analysis</code>（含 <code>whale_tracker_v2.py.bak.20260516</code> 等带日期备份）。</li>
+</ul>
+<h3 id="review-h24">6.7 是否存在"数据腐化"？——<strong>是，且程度严重</strong></h3>
+<p>综合判断，本项目同时存在三类经典数据腐化：
+1. <strong>结构腐化</strong>：垃圾行/僵尸标志/矛盾字段（6.1、4.1①、4.1③）。
+2. <strong>物理腐化</strong>：膨胀不回收的 SQLite（6.2）。
+3. <strong>生命周期腐化</strong>：JSON/报告/归档无轮转、无 TTL（6.3、6.4）。
+4. <strong>引用腐化</strong>：配置常量/空表与实际不符（6.5、1.2）。</p>
+<hr />
+<h2 id="review-h25">7. 优先级改进清单</h2>
+<h3 id="review-h26">P0 — 数据腐化止血（本周）</h3>
+<ol>
+<li><strong>清洗 whales 表</strong>：删除 <code>total_value=0 AND position_count=0 AND is_watched=0</code> 的行（预计清掉 ~7 万行）；在 <code>sync_whales</code> 落库前加价值下限闸门。</li>
+<li><strong>修复 <code>has_activity</code> 逻辑</strong>：改为反映当前状态而非单调置位；一次性 <code>UPDATE whales SET has_activity=0 WHERE total_value=0</code>。</li>
+<li><strong><code>VACUUM</code> + 定期化</strong>：立即回收 ~47% 死空间；加每周 <code>VACUUM</code>/<code>PRAGMA optimize</code> 任务。</li>
+<li><strong>报告/状态文件轮转</strong>：<code>monitor_report_*.json</code>、<code>whale_states</code> 加保留窗口（如 14 天）与归档上限。</li>
+<li>删除根目录 0 字节 <code>polymarket_data.db</code> 与 15 个 <code>*.bak</code>。</li>
+</ol>
+<h3 id="review-h27">P1 — 让"已实现"真正产出（两周）</h3>
+<ol start="6">
+<li>排查 Phase 3 调度链路，使 <code>signals/signal_results/quality_reports/threshold_history</code> 等真正落数据；否则在文档中明确标注为"未启用"。</li>
+<li>统一同步实现：在 <code>data_sync.py</code> / <code>data_sync_v2.py</code> 间选定权威者，废弃另一个。</li>
+<li>修正 <code>config.DBTables.SIGNALS</code> 命名漂移；为 schema 引入版本号。</li>
+</ol>
+<h3 id="review-h28">P2 — 工程化（一个月）</h3>
+<ol start="9">
+<li><code>print</code> → <code>logging</code>（结构化、分级、落 <code>07-data/logs/</code>）；收敛宽泛/裸 except。</li>
+<li>生产改用 gunicorn+eventlet；docker-compose 加 healthcheck/资源限制；引入最小 CI（pytest + lint）。</li>
+<li>将 19 处硬编码绝对路径收敛到 <code>config.py</code>；用配置替代 DB symlink 约定。</li>
+</ol>
+<hr />
+<h2 id="review-h29">8. 总评</h2>
+<p>这是一个<strong>功能丰富、迭代活跃、架构理念正确</strong>的预测市场监控系统，鲸鱼跟踪深度（持仓重建→集中度→收敛→PnL→LLM 解读）尤其是亮点，优雅降级与多源兜底体现了不错的工程直觉。</p>
+<p>但它正处于<strong>典型的"快速迭代后未做数据治理"困境</strong>：核心库已被 98% 的垃圾行淹没、近半磁盘是死空间、Phase 3 的质量自动化本身却没有在治理数据——<strong>"质量监控"模块自己最需要被质量监控</strong>。同时工程基线（日志、异常、生产 WSGI、CI、迁移）落后于功能复杂度。</p>
+<p><strong>建议</strong>：先做 P0 数据止血与回收，再补 P1 让已建表产出数据、收敛双实现，最后做 P2 工程化。当前阶段<strong>不宜在脏数据之上继续叠加新策略</strong>，否则信号可信度无从谈起。</p>
+<hr />
+<p><em>本报告基于 2026-06-02 的代码与运行数据快照，如后续已修复，请以最新状态为准。</em>
+<em>评审生成时间：2026-06-02</em></p></section>
+    </div>
+  </div>
+</div>
+<button class="topbtn" title="回到顶部" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+<script>
+const links=[...document.querySelectorAll('.nav-link')];
+const map=new Map(links.map(l=>[l.dataset.target,l]));
+const heads=links.map(l=>document.getElementById(l.dataset.target)).filter(Boolean);
+const obs=new IntersectionObserver((es)=>{
+  es.forEach(e=>{if(e.isIntersecting){
+    links.forEach(l=>l.classList.remove('active'));
+    const a=map.get(e.target.id); if(a)a.classList.add('active');
+  }});
+},{rootMargin:'-10% 0px -80% 0px',threshold:0});
+heads.forEach(h=>obs.observe(h));
+document.querySelectorAll('.nav-title').forEach(t=>t.addEventListener('click',()=>{
+  const el=document.getElementById(t.dataset.doc); if(el)el.scrollIntoView({behavior:'smooth'});
+}));
+document.querySelectorAll('.nav-link').forEach(l=>l.addEventListener('click',()=>{
+  if(window.innerWidth<=860)document.querySelector('.sidebar').classList.remove('open');
+}));
+</script>
+</body>
+</html>

@@ -121,6 +121,165 @@ def get_whale_history(wallet):
     })
 
 
+@whales_bp.route('/<wallet>/pnl-history', methods=['GET'])
+def get_whale_pnl_history(wallet):
+    """获取鲸鱼盈亏历史数据"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取盈亏历史（从changes表计算）
+        cursor.execute('''
+            SELECT 
+                date(timestamp) as date,
+                SUM(CASE WHEN type = 'increase' THEN change_amount ELSE 0 END) as realized_pnl,
+                COUNT(*) as trade_count
+            FROM changes 
+            WHERE wallet = ? 
+              AND timestamp > datetime('now', '-30 days')
+            GROUP BY date(timestamp)
+            ORDER BY date(timestamp) ASC
+        ''', (wallet,))
+        
+        rows = cursor.fetchall()
+        
+        # 获取当前总盈亏
+        cursor.execute('SELECT total_pnl FROM whales WHERE wallet = ?', (wallet,))
+        whale_row = cursor.fetchone()
+        current_pnl = whale_row['total_pnl'] if whale_row else 0
+        
+        conn.close()
+        
+        # 构建历史数据
+        pnl_history = []
+        cumulative_pnl = 0
+        
+        for row in rows:
+            cumulative_pnl += row['realized_pnl'] or 0
+            pnl_history.append({
+                'date': row['date'],
+                'daily_pnl': row['realized_pnl'] or 0,
+                'cumulative_pnl': cumulative_pnl,
+                'trade_count': row['trade_count']
+            })
+        
+        return jsonify({
+            'success': True,
+            'wallet': wallet,
+            'current_pnl': current_pnl,
+            'history': pnl_history
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取盈亏历史失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@whales_bp.route('/concentration-trend', methods=['GET'])
+def get_concentration_trend():
+    """获取所有关注鲸鱼的集中度趋势"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取关注的鲸鱼列表
+        cursor.execute('SELECT wallet, pseudonym FROM whales WHERE is_watched = 1')
+        watched_whales = cursor.fetchall()
+        
+        # 获取每个关注鲸鱼的集中度历史
+        trend_data = []
+        for whale in watched_whales:
+            cursor.execute('''
+                SELECT 
+                    date(timestamp) as date,
+                    AVG(top5_ratio) as avg_top5_ratio,
+                    AVG(hhi) as avg_hhi
+                FROM concentration_history 
+                WHERE wallet = ? 
+                  AND timestamp > datetime('now', '-7 days')
+                GROUP BY date(timestamp)
+                ORDER BY date(timestamp) ASC
+            ''', (whale['wallet'],))
+            
+            history = cursor.fetchall()
+            
+            if history:
+                trend_data.append({
+                    'wallet': whale['wallet'],
+                    'pseudonym': whale['pseudonym'],
+                    'history': [
+                        {
+                            'date': row['date'],
+                            'top5_ratio': row['avg_top5_ratio'],
+                            'hhi': row['avg_hhi']
+                        }
+                        for row in history
+                    ]
+                })
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(trend_data),
+            'data': trend_data
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取集中度趋势失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@whales_bp.route('/pnl-ranking', methods=['GET'])
+def get_pnl_ranking():
+    """获取鲸鱼盈亏排名"""
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取盈亏排名
+        cursor.execute('''
+            SELECT 
+                wallet,
+                pseudonym,
+                total_pnl,
+                total_value,
+                position_count,
+                is_watched
+            FROM whales
+            WHERE total_pnl != 0
+            ORDER BY total_pnl DESC
+            LIMIT 50
+        ''')
+        
+        rows = cursor.fetchall()
+        
+        ranking = []
+        for i, row in enumerate(rows, 1):
+            ranking.append({
+                'rank': i,
+                'wallet': row['wallet'],
+                'pseudonym': row['pseudonym'],
+                'total_pnl': row['total_pnl'],
+                'total_value': row['total_value'],
+                'position_count': row['position_count'],
+                'is_watched': row['is_watched'],
+                'pnl_ratio': (row['total_pnl'] / row['total_value'] * 100) if row['total_value'] > 0 else 0
+            })
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'count': len(ranking),
+            'data': ranking
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] 获取盈亏排名失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @whales_bp.route('/<wallet>/analysis', methods=['GET'])
 def get_whale_analysis(wallet):
     """获取鲸鱼 AI 分析（实时）"""
@@ -345,3 +504,453 @@ def get_whale_news(wallet):
         print(f"[ERROR] 获取鲸鱼新闻失败: {str(e)}")
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+
+
+# ========== 鲸鱼跟随策略 API ==========
+
+@whales_bp.route('/<wallet>/signal', methods=['POST'])
+def generate_whale_signal(wallet):
+    """
+    为指定鲸鱼生成跟随信号
+    
+    POST /api/whales/<wallet>/signal
+    
+    Returns:
+        跟随信号
+    """
+    try:
+        # 导入鲸鱼跟随策略
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "06-tools/analysis"))
+        from whale_following import WhaleFollowingStrategy
+        
+        strategy = WhaleFollowingStrategy()
+        
+        # 获取鲸鱼信息
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM whales WHERE wallet = ?', (wallet,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'error': 'Whale not found'}), 404
+        
+        # 构建 Whale 对象
+        from whale_following import Whale
+        whale = Whale(
+            wallet=row[1],
+            pseudonym=row[2] or row[1][:10] + "...",
+            total_value=row[3] or 0,
+            win_rate=0.6 if (row[6] or 0) > 0 else 0.4,  # 基于盈亏估算
+            sharpe_ratio=min((row[6] or 0) / (row[3] or 1), 2.0),
+            strategy_consistency=0.7
+        )
+        
+        # 生成信号
+        signal = strategy.detect_large_trade(whale)
+        
+        if signal:
+            return jsonify({
+                'success': True,
+                'has_signal': True,
+                'signal': {
+                    'type': signal.type,
+                    'market': signal.market,
+                    'direction': signal.direction,
+                    'confidence': signal.confidence,
+                    'suggested_position': signal.suggested_position,
+                    'expected_return': signal.expected_return,
+                    'risk_level': signal.risk_level,
+                    'reasoning': signal.reasoning,
+                    'created_at': signal.created_at.isoformat()
+                }
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'has_signal': False,
+                'message': 'No significant trade detected in recent hours'
+            })
+    
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 生成鲸鱼信号失败: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@whales_bp.route('/signals', methods=['GET'])
+def get_whale_signals():
+    """
+    获取所有鲸鱼跟随信号
+    
+    GET /api/whales/signals?hours=24&min_confidence=0.7
+    
+    Returns:
+        信号列表
+    """
+    try:
+        hours = request.args.get('hours', 24, type=int)
+        min_confidence = request.args.get('min_confidence', 0.7, type=float)
+        
+        # 导入策略
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "06-tools/analysis"))
+        from whale_following import WhaleFollowingStrategy
+        
+        strategy = WhaleFollowingStrategy()
+        
+        # 扫描所有聪明钱鲸鱼
+        signals = strategy.scan()
+        
+        # 过滤低置信度
+        filtered_signals = [s for s in signals if s.confidence >= min_confidence]
+        
+        return jsonify({
+            'success': True,
+            'count': len(filtered_signals),
+            'hours': hours,
+            'signals': [
+                {
+                    'type': s.type,
+                    'whallet': s.whale.wallet,
+                    'whale_pseudonym': s.whale.pseudonym,
+                    'market': s.market,
+                    'direction': s.direction,
+                    'confidence': s.confidence,
+                    'suggested_position': s.suggested_position,
+                    'expected_return': s.expected_return,
+                    'risk_level': s.risk_level,
+                    'reasoning': s.reasoning,
+                    'created_at': s.created_at.isoformat()
+                }
+                for s in filtered_signals
+            ]
+        })
+    
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 获取鲸鱼信号失败: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+# Leaderboard 鲸鱼 API
+@whales_bp.route('/leaderboard', methods=['GET'])
+def get_leaderboard_whales():
+    """获取 Leaderboard 鲸鱼列表"""
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            SELECT 
+                wallet, rank, username, x_username, verified,
+                volume, pnl, first_seen, last_updated,
+                priority_level, watch_status
+            FROM leaderboard_whales
+            ORDER BY rank
+        ''')
+        
+        whales = []
+        for row in cursor.fetchall():
+            whales.append({
+                'wallet': row[0],
+                'rank': row[1],
+                'username': row[2],
+                'x_username': row[3],
+                'verified': bool(row[4]),
+                'volume': row[5],
+                'pnl': row[6],
+                'first_seen': row[7],
+                'last_updated': row[8],
+                'priority_level': row[9],
+                'watch_status': row[10]
+            })
+        
+        return jsonify({
+            'success': True,
+            'count': len(whales),
+            'whales': whales
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+    finally:
+        conn.close()
+
+
+@whales_bp.route('/leaderboard/sync', methods=['POST'])
+def sync_leaderboard():
+    """手动同步 Leaderboard"""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['python3', str(Path(__file__).resolve().parents[4] / "06-tools" / "analysis" / "leaderboard_whale_tracker.py"), '--manual', '--notify'],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        return jsonify({
+            'success': result.returncode == 0,
+            'output': result.stdout,
+            'error': result.stderr if result.stderr else None
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@whales_bp.route('/leaderboard/summary', methods=['GET'])
+def get_leaderboard_summary():
+    """获取 Leaderboard 摘要"""
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # 统计
+        cursor.execute('SELECT COUNT(*) FROM leaderboard_whales')
+        total = cursor.fetchone()[0]
+        
+        cursor.execute('''
+            SELECT priority_level, COUNT(*) 
+            FROM leaderboard_whales 
+            GROUP BY priority_level
+        ''')
+        priority_dist = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        cursor.execute('SELECT SUM(pnl), SUM(volume) FROM leaderboard_whales')
+        row = cursor.fetchone()
+        total_pnl = row[0] or 0
+        total_volume = row[1] or 0
+        
+        # 今日活跃
+        today = datetime.now().strftime('%Y-%m-%d')
+        cursor.execute('''
+            SELECT COUNT(DISTINCT c.wallet)
+            FROM changes c
+            JOIN leaderboard_whales w ON c.wallet = w.wallet
+            WHERE date(c.timestamp) = ?
+        ''', (today,))
+        active_today = cursor.fetchone()[0]
+        
+        return jsonify({
+            'success': True,
+            'total_tracked': total,
+            'priority_distribution': priority_dist,
+            'total_pnl': total_pnl,
+            'total_volume': total_volume,
+            'active_today': active_today
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+    finally:
+        conn.close()
+
+
+# ========== Leaderboard 趋势分析 API ==========
+
+@whales_bp.route('/leaderboard/trends', methods=['GET'])
+def get_leaderboard_trends():
+    """
+    获取 Leaderboard 趋势数据
+    
+    查询参数:
+    - trend: 趋势类型 ('rising', 'falling', 'stable', 'new', 'mixed')
+    - min_momentum: 最小动量评分 (默认 0)
+    - limit: 返回数量限制 (默认 100)
+    
+    Returns:
+        趋势数据列表，包含排名变化、盈亏变化、动量评分等
+    """
+    try:
+        # 导入趋势分析器
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "06-tools/analysis"))
+        from leaderboard_trends import LeaderboardTrendAnalyzer
+        
+        # 获取查询参数
+        trend_type = request.args.get('trend', None)
+        min_momentum = request.args.get('min_momentum', 0, type=float)
+        limit = request.args.get('limit', 100, type=int)
+        
+        # 初始化分析器
+        db_path = str(Path(__file__).parent.parent.parent / 'database/polymarket.db')
+        analyzer = LeaderboardTrendAnalyzer(db_path)
+        
+        # 获取趋势数据
+        trends = analyzer.get_trends(
+            trend_type=trend_type,
+            min_momentum=min_momentum,
+            limit=limit
+        )
+        
+        return jsonify({
+            'success': True,
+            'count': len(trends),
+            'filters': {
+                'trend_type': trend_type,
+                'min_momentum': min_momentum,
+                'limit': limit
+            },
+            'trends': trends
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 获取趋势数据失败: {e}")
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@whales_bp.route('/leaderboard/trends/summary', methods=['GET'])
+def get_trends_summary():
+    """
+    获取趋势摘要统计
+    
+    Returns:
+        趋势分布、动量分布、平均动量评分等统计信息
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "06-tools/analysis"))
+        from leaderboard_trends import LeaderboardTrendAnalyzer
+        
+        db_path = str(Path(__file__).parent.parent.parent / 'database/polymarket.db')
+        analyzer = LeaderboardTrendAnalyzer(db_path)
+        
+        summary = analyzer.get_trend_summary()
+        
+        return jsonify({
+            'success': True,
+            'summary': summary
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 获取趋势摘要失败: {e}")
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@whales_bp.route('/leaderboard/trends/<wallet>', methods=['GET'])
+def get_whale_trend_detail(wallet):
+    """
+    获取单个鲸鱼的详细趋势数据
+    
+    包含趋势指标和历史排名变化图表数据
+    
+    Args:
+        wallet: 钱包地址
+        
+    Returns:
+        详细趋势数据，包含30天历史记录
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "06-tools/analysis"))
+        from leaderboard_trends import LeaderboardTrendAnalyzer
+        
+        db_path = str(Path(__file__).parent.parent.parent / 'database/polymarket.db')
+        analyzer = LeaderboardTrendAnalyzer(db_path)
+        
+        detail = analyzer.get_whale_trend_detail(wallet)
+        
+        if detail:
+            return jsonify({
+                'success': True,
+                'detail': detail
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Whale trend data not found'
+            }), 404
+            
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 获取鲸鱼趋势详情失败: {e}")
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@whales_bp.route('/leaderboard/trends/update', methods=['POST'])
+def update_all_trends():
+    """
+    手动触发趋势数据更新
+    
+    批量计算所有鲸鱼的趋势指标
+    
+    Returns:
+        更新统计信息
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "06-tools/analysis"))
+        from leaderboard_trends import LeaderboardTrendAnalyzer
+        
+        db_path = str(Path(__file__).parent.parent.parent / 'database/polymarket.db')
+        analyzer = LeaderboardTrendAnalyzer(db_path)
+        
+        stats = analyzer.update_all_trends(batch_size=50)
+        
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 更新趋势数据失败: {e}")
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@whales_bp.route('/leaderboard/trends/detect-changes', methods=['GET'])
+def detect_trend_changes():
+    """
+    检测趋势变化
+    
+    找出趋势方向发生显著变化的鲸鱼，用于告警
+    
+    Returns:
+        趋势变化列表
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "06-tools/analysis"))
+        from leaderboard_trends import LeaderboardTrendAnalyzer
+        
+        db_path = str(Path(__file__).parent.parent.parent / 'database/polymarket.db')
+        analyzer = LeaderboardTrendAnalyzer(db_path)
+        
+        changes = analyzer.detect_trend_changes()
+        
+        return jsonify({
+            'success': True,
+            'count': len(changes),
+            'changes': changes
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] 检测趋势变化失败: {e}")
+        print(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

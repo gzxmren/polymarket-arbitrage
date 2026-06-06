@@ -27,6 +27,16 @@ wheels/
 *.db
 *.sqlite
 *.sqlite3
+*.db.bak.*
+database/backups/
+**/database/backups/
+
+# Backup files (delete in P0-6 file cleanup)
+*.bak
+*.bak.*
+
+# Tool state
+.antigravitycli/
 
 # Logs
 *.log
@@ -57,3 +67,8 @@ dashboard/build/
 .env
 .env.local
 .env.*.local
+
+# 回测产物 + 测试工具临时文件
+08-backtests/results/
+.coverage
+.hypothesis/
