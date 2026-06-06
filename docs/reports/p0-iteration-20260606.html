@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>今天做了什么 — P0 回测迭代报告 2026-06-06</title>
+<style>
+  :root {
+    --red: #e74c3c; --red-bg: #fdf0ef;
+    --green: #27ae60; --green-bg: #eafaf1;
+    --yellow: #f39c12; --yellow-bg: #fef9e7;
+    --blue: #2980b9; --blue-bg: #eaf4fb;
+    --gray: #7f8c8d; --gray-bg: #f8f9fa;
+    --dark: #2c3e50;
+    --border: #dee2e6;
+    --font: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    background: #f0f2f5;
+    color: var(--dark);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 30px 20px 60px; }
+
+  /* ── 标题区 ── */
+  .hero {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: white;
+    border-radius: 16px;
+    padding: 40px 36px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; top: -60px; right: -60px;
+    width: 220px; height: 220px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+  .hero .label {
+    font-size: 12px; letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 8px;
+  }
+  .hero h1 { font-size: 26px; font-weight: 700; margin-bottom: 10px; }
+  .hero p { color: rgba(255,255,255,0.7); font-size: 14px; }
+  .hero .date { margin-top: 18px; font-size: 13px; color: rgba(255,255,255,0.4); }
+
+  /* ── 卡片 ── */
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 28px 30px;
+    margin-bottom: 22px;
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .card h2 {
+    font-size: 17px; font-weight: 700;
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .card h3 { font-size: 15px; font-weight: 600; margin: 18px 0 10px; color: #34495e; }
+
+  /* ── 章节号 ── */
+  .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--dark); color: white;
+    font-size: 13px; font-weight: 700; flex-shrink: 0;
+  }
+
+  /* ── 状态徽章 ── */
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .badge-red    { background: var(--red-bg);    color: var(--red); }
+  .badge-green  { background: var(--green-bg);  color: var(--green); }
+  .badge-yellow { background: var(--yellow-bg); color: var(--yellow); }
+  .badge-blue   { background: var(--blue-bg);   color: var(--blue); }
+  .badge-gray   { background: var(--gray-bg);   color: var(--gray); }
+
+  /* ── 要点列表 ── */
+  .bullets { list-style: none; }
+  .bullets li {
+    padding: 8px 0 8px 26px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    font-size: 14px;
+  }
+  .bullets li:last-child { border-bottom: none; }
+  .bullets li::before {
+    content: '▸';
+    position: absolute; left: 0;
+    color: var(--blue);
+  }
+
+  /* ── 数据对比表 ── */
+  .compare {
+    display: grid;
+    gap: 12px;
+    margin: 14px 0;
+  }
+  .compare-row {
+    background: var(--gray-bg);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex; align-items: center;
+    gap: 14px;
+    border-left: 4px solid transparent;
+  }
+  .compare-row.red    { border-left-color: var(--red);    background: var(--red-bg); }
+  .compare-row.green  { border-left-color: var(--green);  background: var(--green-bg); }
+  .compare-row.yellow { border-left-color: var(--yellow); background: var(--yellow-bg); }
+  .compare-row.blue   { border-left-color: var(--blue);   background: var(--blue-bg); }
+  .compare-icon { font-size: 22px; flex-shrink: 0; }
+  .compare-body { flex: 1; }
+  .compare-title { font-weight: 600; font-size: 14px; margin-bottom: 3px; }
+  .compare-desc { font-size: 13px; color: #555; line-height: 1.5; }
+
+  /* ── 流程箭头 ── */
+  .flow {
+    display: flex; align-items: center; gap: 0;
+    margin: 16px 0; flex-wrap: wrap;
+  }
+  .flow-step {
+    background: var(--blue-bg); border: 1px solid #aed6f1;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 13px; font-weight: 600; color: var(--blue);
+    text-align: center;
+  }
+  .flow-arrow {
+    font-size: 18px; color: var(--gray); padding: 0 6px; flex-shrink: 0;
+  }
+
+  /* ── 数字高亮 ── */
+  .stat-row {
+    display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0;
+  }
+  .stat {
+    flex: 1; min-width: 130px;
+    background: var(--gray-bg); border-radius: 10px;
+    padding: 14px 16px; text-align: center;
+  }
+  .stat .n { font-size: 26px; font-weight: 800; }
+  .stat .n.red    { color: var(--red); }
+  .stat .n.green  { color: var(--green); }
+  .stat .n.yellow { color: var(--yellow); }
+  .stat .n.blue   { color: var(--blue); }
+  .stat .label { font-size: 12px; color: var(--gray); margin-top: 4px; }
+
+  /* ── 表格 ── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 14px 0; }
+  th { background: var(--gray-bg); padding: 9px 12px; text-align: left; font-weight: 600; font-size: 12px; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  .td-red    { color: var(--red);    font-weight: 600; }
+  .td-green  { color: var(--green);  font-weight: 600; }
+  .td-yellow { color: var(--yellow); font-weight: 600; }
+  .td-gray   { color: var(--gray); }
+
+  /* ── 类比框 ── */
+  .analogy {
+    background: #fff8e1; border: 1px solid #ffe082;
+    border-radius: 10px; padding: 16px 18px; margin: 14px 0;
+    font-size: 14px;
+  }
+  .analogy .icon { font-size: 20px; margin-right: 6px; }
+  .analogy strong { color: #b7950b; }
+
+  /* ── 警告框 ── */
+  .alert {
+    border-radius: 10px; padding: 14px 18px; margin: 14px 0;
+    font-size: 13px; display: flex; gap: 10px; align-items: flex-start;
+  }
+  .alert.warn { background: #fff3cd; border: 1px solid #ffc107; }
+  .alert.info { background: var(--blue-bg); border: 1px solid #aed6f1; }
+  .alert.success { background: var(--green-bg); border: 1px solid #a9dfbf; }
+  .alert-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .alert strong { display: block; margin-bottom: 3px; font-size: 14px; }
+
+  /* ── 时间轴 ── */
+  .timeline { padding-left: 20px; border-left: 3px solid var(--border); margin: 16px 0; }
+  .tl-item { position: relative; padding: 0 0 20px 20px; }
+  .tl-item:last-child { padding-bottom: 0; }
+  .tl-dot {
+    position: absolute; left: -28px; top: 4px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: white; border: 3px solid var(--blue);
+  }
+  .tl-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+  .tl-body { font-size: 13px; color: #555; }
+
+  /* ── 结论框 ── */
+  .conclusion {
+    background: linear-gradient(135deg, #1a1a2e, #0f3460);
+    color: white; border-radius: 12px; padding: 28px 30px; margin-top: 28px;
+  }
+  .conclusion h2 { color: white; margin-bottom: 16px; }
+  .conclusion .c-item {
+    display: flex; gap: 12px; margin-bottom: 12px;
+    font-size: 14px; line-height: 1.6;
+  }
+  .conclusion .c-icon { font-size: 18px; flex-shrink: 0; }
+  .conclusion .c-text { color: rgba(255,255,255,0.85); }
+  .conclusion .c-text strong { color: white; }
+
+  code {
+    background: #f1f2f6; border-radius: 4px; padding: 1px 6px;
+    font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px;
+    color: #c0392b;
+  }
+
+  @media (max-width: 600px) {
+    .hero { padding: 28px 20px; }
+    .card { padding: 20px; }
+    .stat-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ── 标题 ── -->
+<div class="hero">
+  <div class="label">Polymarket 实盘盈利攻坚 · 工作日志</div>
+  <h1>今天做了什么？<br>P0 回测迭代 · 逆鲸鱼策略初探</h1>
+  <p>用最通俗的方式，讲清楚今天的思路、发现和决定</p>
+  <div class="date">2026-06-06 &nbsp;·&nbsp; feat/v2.0-consolidation → main</div>
+</div>
+
+<!-- ── §0 先说背景 ── -->
+<div class="card">
+  <h2><span class="num">0</span> 一句话背景：我们在攻什么难题？</h2>
+  <p style="margin-bottom:14px">目标是在 Polymarket（预测市场）上通过算法实现稳定盈利。我们已有一套<strong>监控系统</strong>（追踪"鲸鱼"大户的买卖动作）和一套<strong>回测引擎</strong>（在历史数据上模拟交易，看策略是否赚钱）。</p>
+
+  <div class="analogy">
+    <span class="icon">🎯</span>
+    <strong>什么是"资金加权收益"？</strong><br>
+    不是"平均每笔赚多少"，而是"按我实际能投多少钱加权后，总共赚多少"。一笔能投 $1000 的交易的权重，是一笔只能投 $10 交易的 100 倍。这才是真实的盈利能力。
+  </div>
+
+  <p>上次（P0 首轮）的结论是：<strong>36 种"跟鲸鱼"组合，样本外资金加权收益全部为负。</strong></p>
+  <p style="margin-top:8px">今天的任务：继续攻坚——看能不能找到新方向。</p>
+</div>
+
+<!-- ── §1 提交整理 ── -->
+<div class="card">
+  <h2><span class="num">1</span> 第一步：把昨天所有工作提交到主分支</h2>
+  <p style="margin-bottom:14px">先把积累的改动全部整理、打包进 <code>main</code> 分支，清理工作台，方便后续追踪。</p>
+
+  <div class="stat-row">
+    <div class="stat">
+      <div class="n blue">11</div>
+      <div class="label">今日新增/修改文件</div>
+    </div>
+    <div class="stat">
+      <div class="n blue">192</div>
+      <div class="label">本轮 merge 总文件数</div>
+    </div>
+    <div class="stat">
+      <div class="n blue">~44k</div>
+      <div class="label">新增代码行数</div>
+    </div>
+  </div>
+
+  <ul class="bullets" style="margin-top:10px">
+    <li>数据腐化问题全部标注为 RESOLVED（DB 已从 138 MB 压缩到 51 MB，垃圾率 0%）</li>
+    <li>P0 回测报告、盈利方向决策文档正式归档</li>
+    <li>回测引擎代码完整合并进主分支</li>
+  </ul>
+</div>
+
+<!-- ── §2 数据家底 ── -->
+<div class="card">
+  <h2><span class="num">2</span> 第二步：摸清数据家底</h2>
+  <p style="margin-bottom:14px">在跑新策略之前，先确认"仓库里有多少原材料"。</p>
+
+  <div class="stat-row">
+    <div class="stat">
+      <div class="n blue">31 天</div>
+      <div class="label">可用历史数据跨度<br>(5月6日→6月6日)</div>
+    </div>
+    <div class="stat">
+      <div class="n blue">29,540</div>
+      <div class="label">鲸鱼交易记录条数</div>
+    </div>
+    <div class="stat">
+      <div class="n blue">6,185</div>
+      <div class="label">可回测有效信号数</div>
+    </div>
+    <div class="stat">
+      <div class="n blue">17,078</div>
+      <div class="label">覆盖市场数量</div>
+    </div>
+  </div>
+
+  <div class="alert info" style="margin-top:16px">
+    <span class="alert-icon">ℹ️</span>
+    <div><strong>监控引擎状态</strong>正常运行中（今天最新数据 12:02 采集）。每天都在积累新的鲸鱼交易数据，为未来更可靠的验证打基础。</div>
+  </div>
+</div>
+
+<!-- ── §3 为什么要"逆势"？ ── -->
+<div class="card">
+  <h2><span class="num">3</span> 核心思路：P0 诊断揭示了什么反转机会？</h2>
+
+  <p style="margin-bottom:14px">P0 首轮诊断发现了一个结构性规律，这是今天所有新工作的出发点。</p>
+
+  <h3>跟鲸鱼为什么亏钱？</h3>
+  <div class="analogy">
+    <span class="icon">🏦</span>
+    <strong>类比：大机构在大盘股上下注</strong><br>
+    在苹果、腾讯这类极度活跃的大市场里，所有消息都已被定价。一个大户大量买入，并不意味着他比市场更聪明——他只是把价格暂时推高了，然后价格会回落。跟他跑，反而吃亏。<br><br>
+    小市场（冷门股）不一样，大户可能真的有内幕信息优势。
+  </div>
+
+  <p style="margin:14px 0">P0 的数据验证了这个逻辑：</p>
+
+  <table>
+    <tr>
+      <th>市场类型</th>
+      <th>占总资金</th>
+      <th>跟鲸鱼的资金加权收益</th>
+    </tr>
+    <tr>
+      <td>大额+超流动市场（>$200k 日交易量）</td>
+      <td>64.6%</td>
+      <td class="td-red">−2.16%</td>
+    </tr>
+    <tr>
+      <td>小额+薄流动市场（&lt;$200k）</td>
+      <td>35.4%</td>
+      <td class="td-green">+（等权正，但钱铺不开）</td>
+    </tr>
+  </table>
+
+  <p style="margin-top:12px">钱全押在大市场 → 大市场跟鲸鱼亏钱 → 总体亏损。</p>
+
+  <h3>那如果反过来呢？</h3>
+  <div class="compare">
+    <div class="compare-row blue">
+      <div class="compare-icon">💡</div>
+      <div class="compare-body">
+        <div class="compare-title">新想法：在大额+超流动市场里，反向做</div>
+        <div class="compare-desc">鲸鱼大量买入"是"(Yes)时，我们反而买"否"(No)。<br>
+        经济逻辑：在有效市场里鲸鱼没有信息优势，大单只是造成短暂价格冲击，随后价格会回归——我们赌这个回归。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── §4 今天实现的三件事 ── -->
+<div class="card">
+  <h2><span class="num">4</span> 今天具体实现了什么？</h2>
+
+  <div class="timeline">
+    <div class="tl-item">
+      <div class="tl-dot"></div>
+      <div class="tl-title">① 新建"逆鲸鱼策略"（C0）</div>
+      <div class="tl-body">
+        创建 <code>strategies/contrarian_whale.py</code>。<br>
+        规则：只看在流动大市场（日成交 >$20万）里，鲸鱼大额（>$1000）买"是"的信号 → 我们反向买"否"。<br>
+        <span class="badge badge-blue" style="margin-top:6px;display:inline-block">新信号源</span>
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot"></div>
+      <div class="tl-title">② 预登记 H6 假设（微仓精选）</div>
+      <div class="tl-body">
+        在 <code>run_pzero_oos.py</code> 里新增 H6：延续 H5 的"精选过滤"，但每笔最多押 $200。<br>
+        这个想法来自容量前沿分析——$200 限仓时，H5 在 test 集上资金加权接近盈亏平衡。<br>
+        <span class="badge badge-yellow" style="margin-top:6px;display:inline-block">⚠️ 需注意：见下方说明</span>
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot" style="border-color: var(--green)"></div>
+      <div class="tl-title">③ 设置每周自动复验（cron）</div>
+      <div class="tl-body">
+        创建 <code>scripts/weekly_pzero.sh</code>，加入系统定时任务：<br>
+        <strong>每周一 09:30</strong> 自动用最新数据重跑一次 P0-B 验证，结果存档，若配置了 Telegram 则推送简报。<br>
+        <span class="badge badge-green" style="margin-top:6px;display:inline-block">已激活</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── §5 首跑结果 ── -->
+<div class="card">
+  <h2><span class="num">5</span> 今天的首跑结果</h2>
+
+  <h3>H6 微仓精选 ($200/笔)</h3>
+
+  <div class="compare">
+    <div class="compare-row yellow">
+      <div class="compare-icon">⚠️</div>
+      <div class="compare-body">
+        <div class="compare-title">数字看起来好，但有陷阱</div>
+        <div class="compare-desc">
+          +1d 持有期：test 资金加权 <strong>+12.59%</strong>，n=86，剔除最大单笔后仍 +2.36% ✓<br><br>
+          <strong>为什么不能直接宣布"找到了"？</strong><br>
+          $200 这个限仓阈值，是我们上次从 test 数据的容量前沿图里"读出来"的——现在又拿同一个 test 数据来验证，这叫<strong>循环验证</strong>，是统计上的大忌。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="analogy" style="background:#fff3e0;border-color:#ffcc80">
+    <span class="icon">🎲</span>
+    <strong>循环验证 = 用期末考题出模拟题</strong><br>
+    如果我们把考试真题拿来出模拟题，学生当然能拿高分——但这不说明他真正学会了。我们需要用全新的"真题"（2026-06-06 之后的新数据）来验证 H6，才算数。H6 今天已经<strong>正式登记</strong>，等新数据来了就是真正的考验。
+  </div>
+
+  <h3 style="margin-top:22px">C0 逆鲸鱼 — 最有意思的发现</h3>
+
+  <table>
+    <tr>
+      <th>策略</th>
+      <th>样本内（train）</th>
+      <th>样本外（test）</th>
+      <th>测试笔数</th>
+      <th>判决</th>
+    </tr>
+    <tr>
+      <td>跟鲸鱼 H0（基线）</td>
+      <td class="td-green">+1.73%</td>
+      <td class="td-red">−11.26%</td>
+      <td>1107</td>
+      <td class="td-red">🔴 负</td>
+    </tr>
+    <tr>
+      <td><strong>C0 逆鲸鱼</strong></td>
+      <td class="td-red">−9.72%</td>
+      <td class="td-green"><strong>+8.82%</strong></td>
+      <td>17</td>
+      <td class="td-gray">⚪ 薄</td>
+    </tr>
+  </table>
+
+  <div class="compare" style="margin-top:16px">
+    <div class="compare-row green">
+      <div class="compare-icon">📈</div>
+      <div class="compare-body">
+        <div class="compare-title">为什么说 C0 是"最有希望的方向"？</div>
+        <div class="compare-desc">
+          看这个模式：跟鲸鱼是"样本内赚钱 → 样本外亏钱"（过拟合的经典特征）。<br>
+          逆鲸鱼恰恰相反：<strong>样本内亏钱 → 样本外赚钱</strong>。<br>
+          这说明逆鲸鱼的逻辑是真实的市场规律（大市场里鲸鱼没有优势），而不是在历史数据上碰巧拟合出来的。
+        </div>
+      </div>
+    </div>
+    <div class="compare-row yellow">
+      <div class="compare-icon">⚠️</div>
+      <div class="compare-body">
+        <div class="compare-title">但现在不能下结论</div>
+        <div class="compare-desc">
+          test 段只有 <strong>17 笔</strong>交易。我们设定的判决门槛是 40 笔。<br>
+          17 笔的正收益可能只是运气，需要更多数据积累到 n≥40 才能判断是否真实有效。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── §6 纪律：为什么不直接用真钱 ── -->
+<div class="card">
+  <h2><span class="num">6</span> 为什么今天结果看起来不错，还不能用真钱？</h2>
+
+  <div class="analogy">
+    <span class="icon">🔬</span>
+    <strong>类比：新药临床试验</strong><br>
+    一种新药在 17 个病人身上有效，不能直接上市——你需要至少几百人的双盲临床试验，才能确认效果是真实的，而不是安慰剂效应或者样本太小的偶然。我们用"样本外验证 + 足够笔数"来做同样的事。
+  </div>
+
+  <p style="margin-bottom:14px"><strong>我们的"临床标准"（Go/No-Go 门槛）：</strong></p>
+
+  <div class="compare">
+    <div class="compare-row green">
+      <div class="compare-icon">✅</div>
+      <div class="compare-body">
+        <div class="compare-title">需要同时满足才能推进真钱</div>
+        <div class="compare-desc">
+          ① 样本外（test）资金加权收益 ≥ 0%<br>
+          ② 测试笔数 ≥ 40 笔<br>
+          ③ 抗单点：剔除最佳单笔后，收益仍 ≥ 0%（排除"靠一两笔彩票撑起来"的情况）<br>
+          ④ 跨多个时间切分点稳健（不只是某个时期特有的偶然）
+        </div>
+      </div>
+    </div>
+    <div class="compare-row red">
+      <div class="compare-icon">❌</div>
+      <div class="compare-body">
+        <div class="compare-title">当前状态：0 个干净候选</div>
+        <div class="compare-desc">
+          C0 逆势：方向对，但 n=17，不满足②<br>
+          H6 微仓：数字好，但 $200 来自同一 test 集，不满足独立性原则<br>
+          → 此刻投真钱 = 赌一个未经验证的策略
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── §7 递归优化的节奏 ── -->
+<div class="card">
+  <h2><span class="num">7</span> 接下来怎么走？递归优化的节奏</h2>
+
+  <div class="flow">
+    <div class="flow-step">数据持续积累<br><small>每天自动采集</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">每周自动复验<br><small>周一 09:30</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">C0 逆势 n≥40<br><small>约需 4-6 周</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">OOS 判决<br><small>🟢 通过？</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">影子盘/微仓<br><small>第一笔真钱</small></div>
+  </div>
+
+  <ul class="bullets" style="margin-top:14px">
+    <li><strong>C0 逆鲸鱼</strong>是当前追踪重点：等数据积累，每周自动检查进度</li>
+    <li><strong>H6 微仓</strong>等 2026-06-06 之后的全新数据来做真正独立验证</li>
+    <li>在等待期，继续探索新的信号方向（如价格动量、分辨率偏移等）</li>
+    <li>一旦有候选通过门槛，再搭影子盘（不用真钱，看策略在实盘价格下的表现）</li>
+    <li>影子盘稳健后，才考虑微仓实盘（每笔几十到几百美元起）</li>
+  </ul>
+
+  <div class="alert success" style="margin-top:16px">
+    <span class="alert-icon">✅</span>
+    <div><strong>今天最重要的价值</strong>：发现 C0 逆势的正向信号，并在数据还很少的时候就预登记了假设。这意味着未来数据积累后的验证是"干净的"——不是事后凑数据来迁就结论，而是先定好假设，让数据来判决。</div>
+  </div>
+</div>
+
+<!-- ── 结论 ── -->
+<div class="conclusion">
+  <h2>总结</h2>
+  <div class="c-item">
+    <div class="c-icon">📦</div>
+    <div class="c-text"><strong>提交整理：</strong>所有代码和文档已合并进主分支，项目状态清晰</div>
+  </div>
+  <div class="c-item">
+    <div class="c-icon">🔄</div>
+    <div class="c-text"><strong>新策略 C0：</strong>逆鲸鱼首跑 test +8.82%，方向令人鼓舞，但 n=17 需要更多数据</div>
+  </div>
+  <div class="c-item">
+    <div class="c-icon">📌</div>
+    <div class="c-text"><strong>H6 预登记：</strong>$200 微仓策略已正式登记，等待独立 OOS 验证</div>
+  </div>
+  <div class="c-item">
+    <div class="c-icon">⏰</div>
+    <div class="c-text"><strong>自动化：</strong>每周一 09:30 自动跑验证、存档、推送简报——不需要手动操作</div>
+  </div>
+  <div class="c-item">
+    <div class="c-icon">🚫</div>
+    <div class="c-text"><strong>纪律不变：</strong>在 OOS 干净候选出现之前，<strong>不碰真钱</strong>。今天的 P0 价值就是以零成本挡住一次潜在的亏损</div>
+  </div>
+
+  <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.15);font-size:12px;color:rgba(255,255,255,0.4)">
+    生成时间：2026-06-06 &nbsp;·&nbsp; 复现命令：<code style="background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7)">PYTHONPATH=08-backtests python3 08-backtests/run_pzero_oos.py --cutoff 2026-05-26 --contrarian</code>
+  </div>
+</div>
+
+</div><!-- /wrap -->
+</body>
+</html>
