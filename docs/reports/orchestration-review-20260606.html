@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>调度层评估报告 — OpenClaw × Polymarket 2026-06-06</title>
+<style>
+  :root {
+    --green:#27ae60; --green-bg:#eafaf1; --green-border:#a9dfbf;
+    --red:#e74c3c; --red-bg:#fdf0ef; --red-border:#f1948a;
+    --yellow:#f39c12; --yellow-bg:#fef9e7; --yellow-border:#f9e79f;
+    --blue:#2980b9; --blue-bg:#eaf4fb; --blue-border:#aed6f1;
+    --gray:#7f8c8d; --gray-bg:#f8f9fa; --gray-border:#dee2e6;
+    --dark:#2c3e50; --border:#e9ecef;
+    --font:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);background:#f0f2f5;color:var(--dark);line-height:1.7;font-size:14px}
+  .wrap{max-width:900px;margin:0 auto;padding:28px 18px 60px}
+
+  /* hero */
+  .hero{background:linear-gradient(135deg,#0d1b2a,#1b2838,#162032);color:white;border-radius:14px;padding:36px 32px;margin-bottom:24px;position:relative;overflow:hidden}
+  .hero::after{content:'';position:absolute;bottom:-40px;right:-40px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,0.03)}
+  .hero .label{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:8px}
+  .hero h1{font-size:23px;font-weight:700;margin-bottom:8px}
+  .hero p{color:rgba(255,255,255,.65);font-size:13px}
+  .hero .meta{display:flex;gap:20px;margin-top:18px;font-size:12px;color:rgba(255,255,255,.35)}
+
+  /* cards */
+  .card{background:white;border-radius:12px;padding:24px 26px;margin-bottom:18px;border:1px solid var(--border);box-shadow:0 1px 6px rgba(0,0,0,.05)}
+  .card h2{font-size:16px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:9px}
+  .card h3{font-size:14px;font-weight:600;margin:18px 0 10px;color:#34495e}
+
+  /* section number */
+  .num{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--dark);color:white;font-size:12px;font-weight:700;flex-shrink:0}
+
+  /* status dot */
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;flex-shrink:0}
+  .dot-green{background:var(--green)}
+  .dot-red{background:var(--red)}
+  .dot-yellow{background:var(--yellow)}
+  .dot-gray{background:#bdc3c7}
+
+  /* badge */
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+  .b-green{background:var(--green-bg);color:var(--green)}
+  .b-red{background:var(--red-bg);color:var(--red)}
+  .b-yellow{background:var(--yellow-bg);color:var(--yellow)}
+  .b-blue{background:var(--blue-bg);color:var(--blue)}
+  .b-gray{background:var(--gray-bg);color:var(--gray)}
+
+  /* job table */
+  .job-table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}
+  .job-table th{background:var(--gray-bg);padding:8px 11px;text-align:left;font-weight:600;font-size:11px;color:#555;border-bottom:2px solid var(--border)}
+  .job-table td{padding:9px 11px;border-bottom:1px solid var(--border);vertical-align:middle}
+  .job-table tr:last-child td{border-bottom:none}
+  .job-table tr:hover td{background:#fafafa}
+  .job-name{font-weight:600;font-size:13px}
+  .job-cmd{font-family:monospace;font-size:11px;color:#888;margin-top:2px;word-break:break-all}
+
+  /* flow diagram */
+  .flow{display:flex;align-items:center;flex-wrap:wrap;gap:0;margin:14px 0}
+  .flow-box{background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:9px 13px;font-size:12px;font-weight:600;color:var(--blue);text-align:center;min-width:110px}
+  .flow-box.active{background:var(--green-bg);border-color:var(--green-border);color:var(--green)}
+  .flow-box.dead{background:var(--gray-bg);border-color:var(--gray-border);color:var(--gray);text-decoration:line-through}
+  .flow-box.warn{background:var(--yellow-bg);border-color:var(--yellow-border);color:#b7770d}
+  .flow-box.err{background:var(--red-bg);border-color:var(--red-border);color:var(--red)}
+  .flow-arrow{font-size:16px;color:#bdc3c7;padding:0 5px;flex-shrink:0}
+  .flow-break{flex-basis:100%;height:0;margin:4px 0}
+
+  /* stat row */
+  .stat-row{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+  .stat{flex:1;min-width:120px;background:var(--gray-bg);border-radius:10px;padding:14px;text-align:center}
+  .stat .n{font-size:24px;font-weight:800}
+  .stat .n.green{color:var(--green)} .stat .n.red{color:var(--red)}
+  .stat .n.yellow{color:var(--yellow)} .stat .n.blue{color:var(--blue)}
+  .stat .lbl{font-size:11px;color:var(--gray);margin-top:3px}
+
+  /* issue / suggestion rows */
+  .issue-list{list-style:none;margin:10px 0}
+  .issue-list li{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .issue-list li:last-child{border-bottom:none}
+  .issue-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+  .issue-body strong{display:block;font-weight:600;margin-bottom:2px}
+  .issue-body span{color:#555;font-size:12px}
+
+  /* suggest card */
+  .suggest{border-radius:10px;padding:13px 15px;margin:8px 0;display:flex;gap:11px;align-items:flex-start;font-size:13px}
+  .suggest.p1{background:#fff8e1;border:1px solid #ffe082}
+  .suggest.p2{background:var(--blue-bg);border:1px solid var(--blue-border)}
+  .suggest.p3{background:var(--gray-bg);border:1px solid var(--gray-border)}
+  .suggest .sicon{font-size:18px;flex-shrink:0;margin-top:2px}
+  .suggest strong{display:block;font-size:13px;margin-bottom:3px}
+  .suggest span{color:#555;font-size:12px;line-height:1.5}
+
+  /* matrix */
+  .matrix{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:12px 0}
+  .mx-cell{border-radius:10px;padding:14px 16px;font-size:13px}
+  .mx-cell h4{font-size:13px;font-weight:700;margin-bottom:8px}
+  .mx-cell ul{list-style:none}
+  .mx-cell ul li{padding:3px 0;font-size:12px}
+  .mx-cell ul li::before{content:'• ';color:inherit}
+  .mx-green{background:var(--green-bg);border:1px solid var(--green-border);color:#1e8449}
+  .mx-red{background:var(--red-bg);border:1px solid var(--red-border);color:#922b21}
+  .mx-blue{background:var(--blue-bg);border:1px solid var(--blue-border);color:#1a5276}
+  .mx-yellow{background:var(--yellow-bg);border:1px solid var(--yellow-border);color:#7d6608}
+
+  code{background:#f1f2f6;border-radius:4px;padding:1px 5px;font-family:monospace;font-size:11px;color:#c0392b}
+
+  .tag{display:inline-block;border-radius:4px;font-size:10px;font-weight:700;padding:1px 6px;margin-left:5px;letter-spacing:.5px}
+  .tag-p1{background:#fff3cd;color:#856404}
+  .tag-p2{background:#cfe2ff;color:#084298}
+  .tag-p3{background:#f1f2f6;color:#555}
+
+  .section-rule{border:none;border-top:2px solid var(--border);margin:22px 0}
+
+  @media(max-width:600px){
+    .matrix{grid-template-columns:1fr}
+    .stat-row{flex-direction:column}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- hero -->
+<div class="hero">
+  <div class="label">系统架构评估 · OpenClaw × Polymarket</div>
+  <h1>调度层（Orchestration）评估报告</h1>
+  <p>实盘盈利路线上的系统运行健康度 · 问题定位 · 优化建议</p>
+  <div class="meta">
+    <span>📅 生成时间：2026-06-06 18:10 CST</span>
+    <span>🔬 基于实时 cron jobs、systemd、DB 状态一手数据</span>
+    <span>🎯 目标：让调度层服务于"攒数据→验证→盈利"主线</span>
+  </div>
+</div>
+
+<!-- §1 架构速览 -->
+<div class="card">
+  <h2><span class="num">1</span> OpenClaw 调度层是什么？整体架构</h2>
+
+  <p style="margin-bottom:14px">OpenClaw 不只是一个 AI 对话工具，它内置了一个<strong>企业级任务调度引擎</strong>。Polymarket 项目的所有"后台自动运行"都是通过它来管理的。</p>
+
+  <div class="flow">
+    <div class="flow-box active" style="min-width:90px">OpenClaw<br><small>Gateway</small><br><small>systemd 常驻</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box active" style="min-width:90px">Cron 引擎<br><small>18 个任务<br>9个 ON / 9个 OFF</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box active">各监控脚本<br><small>.py 文件</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box active">SQLite DB<br><small>+ 07-data/</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box active">Telegram<br><small>推送提醒</small></div>
+  </div>
+  <div class="flow" style="margin-top:4px">
+    <div class="flow-box active" style="min-width:90px">systemd<br><small>2 个服务</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box active">Dashboard<br><small>Flask :5000</small></div>
+    <div class="flow-arrow">+</div>
+    <div class="flow-box active">React 前端<br><small>:3000</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box active">Web 可视化<br><small>读 DB</small></div>
+  </div>
+
+  <h3>两套调度并存（重要！）</h3>
+  <div class="matrix">
+    <div class="mx-cell mx-blue">
+      <h4>🤖 OpenClaw Cron（主力）</h4>
+      <ul>
+        <li>18 个任务，AI 驱动执行</li>
+        <li>支持 Telegram 推送结果</li>
+        <li>支持失败告警（但 Polymarket 任务未配置）</li>
+        <li>任务日志存 <code>~/.openclaw/cron/runs/</code></li>
+      </ul>
+    </div>
+    <div class="mx-cell mx-yellow">
+      <h4>⚙️ 系统 crontab（辅助）</h4>
+      <ul>
+        <li>Leaderboard 跟踪（周一 03:00）</li>
+        <li>日志清理（0:00 每天）</li>
+        <li>P0-B 周复验（今天刚加，周一 09:30）</li>
+        <li>无失败通知，无 AI 上下文</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- §2 所有 Polymarket 任务清单 -->
+<div class="card">
+  <h2><span class="num">2</span> Polymarket 相关任务全清单（实时状态）</h2>
+
+  <h3>🟢 正在运行的任务（9 个）</h3>
+  <table class="job-table">
+    <thead>
+      <tr><th>任务名</th><th>频率</th><th>最后运行</th><th>耗时</th><th>状态</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <div class="job-name"><span class="dot dot-green"></span>polymarket-monitor-lite</div>
+          <div class="job-cmd">polymarket_monitor_lite.py → whale_report_*.json</div>
+        </td>
+        <td>每小时</td><td>今天 16:04</td><td>3.3 秒</td>
+        <td><span class="badge b-green">正常</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="job-name"><span class="dot dot-green"></span>sync-changes</div>
+          <div class="job-cmd">sync_changes.py → changes 表 (鲸鱼交易流水)</div>
+        </td>
+        <td>每 90 分钟</td><td>今天 15:56</td><td>5.4 秒</td>
+        <td><span class="badge b-green">正常</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="job-name"><span class="dot dot-green"></span>update-whale-states</div>
+          <div class="job-cmd">update_whale_states.py → whales 表 (持仓快照)</div>
+        </td>
+        <td>每 6 小时</td><td>今天 12:01</td><td>98 秒</td>
+        <td><span class="badge b-green">正常</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="job-name"><span class="dot dot-green"></span>polymarket-daily-price-snapshot</div>
+          <div class="job-cmd">snapshot_daily_prices.py → daily_price_snapshots 表</div>
+        </td>
+        <td>每天 16:00</td><td>今天 16:00</td><td>57 秒</td>
+        <td><span class="badge b-green">正常</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="job-name"><span class="dot dot-green"></span>check-polycop-signal</div>
+          <div class="job-cmd">check_polycop_signal.py → Telegram 套利提醒</div>
+        </td>
+        <td>每 6 小时</td><td>今天 12:03</td><td>6 秒</td>
+        <td><span class="badge b-green">正常</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="job-name"><span class="dot dot-green"></span>data-quality-check</div>
+          <div class="job-cmd">data_quality_check.py → 数据健康报告</div>
+        </td>
+        <td>每天 08:00</td><td>今天 08:03</td><td>4.4 秒</td>
+        <td><span class="badge b-green">正常</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="job-name"><span class="dot dot-green"></span>polymarket-cleanup</div>
+          <div class="job-cmd">cleanup_stale_data.py → 清理过期数据</div>
+        </td>
+        <td>每天 03:30</td><td>今天 03:30</td><td>5 秒</td>
+        <td><span class="badge b-green">正常</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="job-name"><span class="dot dot-yellow"></span>backup-configs</div>
+          <div class="job-cmd">backup_configs.sh → 配置备份</div>
+        </td>
+        <td>每天 03:00</td><td>今天 03:00</td><td>—</td>
+        <td><span class="badge b-red">连续 5 次错误</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="job-name"><span class="dot dot-green"></span>leaderboard 鲸鱼跟踪</div>
+          <div class="job-cmd">[crontab] leaderboard_whale_tracker.py (周一 03:00)</div>
+        </td>
+        <td>每周一</td><td>上周一</td><td>—</td>
+        <td><span class="badge b-blue">系统cron</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:20px">⚫ 已关闭的任务（9 个）</h3>
+  <table class="job-table">
+    <thead>
+      <tr><th>任务名</th><th>原来频率</th><th>最后运行</th><th>关闭原因</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><div class="job-name"><span class="dot dot-gray"></span>polymarket-monitor-v2</div>
+            <div class="job-cmd">polymarket_monitor_v2.py（完整版监控）</div></td>
+        <td>每小时</td><td>2026-04-22（6周前）</td>
+        <td><span class="badge b-gray">被 lite 替代？原因不明</span></td>
+      </tr>
+      <tr>
+        <td><div class="job-name"><span class="dot dot-gray"></span>update-whale-states（旧版）</div>
+            <div class="job-cmd">同名任务，有新版正在跑</div></td>
+        <td>每 6 小时</td><td>2026-04-22（6周前）</td>
+        <td><span class="badge b-gray">被新版替代</span></td>
+      </tr>
+      <tr>
+        <td><div class="job-name"><span class="dot dot-gray"></span>system-health-check</div></td>
+        <td>每小时</td><td>2026-05-13</td>
+        <td><span class="badge b-gray">手动关闭</span></td>
+      </tr>
+      <tr>
+        <td><div class="job-name"><span class="dot dot-gray"></span>cron-health-monitor</div></td>
+        <td>每 6 小时</td><td>2026-05-13</td>
+        <td><span class="badge b-gray">手动关闭</span></td>
+      </tr>
+      <tr>
+        <td><div class="job-name"><span class="dot dot-gray"></span>video-hot-recommend / km-ingest / km-llm-extract</div></td>
+        <td>各异</td><td>多周前</td>
+        <td><span class="badge b-gray">非 Polymarket 功能</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- §3 数据管道健康度 -->
+<div class="card">
+  <h2><span class="num">3</span> 数据管道：哪些在喂数据，哪些是空的？</h2>
+
+  <div class="stat-row">
+    <div class="stat"><div class="n green">7</div><div class="lbl">活跃数据表</div></div>
+    <div class="stat"><div class="n red">8</div><div class="lbl">空表（功能未接入）</div></div>
+    <div class="stat"><div class="n blue">29,540</div><div class="lbl">changes 流水行数</div></div>
+    <div class="stat"><div class="n blue">44,704</div><div class="lbl">日价格快照行数</div></div>
+    <div class="stat"><div class="n yellow">289 MB</div><div class="lbl">07-data 磁盘占用</div></div>
+  </div>
+
+  <h3>活跃数据表（有数据 ✅）</h3>
+  <table class="job-table">
+    <thead><tr><th>表名</th><th>行数</th><th>由哪个任务写入</th><th>用于回测？</th></tr></thead>
+    <tbody>
+      <tr><td><code>changes</code></td><td>29,540</td><td>sync-changes（每 90 分钟）</td><td><span class="badge b-green">核心信号源</span></td></tr>
+      <tr><td><code>daily_price_snapshots</code></td><td>44,704</td><td>daily-price-snapshot（16:00）</td><td><span class="badge b-green">核心价格源</span></td></tr>
+      <tr><td><code>whales</code></td><td>3,066</td><td>update-whale-states（每 6 小时）</td><td><span class="badge b-blue">辅助</span></td></tr>
+      <tr><td><code>positions</code></td><td>11,347</td><td>monitor-lite（每小时）</td><td><span class="badge b-blue">辅助</span></td></tr>
+      <tr><td><code>concentration_history</code></td><td>58,644</td><td>monitor-lite</td><td><span class="badge b-gray">监控用</span></td></tr>
+      <tr><td><code>leaderboard_*</code></td><td>~440</td><td>leaderboard_whale_tracker（周）</td><td><span class="badge b-gray">监控用</span></td></tr>
+      <tr><td><code>alerts</code></td><td>50</td><td>polycop / 各监控</td><td><span class="badge b-gray">监控用</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>空表（已建表但未写入 ⚠️）</h3>
+  <table class="job-table">
+    <thead><tr><th>表名</th><th>状态</th><th>影响</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>signals</code></td>
+        <td><span class="badge b-red">0 行</span></td>
+        <td>生产环境的"套利信号"从未入库——无法回溯验证哪些信号真实触发过</td>
+      </tr>
+      <tr>
+        <td><code>signal_results</code></td>
+        <td><span class="badge b-red">0 行</span></td>
+        <td>信号结果追踪完全缺失——无法知道过去推送的信号最终对不对</td>
+      </tr>
+      <tr>
+        <td><code>whale_performance</code></td>
+        <td><span class="badge b-red">0 行</span></td>
+        <td>鲸鱼绩效评分系统空转——跟哪个鲸鱼更准完全没有记录</td>
+      </tr>
+      <tr>
+        <td><code>strategy_performance</code></td>
+        <td><span class="badge b-red">0 行</span></td>
+        <td>策略层无绩效数据</td>
+      </tr>
+      <tr>
+        <td><code>quality_reports</code></td>
+        <td><span class="badge b-red">0 行</span></td>
+        <td>质量报告从未写入 DB</td>
+      </tr>
+      <tr>
+        <td><code>opportunity_history / pair_cost_arbitrage / threshold_history</code></td>
+        <td><span class="badge b-red">0 行</span></td>
+        <td>机会历史、套利扫描结果、阈值变化全无记录</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- §4 问题诊断 -->
+<div class="card">
+  <h2><span class="num">4</span> 发现的问题（按优先级排序）</h2>
+
+  <ul class="issue-list">
+    <li>
+      <span class="issue-icon">🔴</span>
+      <div class="issue-body">
+        <strong>P1 · backup-configs 连续失败 5 次，无告警 <span class="tag tag-p1">P1</span></strong>
+        <span>每天 03:00 运行，连续 5 天报错，但配置了 <code>failureAlert: null</code>——你完全不知道它在失败。备份失败意味着配置损坏后无法恢复。</span>
+      </div>
+    </li>
+    <li>
+      <span class="issue-icon">🔴</span>
+      <div class="issue-body">
+        <strong>P1 · 所有 Polymarket 任务都没有配置失败告警 <span class="tag tag-p1">P1</span></strong>
+        <span>monitor-lite / sync-changes / update-whale-states / daily-price-snapshot 这些核心任务的 <code>failureAlert</code> 全是 null。哪天 API 挂了、网络断了，你什么通知都收不到，数据悄悄停止更新，回测用的全是过期数据。</span>
+      </div>
+    </li>
+    <li>
+      <span class="issue-icon">🟡</span>
+      <div class="issue-body">
+        <strong>P1 · 信号追踪链断路：推了多少信号，几个对？完全不知道 <span class="tag tag-p1">P1</span></strong>
+        <span><code>signals / signal_results / whale_performance</code> 三张表全空。当前系统只是把信号推到 Telegram，但没有"推送→结果→评分"的闭环。不知道 polycop 信号准确率是多少，无法筛选"有效鲸鱼"。这是从监控到盈利最大的断点。</span>
+      </div>
+    </li>
+    <li>
+      <span class="issue-icon">🟡</span>
+      <div class="issue-body">
+        <strong>P2 · polymarket-monitor-v2 已关闭 6 周，原因不明 <span class="tag tag-p2">P2</span></strong>
+        <span>完整监控引擎（v2）在 2026-04-22 之后没有跑过，被 lite 版替代。lite 版只需 3.3 秒（vs v2 的 184 秒），但可能采集的字段/深度不同。需要确认 lite 版是否采集了 v2 版的所有必要字段，否则可能有数据盲区。</span>
+      </div>
+    </li>
+    <li>
+      <span class="issue-icon">🟡</span>
+      <div class="issue-body">
+        <strong>P2 · P0-B 周复验在系统 crontab，不在 OpenClaw（今天刚加）<span class="tag tag-p2">P2</span></strong>
+        <span>刚加的 <code>weekly_pzero.sh</code> 用系统 crontab 调度，没有 Telegram 推送结果、没有失败告警、没有 AI 上下文。运行了没有是未知的。应迁移到 OpenClaw cron。</span>
+      </div>
+    </li>
+    <li>
+      <span class="issue-icon">🟡</span>
+      <div class="issue-body">
+        <strong>P2 · 07-data 文件不做轮转，289 MB 且仍在增长 <span class="tag tag-p2">P2</span></strong>
+        <span>虽然有 cleanup 任务，但 whale_report_*.json 多版本留存（每次 monitor-lite 运行都新建一个 1-2 MB 的文件），加上 whale_states/ 目录，合计 2200+ 文件、289 MB。长期来看磁盘和 DB 查询性能都有隐患。</span>
+      </div>
+    </li>
+    <li>
+      <span class="issue-icon">🔵</span>
+      <div class="issue-body">
+        <strong>P3 · 两套调度混用，难以统一管理 <span class="tag tag-p3">P3</span></strong>
+        <span>OpenClaw cron + 系统 crontab 两套并存，如果某个任务挪到了一个，另一个忘记删，就会重复运行。建议把 Polymarket 相关任务全部迁入 OpenClaw 统一管理。</span>
+      </div>
+    </li>
+    <li>
+      <span class="issue-icon">🔵</span>
+      <div class="issue-body">
+        <strong>P3 · sync-changes 频率（90 分钟）与 monitor-lite（60 分钟）未对齐 <span class="tag tag-p3">P3</span></strong>
+        <span>monitor-lite 每 60 分钟产生新 whale_report，但 sync-changes 每 90 分钟才把流水写入 changes 表。存在 30 分钟的数据延迟窗口。对于回测来说影响不大，但若将来做实时决策则会引入延迟。</span>
+      </div>
+    </li>
+  </ul>
+</div>
+
+<!-- §5 优化建议 -->
+<div class="card">
+  <h2><span class="num">5</span> 优化建议（面向盈利目标）</h2>
+
+  <h3>🔴 立即要做（P1）</h3>
+
+  <div class="suggest p1">
+    <span class="sicon">🔔</span>
+    <div>
+      <strong>为核心任务加上失败告警</strong>
+      <span>在 OpenClaw cron 里，为 <code>sync-changes</code>、<code>update-whale-states</code>、<code>daily-price-snapshot</code> 加上 <code>failureAlert</code> 配置，推送到你的 Telegram。这样任何数据断流，你第一时间知道。预计 5 分钟配置。</span>
+    </div>
+  </div>
+
+  <div class="suggest p1">
+    <span class="sicon">🛠️</span>
+    <div>
+      <strong>修复 backup-configs 脚本</strong>
+      <span>连续 5 天失败，查 <code>~/.openclaw/cron/runs/433cff3d-*.jsonl.migrated</code> 里的错误信息，找到原因并修。之后加失败告警。</span>
+    </div>
+  </div>
+
+  <div class="suggest p1">
+    <span class="sicon">🔗</span>
+    <div>
+      <strong>接通信号追踪链（P1，对盈利最关键）</strong>
+      <span>这是从"监控系统"变成"有记忆的盈利系统"的最重要一步。具体：每次 polycop 扫到信号时，把信号写入 <code>signals</code> 表；一周后自动查结果，写入 <code>signal_results</code>；每月统计鲸鱼准确率，写入 <code>whale_performance</code>。这样就能知道"哪个鲸鱼值得跟"。</span>
+    </div>
+  </div>
+
+  <h3 style="margin-top:18px">🟡 近期可做（P2）</h3>
+
+  <div class="suggest p2">
+    <span class="sicon">🤖</span>
+    <div>
+      <strong>把 P0-B 周复验迁移到 OpenClaw cron</strong>
+      <span>把今天加的 <code>weekly_pzero.sh</code> 从系统 crontab 改为 OpenClaw 任务，这样：① 结果自动推 Telegram；② 失败会告警；③ 有任务日志可查。只需在 OpenClaw 里新增一个 cron 任务，然后从系统 crontab 删掉那条。</span>
+    </div>
+  </div>
+
+  <div class="suggest p2">
+    <span class="sicon">📋</span>
+    <div>
+      <strong>确认 monitor-lite vs v2 的数据覆盖差异</strong>
+      <span>对比 <code>polymarket_monitor_lite.py</code> 和 <code>polymarket_monitor_v2.py</code> 写入哪些字段，确认 lite 版是否覆盖了 v2 的所有采集内容。如果有缺失，补回来或重开 v2。</span>
+    </div>
+  </div>
+
+  <div class="suggest p2">
+    <span class="sicon">🗂️</span>
+    <div>
+      <strong>给 whale_report 加文件保留期限</strong>
+      <span>建议只保留最近 7 天的 whale_report_*.json（每天约 3-4 个，每个 1-2 MB），7 天前的自动删除。在 cleanup 任务里加一行即可，可以节省 ~200 MB 磁盘。</span>
+    </div>
+  </div>
+
+  <h3 style="margin-top:18px">🔵 长期可考虑（P3）</h3>
+
+  <div class="suggest p3">
+    <span class="sicon">🔄</span>
+    <div>
+      <strong>统一到 OpenClaw，去掉系统 crontab 的 Polymarket 条目</strong>
+      <span>Leaderboard 跟踪（当前在 crontab）可迁入 OpenClaw，享受 Telegram 推送和告警。统一管理更清晰。</span>
+    </div>
+  </div>
+
+  <div class="suggest p3">
+    <span class="sicon">⏱️</span>
+    <div>
+      <strong>把 sync-changes 频率从 90 分钟改为 60 分钟</strong>
+      <span>与 monitor-lite 对齐，减少数据延迟。sync-changes 单次 5 秒，对系统无压力。</span>
+    </div>
+  </div>
+</div>
+
+<!-- §6 与盈利目标的关联 -->
+<div class="card">
+  <h2><span class="num">6</span> 调度层与"实盘盈利"目标的关联</h2>
+
+  <p style="margin-bottom:14px">调度层不是孤立的技术问题，它直接决定我们能不能从"有监控"走向"有盈利"。</p>
+
+  <div class="flow" style="flex-wrap:wrap;gap:6px">
+    <div class="flow-box active" style="min-width:100px">数据采集<br><small>monitor-lite<br>sync-changes ✅</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box active" style="min-width:100px">信号生成<br><small>polycop<br>✅ Telegram</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box err" style="min-width:100px">信号追踪<br><small>signals 表<br>❌ 空的</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box err" style="min-width:100px">绩效评分<br><small>whale_perf<br>❌ 空的</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box warn" style="min-width:100px">回测验证<br><small>P0-B 每周<br>⚪ 刚建立</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box dead" style="min-width:100px">影子盘<br><small>🚫 条件未达</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box dead" style="min-width:100px">实盘<br><small>🚫 条件未达</small></div>
+  </div>
+
+  <div style="margin-top:16px;padding:14px 16px;background:#fff8e1;border:1px solid #ffe082;border-radius:10px;font-size:13px">
+    <strong style="color:#b7770d">最关键的断点</strong>：当前系统在"信号生成 → 信号追踪"这一步断了。我们推了 Telegram 信号，但从不记录"这个信号后来对了没有"。没有这个数据，就无法知道哪个鲸鱼值得跟，也就无法筛选出有效信号源——而这恰恰是 C0 逆势/H6 微仓等策略能否在生产环境中应用的前提。
+  </div>
+</div>
+
+<!-- §7 一句话总结 -->
+<div style="background:linear-gradient(135deg,#0d1b2a,#1b2838);color:white;border-radius:12px;padding:26px 28px;margin-top:4px">
+  <h2 style="color:white;font-size:16px;margin-bottom:16px">总结：调度层评分</h2>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+    <div style="background:rgba(255,255,255,.06);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:6px">数据采集可靠性</div>
+      <div style="font-size:26px;font-weight:800;color:#2ecc71">B+</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px">核心任务正常运行，但无失败告警</div>
+    </div>
+    <div style="background:rgba(255,255,255,.06);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:6px">信号→结果闭环</div>
+      <div style="font-size:26px;font-weight:800;color:#e74c3c">D</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px">signals/结果追踪全空，无学习能力</div>
+    </div>
+    <div style="background:rgba(255,255,255,.06);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:6px">回测→生产对接</div>
+      <div style="font-size:26px;font-weight:800;color:#f39c12">C</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px">P0-B 刚建立，但与调度层没有自动对接</div>
+    </div>
+    <div style="background:rgba(255,255,255,.06);border-radius:10px;padding:14px">
+      <div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:6px">运维可观测性</div>
+      <div style="font-size:26px;font-weight:800;color:#f39c12">C+</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px">有 Telegram 推送但无失败告警，已有 data-quality-check</div>
+    </div>
+  </div>
+
+  <div style="font-size:13px;color:rgba(255,255,255,.7);line-height:1.7">
+    <strong style="color:white">一句话结论：</strong>
+    采集层已经健壮，每天在认真积累数据。但从"信号推送"到"学习哪些信号有效"这条链是断的。
+    接通这条链（signals → signal_results → whale_performance），是调度层能为盈利目标贡献的最高价值单件事。
+  </div>
+
+  <div style="margin-top:16px;font-size:11px;color:rgba(255,255,255,.3)">
+    生成时间：2026-06-06 18:10 CST &nbsp;·&nbsp; 数据来源：~/.openclaw/cron/jobs.json · jobs-state.json · polymarket.db · 07-data/ 实时状态
+  </div>
+</div>
+
+</div><!-- /wrap -->
+</body>
+</html>
