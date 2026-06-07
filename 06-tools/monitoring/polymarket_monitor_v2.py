@@ -13,8 +13,38 @@ Polymarket 综合监控器 V2
 import json
 import sys
 import os
+import time
+import atexit
 from datetime import datetime, timezone
 from pathlib import Path
+
+# ── 进程锁：防止 cron 重叠触发并发运行 ──────────────────────────────────────
+_LOCK_FILE = Path(__file__).parent / ".monitor_v2.lock"
+_SCRIPT_TIMEOUT = 700  # 比 OpenClaw 超时(600s)稍宽
+
+
+def _acquire_lock():
+    if _LOCK_FILE.exists():
+        try:
+            data = json.loads(_LOCK_FILE.read_text())
+            age = time.time() - data.get("ts", 0)
+            if age < _SCRIPT_TIMEOUT:
+                print(f"⏭️ monitor-v2 进程锁存在 (pid={data.get('pid')}, {age:.0f}s 前), 退出")
+                sys.exit(0)
+            print(f"⚠️ 锁过期 ({age:.0f}s > {_SCRIPT_TIMEOUT}s), 覆盖")
+        except Exception:
+            pass
+    _LOCK_FILE.write_text(json.dumps({"pid": os.getpid(), "ts": time.time()}))
+    atexit.register(_release_lock)
+
+
+def _release_lock():
+    try:
+        if _LOCK_FILE.exists():
+            _LOCK_FILE.unlink()
+    except Exception:
+        pass
+# ─────────────────────────────────────────────────────────────────────────────
 
 # 添加分析工具路径
 # [修复] 2026-04-21: 修正路径 - analysis 在 06-tools 目录下
@@ -363,18 +393,21 @@ def run_whale_tracking() -> dict:
         print("\n⚪ 未发现活跃鲸鱼")
         return {"tracked": 0, "active": 0, "whales": [], "active_analyses": [], "top_10": []}
     
-    # 分析每个鲸鱼
+    # 分析每个鲸鱼（单次循环：同时收集活跃信号和 Top 10 数据，避免二次 API 调用）
     active_whales = []
     approved_signals = []
-    
+    all_analyses = []  # 用于 Top 10，在同一循环中填充
+
     for wallet, info in whales.items():
         analysis = analyze_whale(wallet, info)
-        
+
         # 跳过异常数据（持仓多但价值极低）
         if analysis.get("is_suspicious", False):
             print(f"\n   ⚠️  {info['pseudonym']} - 数据异常，跳过")
             continue
-        
+
+        all_analyses.append(analysis)  # Top 10 数据同步收集，无需二次调用
+
         # 更新重点鲸鱼列表
         is_watched = False
         is_new_watched = False
@@ -382,22 +415,22 @@ def run_whale_tracking() -> dict:
             watch_result = update_watchlist_from_analysis(watchlist, wallet, analysis)
             is_watched = watch_result.get("is_watched", False)
             is_new_watched = watch_result.get("is_new", False)
-        
+
         if analysis["has_activity"] or is_watched:
             # 风险评估
             if RISK_REVIEW_AVAILABLE and RISK_REVIEW_ENABLED:
                 review = review_whale_signal(analysis)
-                
+
                 print(f"\n   🐋 {info['pseudonym']}" + (" 🔔" if is_watched else ""))
                 print(f"      风险评估: {review['risk_level'].upper()} (分数: {review['risk_score']:.1%})")
-                
+
                 if review['approved']:
                     approved_signals.append(analysis)
                     active_whales.append(analysis)
                     print(f"      ✅ 通过审核")
                 else:
                     print(f"      ❌ 未通过审核")
-                    
+
                 if NOTIFICATIONS_ENABLED:
                     from telegram_notifier_v2 import send_telegram_message
                     risk_message = format_risk_review(review, "鲸鱼信号")
@@ -405,28 +438,21 @@ def run_whale_tracking() -> dict:
             else:
                 active_whales.append(analysis)
                 approved_signals.append(analysis)
-            
+
             if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
                 if not RISK_REVIEW_ENABLED or review['approved']:
                     # 传递重点鲸鱼标记
                     send_whale_alert(analysis, is_watched=is_watched, is_new_watched=is_new_watched)
-    
+
     # 保存重点鲸鱼列表
     if WATCHLIST_AVAILABLE and watchlist is not None:
         save_watchlist(watchlist)
-    
-    # 🆕 生成 Top 10 鲸鱼排名
+
+    # Top 10 排行榜（使用已有数据，无需重复调用 analyze_whale）
     top_10_whales = []
     print("\n" + "-"*70)
     print("🏆 Top 10 鲸鱼排行榜 (按持仓价值)")
     print("-"*70)
-    
-    # 收集所有分析结果（排除异常数据）
-    all_analyses = []
-    for wallet, info in whales.items():
-        analysis = analyze_whale(wallet, info)
-        if not analysis.get("is_suspicious", False):
-            all_analyses.append(analysis)
     
     # 按持仓价值排序
     all_analyses.sort(key=lambda x: x["total_value"], reverse=True)
@@ -471,49 +497,12 @@ def run_whale_tracking() -> dict:
 
 
 def run_news_monitoring() -> dict:
-    """运行新闻监控"""
+    """运行新闻监控（暂停：尚无真实新闻 API 接入，避免假数据写入报告）"""
     print("\n" + "="*70)
-    print("📰 监控热点新闻...")
+    print("📰 新闻监控（已跳过 — 无真实数据源）")
     print("="*70)
-    
-    monitor = NewsMonitor()
-    
-    # 这里可以从外部 API 获取新闻
-    # 暂时使用示例数据演示
-    test_headlines = [
-        {'title': 'Bitcoin price movement detected', 'source': 'crypto'},
-        {'title': 'Fed meeting scheduled next week', 'source': 'finance'}
-    ]
-    
-    results = monitor.scan_news_impact(test_headlines)
-    signals = monitor.generate_trading_signals(results)
-    
-    if signals:
-        print(f"\n✅ 发现 {len(signals)} 个新闻驱动信号")
-        for signal in signals:
-            print(f"\n   📊 {signal['category']}: {signal['direction']}")
-            print(f"      置信度: {signal['confidence']:.1%}")
-            print(f"      建议: {signal['reason']}")
-            
-            if NOTIFY_IMMEDIATELY and NOTIFICATIONS_ENABLED:
-                from telegram_notifier_v2 import send_telegram_message
-                alert = format_news_alert({
-                    'headline': signal['reason'],
-                    'impact_score': int(signal['confidence'] * 100),
-                    'category': signal['category'],
-                    'urgency': signal['timeframe'],
-                    'sentiment': 'POSITIVE' if signal['direction'] == 'UP' else 'NEGATIVE',
-                    'keywords': signal['suggested_markets'],
-                    'suggested_action': f"关注 {signal['category']} 相关市场"
-                })
-                send_telegram_message(alert)
-    else:
-        print("\n⚪ 无重大新闻影响")
-    
-    return {
-        "signals": len(signals),
-        "details": signals
-    }
+    print("\n⚪ 跳过：新闻监控需要真实 API 接入后再启用")
+    return {"signals": 0, "details": []}
 
 
 def run_correlation_analysis() -> dict:
@@ -816,6 +805,7 @@ def save_signals_to_db(signals: list):
 
 
 def main():
+    _acquire_lock()
     print("🚀 Polymarket 综合监控器 V2")
     print("="*70)
     print(f"通知功能: {'✅ 已启用' if NOTIFICATIONS_ENABLED else '❌ 未启用'}")
