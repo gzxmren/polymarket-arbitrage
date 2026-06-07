@@ -144,12 +144,22 @@ def _resilient_book(token_id: str, retries: int = 2):
     return None
 
 
+def _resilient_markets(limit: int, retries: int = 3):
+    """市场列表获取带重试，缓解 Gamma API 偶发空返回（cron 环境下出现过 0 市场空跑）。"""
+    for attempt in range(retries):
+        markets = get_markets_with_order_book(limit=limit)
+        if markets:
+            return markets
+        time.sleep(1.5 * (attempt + 1))
+    return []
+
+
 def scan_once(limit: int, gas_per_pair: float) -> dict:
     run_id = uuid.uuid4().hex[:12]
     ts = datetime.now(timezone.utc).isoformat()
     t0 = time.time()
 
-    markets = get_markets_with_order_book(limit=limit)
+    markets = _resilient_markets(limit)
     rows = []
     n_buy_arb = n_sell_arb = 0
     min_buy = 9.9
@@ -252,6 +262,14 @@ def main():
     print("=" * 72)
 
     res = scan_once(args.limit, args.gas_per_pair)
+
+    # 空运行不入库：Gamma/CLOB 瞬时失败导致 0 有效市场时，写库只会污染数据
+    # 并骗过看门狗的新鲜度检查。宁可不写，让"无新鲜数据"自然触发停摆告警。
+    if res["n_markets"] == 0:
+        print("\n⚠️ 本轮 0 有效市场（Gamma/CLOB 瞬时失败），跳过写库，退出码1")
+        conn.close()
+        sys.exit(1)
+
     persist(conn, res)
 
     print(f"\n扫描完成 ({res['duration_s']:.1f}s):")
