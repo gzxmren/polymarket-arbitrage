@@ -19,17 +19,27 @@ import json
 
 # 尝试从配置文件读取
 def load_telegram_config():
-    """从 openclaw.json 加载配置"""
+    """从 openclaw.json 加载配置。
+
+    [修复 2026-06-08] OpenClaw 新版把 token 移到了 channels.telegram.accounts.default.botToken，
+    旧代码只读 channels.telegram.botToken 导致独立脚本（monitor-v2 cron 直跑、看门狗等）
+    取不到 token、Telegram 静默失败。这里改为优先读新路径，回退旧路径。
+    """
     try:
         config_path = os.environ.get("OPENCLAW_CONFIG") or os.path.expanduser("~/.openclaw/openclaw.json")
         with open(config_path) as f:
             config = json.load(f)
             telegram = config.get("channels", {}).get("telegram", {})
-            # 从配置读取，如果没有则使用默认值（菜园子群）
-            token = telegram.get("botToken", "")
-            chat_id = telegram.get("chatId", "") or telegram.get("defaultChatId", "") or "-5052636342"
+            # 新结构: accounts.<defaultAccount>.botToken
+            default_acct = telegram.get("defaultAccount", "default")
+            acct = telegram.get("accounts", {}).get(default_acct, {}) \
+                or telegram.get("accounts", {}).get("default", {})
+            token = acct.get("botToken", "") or telegram.get("botToken", "")  # 新 → 旧回退
+            chat_id = (acct.get("chatId", "") or acct.get("defaultChatId", "")
+                       or telegram.get("chatId", "") or telegram.get("defaultChatId", "")
+                       or "-5052636342")  # 默认菜园子群
             return token, chat_id
-    except:
+    except Exception:
         return "", ""
 
 # 优先环境变量，其次配置文件
