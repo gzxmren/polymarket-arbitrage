@@ -4,7 +4,7 @@ CLOB 摄像头看门狗 — 确保前向数据采集不悄悄停摆
 
 前向套利测试要跑≥2周。最大风险是 clob_pair_logger 静默挂掉(cron被删/脚本崩/
 API变更/锁卡死)，两周后才发现没数据。本看门狗定时检查"摄像头"是否在持续录像，
-发现异常立刻 Telegram 告警(私聊 1530224854)。
+发现异常立刻 Telegram 告警(管理员私聊，ID 从 openclaw.json 读)。
 
 检查项(读 07-data/clob_pair_log.db):
   1. 新鲜度: 最近一轮距今多久? >70min = 漏了≥2个采集周期 → 🔴严重(停摆)
@@ -36,10 +36,15 @@ DB_PATH = PROJECT_ROOT / "07-data" / "clob_pair_log.db"
 LOCK_FILE = PROJECT_ROOT / "06-tools" / "monitoring" / ".clob_pair_logger.lock"
 STATE_FILE = PROJECT_ROOT / "07-data" / ".clob_watchdog_state.json"
 
-# 告警发到私聊（运维告警惯例），优先于模块默认群
-os.environ.setdefault("TELEGRAM_CHAT_ID", "1530224854")
 sys.path.insert(0, str(PROJECT_ROOT / "06-tools" / "monitoring"))
+import telegram_notifier_v2 as tg  # noqa: E402
 from telegram_notifier_v2 import send_telegram_message  # noqa: E402
+
+# 告警发到管理员私聊（运维惯例）。ID 从 openclaw.json 读，不硬编码。
+# 覆盖模块全局 TELEGRAM_CHAT_ID（send_telegram_message 调用时读此全局）。
+_admin = os.environ.get("TELEGRAM_CHAT_ID") or tg.get_admin_chat_id()
+if _admin:
+    tg.TELEGRAM_CHAT_ID = _admin
 
 # 阈值
 STALE_MIN = 70          # 距上轮 >此分钟 = 停摆

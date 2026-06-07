@@ -35,12 +35,28 @@ def load_telegram_config():
             acct = telegram.get("accounts", {}).get(default_acct, {}) \
                 or telegram.get("accounts", {}).get("default", {})
             token = acct.get("botToken", "") or telegram.get("botToken", "")  # 新 → 旧回退
+            # 默认投递群：优先显式 chatId，否则取 groups 里第一个具体群（不硬编码 ID）
+            groups = [g for g in telegram.get("groups", {}) if g and g != "*"]
+            group_default = groups[0] if groups else ""
             chat_id = (acct.get("chatId", "") or acct.get("defaultChatId", "")
                        or telegram.get("chatId", "") or telegram.get("defaultChatId", "")
-                       or "-5052636342")  # 默认菜园子群
+                       or group_default)
             return token, chat_id
     except Exception:
         return "", ""
+
+
+def get_admin_chat_id() -> str:
+    """管理员私聊 ID（运维/失败告警目标）。从 openclaw.json 的 telegram.allowFrom 读，
+    不在代码里硬编码。无则返回空串。"""
+    try:
+        config_path = os.environ.get("OPENCLAW_CONFIG") or os.path.expanduser("~/.openclaw/openclaw.json")
+        with open(config_path) as f:
+            telegram = json.load(f).get("channels", {}).get("telegram", {})
+        allow = telegram.get("allowFrom") or telegram.get("groupAllowFrom") or []
+        return str(allow[0]) if allow else ""
+    except Exception:
+        return ""
 
 # 优先环境变量，其次配置文件
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or load_telegram_config()[0]
