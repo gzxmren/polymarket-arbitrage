@@ -61,143 +61,115 @@ class Signal:
 
 class WhaleFollowingStrategy:
     """鲸鱼跟随策略"""
-    
+
     def __init__(self):
-        self.min_trade_size = 1000       # $1k (降低阈值)
-        self.min_win_rate = 0.6          # 60%胜率
-        self.min_sharpe = 0.5            # 最小夏普比率
+        self.min_trade_size = 10         # $10 最小跟踪交易额（头部鲸鱼分散小注是正常模式）
         self.confidence_threshold = 0.7  # 置信度阈值
-        
+
     def identify_smart_money(self, limit: int = 20) -> List[Whale]:
         """
         识别聪明钱鲸鱼
-        
+
+        数据源: leaderboard_whales（Polymarket 官方排行榜真实盈亏）
         标准:
-        - 高价值 (total_value >= $10k)
-        - 有活动 (has_activity = 1)
-        - 被关注 (is_watched = 1)
-        
-        注意: whale_performance 表尚未创建，使用 whales 表现有字段
+        - PnL > $50k（真实盈利）
+        - volume > $100k（足够交易深度）
         """
         print("🔍 识别聪明钱鲸鱼...")
-        
+
         conn = db.get_connection()
         cursor = conn.cursor()
-        
-        # 查询活跃的高价值鲸鱼
-        # TODO: 当 whale_performance 表创建后，更新为使用性能指标
+
+        # 用 leaderboard_whales 取真实历史盈亏，INNER JOIN changes 确保本地有行为记录
+        # 只跟踪在我们 DB 里实际出现过的鲸鱼（没有 changes 记录无法产生信号）
         cursor.execute('''
-            SELECT 
-                wallet,
-                pseudonym,
-                total_value,
-                total_pnl,
-                total_volume,
-                changes_count
-            FROM whales
-            WHERE is_watched = 1
-              AND has_activity = 1
-              AND total_value >= 10000
-            ORDER BY total_value DESC, total_pnl DESC
+            SELECT
+                lw.wallet,
+                lw.username,
+                lw.pnl,
+                lw.volume,
+                COUNT(c.id) as recent_changes
+            FROM leaderboard_whales lw
+            JOIN changes c ON c.wallet = lw.wallet
+              AND c.timestamp > datetime('now', '-30 days')
+            WHERE lw.pnl > 50000
+              AND lw.volume > 100000
+            GROUP BY lw.wallet
+            HAVING recent_changes > 0
+            ORDER BY lw.pnl DESC
             LIMIT ?
         ''', (limit,))
-        
+
         whales = []
         for row in cursor.fetchall():
-            # 计算模拟的胜率和夏普比率（基于现有数据）
-            total_value = row[2] or 0
-            total_pnl = row[3] or 0
-            total_volume = row[4] or 0
-            changes_count = row[5] or 0
-            
-            # 模拟胜率：基于盈亏情况估算
-            win_rate = 0.6 if total_pnl > 0 else 0.4
-            
-            # 模拟夏普比率：基于盈亏/价值比
-            sharpe_ratio = (total_pnl / total_value) if total_value > 0 else 0
-            sharpe_ratio = max(0, min(sharpe_ratio, 2.0))  # 限制在 0-2 范围
-            
-            # 模拟策略一致性：基于交易次数
-            strategy_consistency = min(changes_count / 20, 1.0) if changes_count else 0.5
-            
+            pnl = row[2] or 0
+            volume = row[3] or 1
+            recent_changes = row[4] or 0
+            return_rate = pnl / volume  # 真实收益率（如 108万/193万 = 56%）
             whales.append(Whale(
                 wallet=row[0],
                 pseudonym=row[1] or row[0][:10] + "...",
-                total_value=total_value,
-                win_rate=win_rate,
-                sharpe_ratio=sharpe_ratio,
-                strategy_consistency=strategy_consistency
+                total_value=pnl,
+                win_rate=return_rate,
+                sharpe_ratio=return_rate,
+                strategy_consistency=min(recent_changes / 50, 1.0)  # 50笔/30天为满分
             ))
-        
+
         conn.close()
-        
+
         print(f"   找到 {len(whales)} 个聪明钱鲸鱼")
         return whales
-    
-    def get_recent_changes(self, wallet: str, hours: int = 1) -> List[Dict]:
-        """获取鲸鱼最近变动"""
+
+    def get_recent_changes(self, wallet: str, hours: int = 24) -> List[Dict]:
+        """获取鲸鱼最近变动（直接查 changes 表，不依赖 positions JOIN）"""
         conn = db.get_connection()
         cursor = conn.cursor()
-        
+
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-        
-        # 注意: changes 表没有 outcome 字段，从 positions 表获取
+
         cursor.execute('''
-            SELECT 
-                c.market,
-                p.outcome,
-                c.new_size - c.old_size as size_change,
-                c.timestamp,
-                p.cur_price
-            FROM changes c
-            JOIN positions p ON c.wallet = p.wallet AND c.market = p.market
-            WHERE c.wallet = ?
-              AND c.timestamp > ?
-            ORDER BY c.timestamp DESC
+            SELECT market, market_title, side, change_amount, timestamp
+            FROM changes
+            WHERE wallet = ?
+              AND timestamp > ?
+            ORDER BY ABS(change_amount) DESC
         ''', (wallet, cutoff.isoformat()))
-        
+
         changes = []
         for row in cursor.fetchall():
-            size_change = row[2] or 0
-            price = row[4] or 0
-            value_change = abs(size_change) * price
-            
             changes.append({
                 'market': row[0],
-                'outcome': row[1],
-                'size_change': size_change,
-                'value_change': value_change,
-                'timestamp': row[3],
-                'direction': 'BUY' if size_change > 0 else 'SELL'
+                'market_title': row[1] or row[0],
+                'direction': row[2],           # 'BUY' or 'SELL'
+                'value_change': abs(row[3]),   # 直接用 change_amount，准确
+                'timestamp': row[4]
             })
-        
+
         conn.close()
         return changes
-    
+
     def calculate_confidence(self, whale: Whale, change: Dict) -> float:
         """
         计算信号置信度
-        
+
         权重:
-        - 历史胜率: 40%
-        - 行为一致性: 30%
-        - 市场规模: 20%
-        - 时机: 10%
+        - 历史收益率: 40%（以 30% 收益率为满分基准）
+        - 行为一致性: 30%（50笔交易为满分）
+        - 交易规模: 20%（$5k 为满分）
+        - 方向加成: 10%
         """
-        # 1. 历史胜率 (40%)
-        win_rate_score = min(whale.win_rate, 1.0) * 0.4
-        
+        # 1. 历史收益率 (40%)：30% return 以上算满分
+        win_rate_score = min(whale.win_rate / 0.3, 1.0) * 0.4
+
         # 2. 行为一致性 (30%)
         consistency_score = min(whale.strategy_consistency, 1.0) * 0.3
-        
-        # 3. 市场规模 (20%)
-        # 大额交易更有信心
-        value_score = min(change['value_change'] / 50000, 1.0) * 0.2
-        
-        # 4. 时机 (10%)
-        # 连续同方向调仓增加信心
+
+        # 3. 交易规模 (20%)：$5k 以上为满分
+        value_score = min(change['value_change'] / 5000, 1.0) * 0.2
+
+        # 4. 方向加成 (10%)
         timing_score = 0.1 if change['direction'] == 'BUY' else 0.05
-        
+
         total_score = win_rate_score + consistency_score + value_score + timing_score
         return min(total_score, 1.0)
     
@@ -206,13 +178,13 @@ class WhaleFollowingStrategy:
         # 基于鲸鱼仓位比例
         whale_position = change['value_change']
         
-        # 建议跟随 1% - 5% 的鲸鱼仓位
-        if whale.win_rate >= 0.7:
-            ratio = 0.05  # 高胜率，跟随5%
-        elif whale.win_rate >= 0.6:
-            ratio = 0.03  # 中等胜率，跟随3%
+        # 建议跟随 1% - 5% 的鲸鱼仓位（按收益率判断）
+        if whale.win_rate >= 0.4:   # 收益率 40%+
+            ratio = 0.05
+        elif whale.win_rate >= 0.2:  # 收益率 20%+
+            ratio = 0.03
         else:
-            ratio = 0.01  # 低胜率，跟随1%
+            ratio = 0.01
         
         suggested = whale_position * ratio
         
@@ -270,8 +242,7 @@ class WhaleFollowingStrategy:
             f"🐋 聪明钱跟随信号",
             f"",
             f"鲸鱼: {whale.pseudonym}",
-            f"历史胜率: {whale.win_rate*100:.1f}%",
-            f"夏普比率: {whale.sharpe_ratio:.2f}",
+            f"历史收益率: {whale.win_rate*100:.1f}%",
             f"",
             f"操作: {change['direction']} {change['market'][:50]}",
             f"仓位: ${change['value_change']:,.0f}",

@@ -12,12 +12,17 @@ PolyCop Signal 频道检查脚本
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from urllib.request import urlopen, Request
 from urllib.error import URLError
+
+# 清除代理环境变量，避免 cron 环境中变量残留导致 DNS 解析失败
+for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"]:
+    os.environ.pop(key, None)
 
 # Telegram 预览页面 URL
 POLYCOP_SIGNAL_URL = "https://t.me/s/PolyCop_Signal"

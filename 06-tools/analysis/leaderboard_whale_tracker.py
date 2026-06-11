@@ -4,6 +4,7 @@ Leaderboard 鲸鱼跟踪器
 利用 Polymarket 官方排行榜识别和跟踪顶级鲸鱼
 """
 
+import os
 import sqlite3
 import urllib.request
 import json
@@ -24,7 +25,6 @@ LEADERBOARD_API = "https://data-api.polymarket.com/v1/leaderboard"
 LOG_DIR = Path(__file__).resolve().parents[2] / "07-data" / "logs"
 
 # Telegram 配置（[P2安全] 2026-06-03: 从监控 .env 读，源码不含密钥）
-import os
 _env = Path(__file__).parent.parent / 'monitoring' / '.env'
 if _env.exists():
     for _l in _env.read_text().splitlines():
