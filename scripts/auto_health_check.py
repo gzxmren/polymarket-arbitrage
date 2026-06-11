@@ -41,7 +41,8 @@ from typing import List
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MAIN_DB = PROJECT_ROOT / "dashboard" / "backend" / "database" / "polymarket.db"
 CLOB_DB = PROJECT_ROOT / "07-data" / "clob_pair_log.db"
-STATE_FILE = PROJECT_ROOT / "07-data" / ".auto_health_state.json"
+STATE_FILE   = PROJECT_ROOT / "07-data" / ".auto_health_state.json"
+ISSUES_FILE  = PROJECT_ROOT / "07-data" / ".pending_issues.json"   # Claude Code 会话钩子读取此文件
 MONITOR_REPORT_GLOB = str(PROJECT_ROOT / "07-data" / "monitor_report_*.json")
 LEADERBOARD_LOG = PROJECT_ROOT / "07-data" / "logs" / "leaderboard_sync.log"
 
@@ -97,6 +98,21 @@ def _save_state(worst: str, alerted: bool):
     if alerted:
         st["last_alert_ts"] = time.time()
     STATE_FILE.write_text(json.dumps(st))
+
+
+def _save_pending_issues(checks: List[Check]):
+    """把未解决的问题写入 .pending_issues.json，供 Claude Code 会话钩子读取。
+    全部 ok 时写空列表（让钩子知道已清干净）。"""
+    bad = [c for c in checks if c.status != "ok"]
+    ISSUES_FILE.write_text(json.dumps({
+        "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "worst": _worst(checks),
+        "issues": [
+            {"name": c.name, "status": c.status,
+             "detail": c.detail, "fix_hint": c.fix_hint}
+            for c in bad
+        ],
+    }, ensure_ascii=False, indent=2))
 
 
 # ───────────────────────── 各项检查 ─────────────────────────
@@ -343,6 +359,7 @@ def main():
     checks = run_all_checks()
     worst = _worst(checks)
     report = format_report(checks)
+    _save_pending_issues(checks)   # 供 Claude Code 会话钩子读取
 
     print(report)
 

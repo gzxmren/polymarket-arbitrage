@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/scripts/session_start_brief.py"
+          }
+        ]
+      }
+    ]
+  }
+}
