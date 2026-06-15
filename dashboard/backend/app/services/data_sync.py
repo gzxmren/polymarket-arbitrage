@@ -226,7 +226,7 @@ class DataSyncService:
                         try:
                             if end_date < date.today().isoformat():
                                 is_expired = 1
-                        except:
+                        except (ValueError, TypeError):
                             pass
                     
                     # 跳过过期超过 30 天的持仓（避免它们下次同步时又被重新插入）
@@ -359,7 +359,7 @@ class DataSyncService:
                     # 使用 wallet + type + 时间（精确到分钟）作为唯一键
                     time_key = alert['created_at'][:16] if alert['created_at'] else ''
                     existing_set.add(f"{wallet}|{alert_type}|{time_key}")
-                except:
+                except (KeyError, TypeError, AttributeError):
                     pass
             
             print(f"   已构建去重集合，共 {len(existing_set)} 条唯一键")

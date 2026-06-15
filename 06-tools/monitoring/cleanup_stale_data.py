@@ -337,6 +337,31 @@ def main():
         print(f"  ⚠️ 需要关注: {remaining_stale} 条过期30天+记录未被清理", flush=True)
 
     db2.close()
+
+    # 11. 清理 monitor_report_*.json（保留30天）
+    import glob, time as _time
+    report_dir = str(Path(__file__).resolve().parents[2] / "07-data")
+    cutoff = _time.time() - 30 * 86400
+    removed_reports = 0
+    for fp in glob.glob(f"{report_dir}/monitor_report_*.json"):
+        if os.path.getmtime(fp) < cutoff:
+            os.remove(fp)
+            removed_reports += 1
+    if removed_reports:
+        print(f"  清理旧 monitor_report: {removed_reports} 个", flush=True)
+
+    # 12. 清理 whale_states_archive/（保留30天）
+    archive_dir = str(Path(__file__).resolve().parents[2] / "07-data" / "whale_states_archive")
+    removed_archive = 0
+    if os.path.exists(archive_dir):
+        for fp in os.listdir(archive_dir):
+            full = os.path.join(archive_dir, fp)
+            if os.path.isfile(full) and os.path.getmtime(full) < cutoff:
+                os.remove(full)
+                removed_archive += 1
+    if removed_archive:
+        print(f"  清理旧 whale_states_archive: {removed_archive} 个", flush=True)
+
     print("\n✅ 清理完成", flush=True)
 
 if __name__ == "__main__":

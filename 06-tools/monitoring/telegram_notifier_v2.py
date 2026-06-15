@@ -121,7 +121,7 @@ def send_telegram_message(message: str, parse_mode: str = "Markdown", max_retrie
                     error_body = e.read().decode()
                     error_json = json.loads(error_body)
                     error_desc = error_json.get('description', str(e))
-                except:
+                except Exception:
                     error_desc = str(e)
                 
                 # Markdown解析错误，跳出重试循环，换纯文本模式
@@ -139,7 +139,7 @@ def send_telegram_message(message: str, parse_mode: str = "Markdown", max_retrie
                     print(f"Error sending Telegram message after {max_retries} attempts: {error_desc}", file=sys.stderr)
                     return False
                 
-            except (URLError, json.JSONDecodeError) as e:
+            except (URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
                 if attempt < max_retries - 1:
                     # 网络错误，等待1秒后重试
                     import time
@@ -222,7 +222,7 @@ def check_market_status(end_date_str: str) -> tuple:
             return "⏳", f"{days_to_end} 天后到期", False
         else:
             return "", "", False
-    except:
+    except Exception:
         return "", "", False
 
 

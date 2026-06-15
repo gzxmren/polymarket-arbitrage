@@ -160,7 +160,7 @@ class HybridDataSource:
             check_time = datetime.fromisoformat(last_check.replace('Z', '+00:00'))
             is_stale = (datetime.now() - check_time) > timedelta(days=7)
             freshness = 'stale' if is_stale else 'fresh'
-        except:
+        except Exception:
             freshness = 'unknown'
         
         pseudonym = self._get_pseudonym(wallet) or json_data.get('pseudonym', wallet[:10] + '...')

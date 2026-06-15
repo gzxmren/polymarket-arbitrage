@@ -10,6 +10,19 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/scripts/hook_py_review.py",
+            "timeout": 10
+          }
+        ],
+        "description": "After any Edit/Write: syntax-check + exception-pattern scan on .py files. Warns on bare except, broad except-swallowing TimeoutError, and requests without timeout=. Advisory only (always exits 0)."
+      }
     ]
   }
 }

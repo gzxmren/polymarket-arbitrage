@@ -39,7 +39,7 @@ def check_no_opportunity_alert():
                             "cross_market": data.get("cross_market", {}).get("count", 0),
                             "whale": data.get("whale", {}).get("active", 0)
                         })
-        except:
+        except (json.JSONDecodeError, KeyError, TypeError, OSError):
             pass
     
     if not reports:

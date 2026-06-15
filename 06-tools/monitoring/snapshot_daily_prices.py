@@ -17,6 +17,7 @@ import os
 import sys
 import json
 import urllib.request
+import http.client
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -70,14 +71,14 @@ def ensure_table(conn):
     conn.commit()
 
 
-def fetch_active_markets(limit=100, offset=0):
+def fetch_active_markets(limit=50, offset=0):
     """从 Gamma API 获取活跃市场列表"""
     url = f'{GAMMA_API}/markets?closed=false&order=volume24hr&ascending=false&limit={limit}&offset={offset}'
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'PolymarketMonitor/1.0'})
-        with _no_proxy_opener.open(req, timeout=30) as resp:
+        req = urllib.request.Request(url, headers={'User-Agent': 'PolymarketMonitor/1.0', 'Accept-Encoding': 'identity'})
+        with _no_proxy_opener.open(req, timeout=60) as resp:
             return json.loads(resp.read().decode())
-    except Exception as e:
+    except (urllib.error.URLError, http.client.IncompleteRead, TimeoutError, OSError, json.JSONDecodeError) as e:
         print(f'❌ 获取市场失败 (offset={offset}): {e}', flush=True)
         return []
 
@@ -90,15 +91,16 @@ def should_exclude(slug):
     return any(slug_lower.startswith(prefix) for prefix in EXCLUDED_PREFIXES)
 
 
-def collect_all_markets(max_pages=20):
+def collect_all_markets(max_pages=40):
     """分页获取所有活跃市场"""
     all_markets = []
+    page_size = 50
     for page in range(max_pages):
-        markets = fetch_active_markets(limit=100, offset=page * 100)
+        markets = fetch_active_markets(limit=page_size, offset=page * page_size)
         if not markets:
             break
         all_markets.extend(markets)
-        if len(markets) < 100:
+        if len(markets) < page_size:
             break  # 最后一页
     return all_markets
 

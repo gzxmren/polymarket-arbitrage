@@ -33,7 +33,7 @@ def fetch_clob_api(endpoint: str) -> Optional[Dict]:
         req = Request(url, headers={"User-Agent": "PolymarketTrader/2.0"})
         with urlopen(req, timeout=30, context=ssl_context) as resp:
             return json.loads(resp.read().decode())
-    except (URLError, json.JSONDecodeError) as e:
+    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
         print(f"[clob_api] CLOB request failed: {url} — {e}", file=sys.stderr)
         return None
 
@@ -45,7 +45,7 @@ def fetch_gamma_api(endpoint: str) -> Optional[Dict]:
         req = Request(url, headers={"User-Agent": "PolymarketTrader/2.0"})
         with urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode())
-    except (URLError, json.JSONDecodeError) as e:
+    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
         print(f"[clob_api] Gamma request failed: {url} — {e}", file=sys.stderr)
         return None
 
@@ -124,7 +124,7 @@ def get_markets_with_order_book(limit: int = 50) -> List[Dict]:
             if isinstance(token_ids, str):
                 try:
                     token_ids = json.loads(token_ids)
-                except:
+                except (json.JSONDecodeError, ValueError):
                     token_ids = []
             
             if len(token_ids) >= 2:

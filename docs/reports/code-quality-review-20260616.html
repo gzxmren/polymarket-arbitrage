@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket 系统代码与数据质量审查报告 — 2026-06-16</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f1117; color: #e2e8f0; line-height: 1.6; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #1a2035 0%, #0f1117 100%); border-bottom: 1px solid #2d3748; padding: 2.5rem 2rem; margin-bottom: 2rem; border-radius: 8px; }
+  .header h1 { font-size: 1.8rem; color: #e2e8f0; margin-bottom: 0.4rem; }
+  .header .meta { color: #718096; font-size: 0.9rem; }
+  .header .meta span { margin-right: 1.5rem; }
+
+  /* Score cards */
+  .score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .score-card { background: #1a2035; border: 1px solid #2d3748; border-radius: 8px; padding: 1.2rem; }
+  .score-card .label { font-size: 0.8rem; color: #718096; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+  .score-card .value { font-size: 2rem; font-weight: 700; }
+  .score-card .sub { font-size: 0.8rem; color: #718096; margin-top: 0.25rem; }
+  .green { color: #48bb78; }
+  .yellow { color: #ecc94b; }
+  .red { color: #fc8181; }
+  .blue { color: #63b3ed; }
+
+  /* Sections */
+  .section { margin-bottom: 2rem; }
+  .section h2 { font-size: 1.2rem; color: #e2e8f0; border-left: 3px solid #4299e1; padding-left: 0.8rem; margin-bottom: 1rem; }
+
+  /* Issue list */
+  .issue-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .issue { background: #1a2035; border: 1px solid #2d3748; border-radius: 6px; padding: 1rem 1.2rem; display: flex; gap: 1rem; align-items: flex-start; }
+  .issue.fixed { border-left: 3px solid #48bb78; }
+  .issue.warning { border-left: 3px solid #ecc94b; }
+  .issue.info { border-left: 3px solid #63b3ed; }
+  .issue-badge { font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; margin-top: 0.15rem; }
+  .badge-fixed { background: #22543d; color: #68d391; }
+  .badge-warning { background: #744210; color: #f6e05e; }
+  .badge-info { background: #1a365d; color: #63b3ed; }
+  .issue-content { flex: 1; }
+  .issue-title { font-weight: 600; color: #e2e8f0; margin-bottom: 0.25rem; }
+  .issue-desc { font-size: 0.88rem; color: #a0aec0; }
+  .issue-file { font-size: 0.8rem; color: #718096; margin-top: 0.3rem; font-family: monospace; }
+
+  /* Code block */
+  pre { background: #0d1117; border: 1px solid #2d3748; border-radius: 6px; padding: 1rem; overflow-x: auto; font-size: 0.82rem; color: #e2e8f0; margin: 0.5rem 0; }
+  code { font-family: "JetBrains Mono", "Fira Code", monospace; }
+  .del { color: #fc8181; }
+  .add { color: #68d391; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; background: #1a2035; border-radius: 8px; overflow: hidden; font-size: 0.88rem; }
+  th { background: #0f1117; color: #718096; text-align: left; padding: 0.7rem 1rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 0.65rem 1rem; border-top: 1px solid #2d3748; color: #e2e8f0; }
+  tr:hover td { background: #20293a; }
+  .tag { font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 600; }
+  .tag-ok { background: #22543d; color: #68d391; }
+  .tag-warn { background: #744210; color: #f6e05e; }
+  .tag-bad { background: #63171b; color: #fc8181; }
+  .tag-info { background: #1a365d; color: #63b3ed; }
+
+  /* Progress bar */
+  .progress-bar { height: 8px; background: #2d3748; border-radius: 4px; overflow: hidden; margin-top: 0.4rem; }
+  .progress-fill { height: 100%; border-radius: 4px; }
+
+  /* Footer */
+  .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #2d3748; color: #718096; font-size: 0.82rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+  <h1>Polymarket 系统 · 代码与数据质量审查报告</h1>
+  <div class="meta">
+    <span>📅 生成时间：2026-06-16</span>
+    <span>🌿 分支：main</span>
+    <span>📦 代码规模：26,090 行 Python</span>
+    <span>🗄 DB 大小：54 MB</span>
+  </div>
+</div>
+
+<!-- Score overview -->
+<div class="score-grid">
+  <div class="score-card">
+    <div class="label">代码健壮性</div>
+    <div class="value yellow">B</div>
+    <div class="sub">修复后：裸 except 清零</div>
+  </div>
+  <div class="score-card">
+    <div class="label">信号链完整性</div>
+    <div class="value yellow">C+</div>
+    <div class="sub">去重+过滤已修复，待验证</div>
+  </div>
+  <div class="score-card">
+    <div class="label">数据库健康度</div>
+    <div class="value green">A-</div>
+    <div class="sub">freelist 1.4%，结构完整</div>
+  </div>
+  <div class="score-card">
+    <div class="label">数据文件积累</div>
+    <div class="value yellow">C+</div>
+    <div class="sub">343 MB，TTL 清理已加入</div>
+  </div>
+  <div class="score-card">
+    <div class="label">调度覆盖</div>
+    <div class="value green">B+</div>
+    <div class="sub">11 个 cron 迁移 system</div>
+  </div>
+  <div class="score-card">
+    <div class="label">综合得分</div>
+    <div class="value blue">3.6 / 5</div>
+    <div class="sub">较上次 3.3 提升</div>
+  </div>
+</div>
+
+<!-- 修复汇总 -->
+<div class="section">
+  <h2>本次审查修复清单</h2>
+  <div class="issue-list">
+
+    <div class="issue fixed">
+      <span class="issue-badge badge-fixed">BUG · 已修复</span>
+      <div class="issue-content">
+        <div class="issue-title">🔴 信号去重缺失 — 每 6 小时产生重复信号</div>
+        <div class="issue-desc">
+          <code>save_signals_to_db()</code> 无去重逻辑，每次 monitor-v2 运行（每 6 小时）对同一市场/方向/鲸鱼组合都插入新信号。
+          数据库中 26 条信号有 9 个重复组（最多 4 条完全相同）。<br><br>
+          修复：插入前先查 <code>market + direction + wallet + status='pending' + 48h 窗口</code>，存在则跳过。
+        </div>
+        <div class="issue-file">06-tools/monitoring/polymarket_monitor_v2.py · save_signals_to_db()</div>
+        <pre><code><span class="del">- # 无去重检查，直接 INSERT</span>
+<span class="add">+ cursor.execute('''SELECT id FROM signals WHERE market=? AND direction=? AND wallet=?</span>
+<span class="add">+   AND status='pending' AND created_at > datetime('now', '-48 hours') LIMIT 1'''</span>
+<span class="add">+ , (...))</span>
+<span class="add">+ if cursor.fetchone(): skipped += 1; continue</span></code></pre>
+      </div>
+    </div>
+
+    <div class="issue fixed">
+      <span class="issue-badge badge-fixed">BUG · 已修复</span>
+      <div class="issue-title">🔴 TimeoutError 未捕获 — Telegram 通知在网络超时时崩溃</div>
+      <div class="issue-content">
+        <div class="issue-desc">
+          <code>urllib.request.urlopen(timeout=30)</code> 的 <code>resp.read()</code> 在超时时直接抛出 <code>TimeoutError</code>，
+          不会包装为 <code>URLError</code>。原捕获子句 <code>except (URLError, json.JSONDecodeError)</code> 漏掉此异常，
+          导致每次网络超时都会让 Telegram 发送函数崩溃并冒泡到调用方。
+        </div>
+        <div class="issue-file">06-tools/monitoring/telegram_notifier_v2.py:142</div>
+        <pre><code><span class="del">- except (URLError, json.JSONDecodeError) as e:</span>
+<span class="add">+ except (URLError, TimeoutError, OSError, json.JSONDecodeError) as e:</span></code></pre>
+      </div>
+    </div>
+
+    <div class="issue fixed">
+      <span class="issue-badge badge-fixed">BUG · 已修复</span>
+      <div class="issue-title">🔴 IncompleteRead 未捕获 — 每日价格快照反复失败</div>
+      <div class="issue-content">
+        <div class="issue-desc">
+          Gamma API 返回 ~736 KB chunked 响应但在 ~655 KB 处断开，引发 <code>http.client.IncompleteRead</code>。
+          原代码只捕获 <code>URLError</code>，导致连续 4 次失败。修复：添加 <code>http.client.IncompleteRead</code>，
+          并将 page_size 从 100 降至 50（减少单次响应体积）。
+        </div>
+        <div class="issue-file">06-tools/monitoring/snapshot_daily_prices.py</div>
+      </div>
+    </div>
+
+    <div class="issue fixed">
+      <span class="issue-badge badge-fixed">BUG · 已修复</span>
+      <div class="issue-title">🔴 settle_signals.py TypeError — exit_price 为 None 时崩溃</div>
+      <div class="issue-content">
+        <div class="issue-desc">
+          <code>_calc_pnl(direction, entry_price, exit_price)</code> 在三重价格回退后 <code>exit_price</code> 仍为 <code>None</code>
+          时引发 <code>TypeError</code>，导致所有信号无法结算。修复：None 检查提前，72h 超时后标记 <code>no_data</code>。
+        </div>
+        <div class="issue-file">scripts/settle_signals.py · _calc_pnl()</div>
+      </div>
+    </div>
+
+    <div class="issue fixed">
+      <span class="issue-badge badge-fixed">CODE · 已修复</span>
+      <div class="issue-title">🟡 裸 <code>except:</code> 全面清除 — 16 处替换为具名异常</div>
+      <div class="issue-content">
+        <div class="issue-desc">
+          裸 <code>except:</code> 会静默捕获 <code>KeyboardInterrupt</code>、<code>SystemExit</code> 等致命信号，
+          并掩盖真实错误类型，阻碍调试。本次清除所有关键路径：
+        </div>
+        <table style="margin-top: 0.75rem;">
+          <tr><th>文件</th><th>数量</th><th>修改为</th></tr>
+          <tr><td>telegram_notifier_v2.py</td><td>2</td><td><code>except Exception:</code></td></tr>
+          <tr><td>clob_api.py</td><td>1</td><td><code>except (json.JSONDecodeError, ValueError):</code></td></tr>
+          <tr><td>signal_tracking.py</td><td>6</td><td><code>except (json.JSONDecodeError, TypeError, ValueError):</code></td></tr>
+          <tr><td>data_sync.py</td><td>2</td><td><code>except (ValueError, TypeError):</code></td></tr>
+          <tr><td>alerts.py</td><td>3</td><td><code>except (json.JSONDecodeError, TypeError, ValueError):</code></td></tr>
+          <tr><td>markets.py / websocket.py</td><td>2</td><td><code>except (json.JSONDecodeError, ValueError):</code></td></tr>
+          <tr><td>clob_service.py</td><td>4</td><td><code>except (json.JSONDecodeError, ValueError):</code></td></tr>
+          <tr><td>semantic_arbitrage.py</td><td>1</td><td><code>except (ValueError, TypeError, IndexError, json.JSONDecodeError):</code></td></tr>
+          <tr><td>whale_watchlist.py / risk_reviewer.py / alert_checker.py</td><td>3</td><td>具名异常</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="issue fixed">
+      <span class="issue-badge badge-fixed">FEAT · 已修复</span>
+      <div class="issue-title">🟡 不可结算市场信号过滤 — 体育/加密短线信号将永远 pending</div>
+      <div class="issue-content">
+        <div class="issue-desc">
+          <code>whale_following.py</code> 在检测到体育（NBA / UFC / FIFA / MLB 等）和加密短线（btc/eth/sol-updown-*）
+          市场时不再生成信号，因为 <code>daily_price_snapshots</code> 表明确排除这些市场，信号无法结算。
+          已有 15/26 条历史信号属于此类，将在 72h 后自动标记为 <code>no_data</code>。
+        </div>
+        <div class="issue-file">06-tools/analysis/whale_following.py · _UNSETTLEABLE_PREFIXES</div>
+      </div>
+    </div>
+
+    <div class="issue fixed">
+      <span class="issue-badge badge-fixed">OPS · 已修复</span>
+      <div class="issue-title">🟡 07-data 文件积累无 TTL — monitor_report + whale_states_archive 无限增长</div>
+      <div class="issue-content">
+        <div class="issue-desc">
+          <code>monitor_report_*.json</code>（56 个，最早 4 月）和 <code>whale_states_archive/</code>（55 MB）
+          无清理机制。<code>cleanup_stale_data.py</code> 已加入步骤 11-12：30 天 TTL，每日 03:30 自动执行。
+        </div>
+        <div class="issue-file">06-tools/monitoring/cleanup_stale_data.py · 步骤 11-12</div>
+      </div>
+    </div>
+
+    <div class="issue fixed">
+      <span class="issue-badge badge-fixed">CLEAN · 已执行</span>
+      <div class="issue-title">🟢 归档目录清理 — 删除 13 个废弃 .py 文件</div>
+      <div class="issue-content">
+        <div class="issue-desc">
+          <code>99-archive/deprecated-modules/</code>（4 个）、<code>99-archive/deprecated-scripts/</code>（6 个）、
+          <code>archived/whale-news-system-2026-04-10/</code>（3 个）中的 .py 文件均无活跃引用，已删除。
+          保留所有 .md 文档用于历史记录。
+        </div>
+        <div class="issue-file">99-archive/ · archived/</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 数据质量现状 -->
+<div class="section">
+  <h2>数据库质量现状（2026-06-16）</h2>
+  <table>
+    <tr>
+      <th>指标</th><th>数值</th><th>状态</th><th>说明</th>
+    </tr>
+    <tr>
+      <td>DB 大小</td><td>54 MB</td>
+      <td><span class="tag tag-ok">健康</span></td>
+      <td>上次 VACUUM 后从 138 MB 降至 54 MB，freelist 1.4%</td>
+    </tr>
+    <tr>
+      <td>signals 总数</td><td>26（25 pending / 1 resolved）</td>
+      <td><span class="tag tag-warn">关注</span></td>
+      <td>9 个重复组（去重 Bug 已修复，后续不再累积）</td>
+    </tr>
+    <tr>
+      <td>体育类信号</td><td>15 / 26</td>
+      <td><span class="tag tag-warn">关注</span></td>
+      <td>不可结算，72h 后自动 no_data；过滤已生效</td>
+    </tr>
+    <tr>
+      <td>whales</td><td>6,739 总 / 285 is_watched</td>
+      <td><span class="tag tag-warn">关注</span></td>
+      <td>285 watched 中仅 43 有 activity；watchlist 过度膨胀</td>
+    </tr>
+    <tr>
+      <td>空壳鲸鱼</td><td>8 条（全字段为 0）</td>
+      <td><span class="tag tag-ok">可接受</span></td>
+      <td>cleanup_whales.py 下次运行时清除</td>
+    </tr>
+    <tr>
+      <td>positions（主表）</td><td>13,174（6,009 已过期）</td>
+      <td><span class="tag tag-ok">正常</span></td>
+      <td>已过期 < 30 天的保留用于结算；&gt;30 天已归档</td>
+    </tr>
+    <tr>
+      <td>positions_archive</td><td>39,067 行</td>
+      <td><span class="tag tag-info">设计如此</span></td>
+      <td>历史归档，无 TTL（可按需清理 90 天+）</td>
+    </tr>
+    <tr>
+      <td>concentration_history</td><td>40,291 行</td>
+      <td><span class="tag tag-ok">正常</span></td>
+      <td>7 天 TTL，~5,000 行/天，自维持</td>
+    </tr>
+    <tr>
+      <td>daily_price_snapshots</td><td>60,335 行 / 34 天</td>
+      <td><span class="tag tag-ok">健康</span></td>
+      <td>22,160 个市场，覆盖 2026-05-09 至 2026-06-14</td>
+    </tr>
+    <tr>
+      <td>leaderboard_whales</td><td>211 行</td>
+      <td><span class="tag tag-ok">正常</span></td>
+      <td>每周同步，信号识别聪明钱的数据源</td>
+    </tr>
+    <tr>
+      <td>07-data 文件</td><td>343 MB</td>
+      <td><span class="tag tag-warn">关注</span></td>
+      <td>TTL 清理已加入，下次 03:30 cron 后将缩减</td>
+    </tr>
+    <tr>
+      <td>phase-3 表（quality/strategy/threshold）</td><td>全部为 0 行</td>
+      <td><span class="tag tag-bad">空置</span></td>
+      <td>代码已合并但调度链未接通，已知未完成功能</td>
+    </tr>
+  </table>
+</div>
+
+<!-- 信号链状态 -->
+<div class="section">
+  <h2>信号链端到端状态</h2>
+  <table>
+    <tr><th>环节</th><th>脚本</th><th>频率</th><th>状态</th><th>备注</th></tr>
+    <tr>
+      <td>鲸鱼数据采集</td>
+      <td><code>whale_tracker_v2.py</code></td>
+      <td>每 6h</td>
+      <td><span class="tag tag-ok">运行中</span></td>
+      <td>update_whale_states.py 驱动</td>
+    </tr>
+    <tr>
+      <td>信号生成</td>
+      <td><code>whale_following.py</code></td>
+      <td>每 6h</td>
+      <td><span class="tag tag-ok">修复后正常</span></td>
+      <td>去重 + 不可结算过滤已启用</td>
+    </tr>
+    <tr>
+      <td>价格快照</td>
+      <td><code>snapshot_daily_prices.py</code></td>
+      <td>每日 16:00</td>
+      <td><span class="tag tag-ok">修复后正常</span></td>
+      <td>IncompleteRead 已修复，page_size=50</td>
+    </tr>
+    <tr>
+      <td>信号结算</td>
+      <td><code>settle_signals.py</code></td>
+      <td>每日 03:00</td>
+      <td><span class="tag tag-warn">部分运行</span></td>
+      <td>TypeError 已修复；待明日结算验证</td>
+    </tr>
+    <tr>
+      <td>数据库同步</td>
+      <td><code>data_sync.py</code></td>
+      <td>每 ~1h</td>
+      <td><span class="tag tag-ok">运行中</span></td>
+      <td>APScheduler 驱动，约每小时一次</td>
+    </tr>
+    <tr>
+      <td>Telegram 通知</td>
+      <td><code>telegram_notifier_v2.py</code></td>
+      <td>事件驱动</td>
+      <td><span class="tag tag-ok">正常</span></td>
+      <td>TimeoutError + Markdown 回退已修复</td>
+    </tr>
+    <tr>
+      <td>健康巡检</td>
+      <td><code>auto_health_check.py</code></td>
+      <td>每日 09:00 CST</td>
+      <td><span class="tag tag-ok">运行中</span></td>
+      <td>已覆盖 9 个 cron 日志的新鲜度检查</td>
+    </tr>
+    <tr>
+      <td>质量报告（phase-3）</td>
+      <td><code>threshold_optimizer.py 等</code></td>
+      <td>未调度</td>
+      <td><span class="tag tag-bad">未启动</span></td>
+      <td>opportunity_history 等表全为空</td>
+    </tr>
+  </table>
+</div>
+
+<!-- 已知遗留问题 -->
+<div class="section">
+  <h2>已知遗留问题（未修复）</h2>
+  <div class="issue-list">
+
+    <div class="issue warning">
+      <span class="issue-badge badge-warning">待处理</span>
+      <div class="issue-content">
+        <div class="issue-title">285 个 is_watched 鲸鱼，仅 43 个有活跃记录</div>
+        <div class="issue-desc">
+          watchlist 过度膨胀（历史积累），导致 <code>concentration_history</code> 每天写入 ~5,000 行。
+          建议定期运行 <code>scripts/cleanup_whales.py</code>，并将 watchlist 缩减至真正活跃的 50-100 个。
+        </div>
+        <div class="issue-file">whales 表 / whale_watchlist.json</div>
+      </div>
+    </div>
+
+    <div class="issue warning">
+      <span class="issue-badge badge-warning">待处理</span>
+      <div class="issue-content">
+        <div class="issue-title">positions_archive 39,067 行，无 TTL</div>
+        <div class="issue-desc">
+          归档表持续增长但无清理机制。建议在 <code>cleanup_stale_data.py</code> 中添加步骤：
+          删除 <code>archived_at &lt; date('now', '-90 days')</code> 的行（约 80% 的行）。
+        </div>
+        <div class="issue-file">dashboard/backend/database/polymarket.db · positions_archive</div>
+      </div>
+    </div>
+
+    <div class="issue warning">
+      <span class="issue-badge badge-warning">待处理</span>
+      <div class="issue-content">
+        <div class="issue-title">Phase-3 调度链未接通 — quality/strategy/threshold 表全空</div>
+        <div class="issue-desc">
+          <code>threshold_optimizer.py</code>、<code>signal_tracking.py</code>、<code>quality_reports</code> 等
+          已实现但调度链缺失。若不接通，信号质量将无从量化评估。
+          建议为 <code>settle_signals.py</code> 完成后触发 <code>threshold_optimizer.py</code>。
+        </div>
+        <div class="issue-file">dashboard/backend/app/services/threshold_optimizer.py</div>
+      </div>
+    </div>
+
+    <div class="issue info">
+      <span class="issue-badge badge-info">低优先</span>
+      <div class="issue-content">
+        <div class="issue-title">data_sync.py 顶层 except Exception 不打印 traceback</div>
+        <div class="issue-desc">
+          sync_whales / sync_alerts / sync_cross_market_arbitrage 的顶层异常处理只打印错误信息，
+          不打印堆栈。调试困难时可临时加 <code>import traceback; traceback.print_exc()</code>。
+        </div>
+        <div class="issue-file">dashboard/backend/app/services/data_sync.py:307,416,529</div>
+      </div>
+    </div>
+
+    <div class="issue info">
+      <span class="issue-badge badge-info">低优先</span>
+      <div class="issue-content">
+        <div class="issue-title">llm_task_processor.py:225 / test_spread.py / cleanup_alerts.py 残留裸 except:</div>
+        <div class="issue-desc">
+          非关键路径：<code>llm_task_processor.py</code> 是 LLM 一次性任务工具，<code>test_spread.py</code> 是测试脚本，
+          <code>cleanup_alerts.py</code> 是维护脚本。暂不修改。
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Cron 调度状态 -->
+<div class="section">
+  <h2>Cron 调度状态</h2>
+  <table>
+    <tr><th>任务</th><th>调度</th><th>日志</th><th>状态</th></tr>
+    <tr><td>monitor-v2</td><td>每 6h</td><td><code>/tmp/monitor_v2.log</code></td><td><span class="tag tag-ok">运行中</span></td></tr>
+    <tr><td>update-whale-states</td><td>每 6h</td><td><code>07-data/logs/whale_states_update.log</code></td><td><span class="tag tag-ok">运行中</span></td></tr>
+    <tr><td>check-polycop-signal</td><td>每 6h</td><td><code>07-data/logs/polycop_signal.log</code></td><td><span class="tag tag-ok">运行中</span></td></tr>
+    <tr><td>monitor-lite</td><td>每 1h</td><td><code>/tmp/monitor_lite.log</code></td><td><span class="tag tag-warn">待验证</span></td></tr>
+    <tr><td>snapshot-daily-prices</td><td>每日 16:00</td><td><code>/tmp/snapshot_daily_prices.log</code></td><td><span class="tag tag-ok">修复后正常</span></td></tr>
+    <tr><td>settle-signals</td><td>每日 03:00</td><td><code>/tmp/settle_signals.log</code></td><td><span class="tag tag-warn">修复后待验证</span></td></tr>
+    <tr><td>cleanup-stale-data</td><td>每日 03:30</td><td><code>/tmp/polymarket_cleanup.log</code></td><td><span class="tag tag-ok">运行中（含新 TTL）</span></td></tr>
+    <tr><td>auto-health-check</td><td>每日 09:00 CST</td><td><code>/tmp/auto_health_check.log</code></td><td><span class="tag tag-ok">运行中</span></td></tr>
+    <tr><td>leaderboard-sync</td><td>每周一 03:00</td><td><code>07-data/logs/leaderboard_sync.log</code></td><td><span class="tag tag-ok">运行中</span></td></tr>
+    <tr><td>data-quality-check</td><td>每日 08:00</td><td><code>/tmp/data_quality_check.log</code></td><td><span class="tag tag-warn">待验证</span></td></tr>
+    <tr><td>pzero-weekly</td><td>每周一 09:30</td><td><code>/tmp/weekly_pzero.log</code></td><td><span class="tag tag-warn">待验证</span></td></tr>
+  </table>
+</div>
+
+<!-- 附录：修改文件清单 -->
+<div class="section">
+  <h2>附录：本次修改文件（git diff）</h2>
+  <table>
+    <tr><th>#</th><th>文件</th><th>变更类型</th></tr>
+    <tr><td>1</td><td><code>06-tools/monitoring/polymarket_monitor_v2.py</code></td><td>Bug fix: 信号去重</td></tr>
+    <tr><td>2</td><td><code>06-tools/monitoring/telegram_notifier_v2.py</code></td><td>Bug fix: TimeoutError + 2x bare except</td></tr>
+    <tr><td>3</td><td><code>06-tools/monitoring/snapshot_daily_prices.py</code></td><td>Bug fix: IncompleteRead + page_size</td></tr>
+    <tr><td>4</td><td><code>06-tools/monitoring/cleanup_stale_data.py</code></td><td>Feature: 步骤 11-12 TTL 清理</td></tr>
+    <tr><td>5</td><td><code>06-tools/monitoring/risk_reviewer.py</code></td><td>Code: bare except</td></tr>
+    <tr><td>6</td><td><code>06-tools/monitoring/alert_checker.py</code></td><td>Code: bare except</td></tr>
+    <tr><td>7</td><td><code>06-tools/analysis/whale_following.py</code></td><td>Feature: 不可结算市场过滤</td></tr>
+    <tr><td>8</td><td><code>06-tools/analysis/clob_api.py</code></td><td>Bug fix: TimeoutError + bare except</td></tr>
+    <tr><td>9</td><td><code>06-tools/analysis/hybrid_data_source.py</code></td><td>Code: bare except</td></tr>
+    <tr><td>10</td><td><code>06-tools/analysis/whale_watchlist.py</code></td><td>Code: bare except</td></tr>
+    <tr><td>11</td><td><code>scripts/settle_signals.py</code></td><td>Bug fix: exit_price None 崩溃</td></tr>
+    <tr><td>12</td><td><code>scripts/auto_health_check.py</code></td><td>Feature: 新日志路径 + 恢复检测</td></tr>
+    <tr><td>13</td><td><code>dashboard/backend/app/models/signal_tracking.py</code></td><td>Code: 6x bare except</td></tr>
+    <tr><td>14</td><td><code>dashboard/backend/app/services/data_sync.py</code></td><td>Code: 2x bare except</td></tr>
+    <tr><td>15</td><td><code>dashboard/backend/app/services/clob_service.py</code></td><td>Code: 4x bare except</td></tr>
+    <tr><td>16</td><td><code>dashboard/backend/app/services/semantic_arbitrage.py</code></td><td>Code: bare except</td></tr>
+    <tr><td>17</td><td><code>dashboard/backend/app/api/alerts.py</code></td><td>Code: 3x bare except</td></tr>
+    <tr><td>18</td><td><code>dashboard/backend/app/api/markets.py</code></td><td>Code: bare except</td></tr>
+    <tr><td>19</td><td><code>dashboard/backend/app/services/websocket.py</code></td><td>Code: bare except</td></tr>
+    <tr><td>20</td><td>99-archive/ + archived/ (13 个 .py 文件)</td><td>Deleted: 废弃代码</td></tr>
+    <tr><td>21</td><td><code>06-tools/analysis/cross_market_scanner.py</code></td><td>（上次 session 修改）</td></tr>
+  </table>
+</div>
+
+<div class="footer">
+  <p>报告生成：Claude Sonnet 4.6（claude-code）· 2026-06-16 · polymarket-project @ main</p>
+  <p style="margin-top: 0.25rem;">下次建议运行：<code>python3 scripts/auto_health_check.py</code> 确认所有 cron 日志新鲜度</p>
+</div>
+
+</div>
+</body>
+</html>

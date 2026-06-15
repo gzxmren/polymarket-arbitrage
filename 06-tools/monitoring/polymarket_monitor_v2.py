@@ -778,10 +778,24 @@ def save_signals_to_db(signals: list):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
+        saved = 0
+        skipped = 0
         for signal in signals:
+            # 去重：同 market+direction+wallet 在 holding_hours 窗口内已有 pending 信号则跳过
             cursor.execute('''
-                INSERT INTO signals 
-                (type, wallet, market, direction, confidence, suggested_position, 
+                SELECT id FROM signals
+                WHERE market = ? AND direction = ? AND wallet = ?
+                  AND status = 'pending'
+                  AND created_at > datetime('now', '-48 hours')
+                LIMIT 1
+            ''', (signal.market, signal.direction, signal.whale.wallet))
+            if cursor.fetchone():
+                skipped += 1
+                continue
+
+            cursor.execute('''
+                INSERT INTO signals
+                (type, wallet, market, direction, confidence, suggested_position,
                  expected_price_change, suggested_holding_hours, status, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
@@ -796,10 +810,11 @@ def save_signals_to_db(signals: list):
                 'pending',
                 signal.created_at.isoformat()
             ))
-        
+            saved += 1
+
         conn.commit()
         conn.close()
-        print(f"   💾 已保存 {len(signals)} 个信号到数据库")
+        print(f"   💾 已保存 {saved} 个信号到数据库（跳过重复 {skipped} 个）")
     except Exception as e:
         print(f"   ⚠️  保存信号失败: {e}")
 
@@ -820,7 +835,11 @@ def main():
     
     # 运行各项扫描
     pair_cost_result = run_pair_cost_scan()
-    cross_market_result = run_cross_market_scan()
+    try:
+        cross_market_result = run_cross_market_scan()
+    except Exception as e:
+        print(f"⚠️ 跨市场扫描异常: {e}", file=sys.stderr)
+        cross_market_result = {"count": 0, "approved_count": 0, "opportunities": []}
     whale_result = run_whale_tracking()
     whale_following_result = run_whale_following_scan()  # V2新增
     news_result = run_news_monitoring()

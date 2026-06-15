@@ -22,6 +22,20 @@ except ImportError:
     from app.models.database import db
 
 
+# 与 snapshot_daily_prices.py 保持一致：这些市场无价格快照，信号无法结算
+_UNSETTLEABLE_PREFIXES = (
+    'btc-updown-', 'eth-updown-', 'sol-updown-',
+    'nba-', 'nhl-', 'mlb-', 'nfl-', 'mls-', 'ufc-',
+    'fifwc-', 'wta-', 'atp-', 'epl-', 'ucl-',
+)
+
+
+def _is_settleable_market(market: str) -> bool:
+    """返回 False 表示该市场无价格快照，不应生成跟随信号。"""
+    slug = market.lower()
+    return not any(slug.startswith(p) for p in _UNSETTLEABLE_PREFIXES)
+
+
 @dataclass
 class Whale:
     """鲸鱼数据类"""
@@ -199,7 +213,11 @@ class WhaleFollowingStrategy:
             # 过滤小额交易
             if change['value_change'] < self.min_trade_size:
                 continue
-            
+
+            # 过滤无价格快照的市场（体育/加密短线），信号无法结算
+            if not _is_settleable_market(change['market']):
+                continue
+
             # 计算置信度
             confidence = self.calculate_confidence(whale, change)
             

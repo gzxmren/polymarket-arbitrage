@@ -62,7 +62,7 @@ def review_pair_cost_opportunity(opp: dict) -> dict:
             elif days_to_resolution < 1:
                 concerns.append("即将结算，可能来不及操作")
                 risk_points += 3
-        except:
+        except (ValueError, TypeError, KeyError):
             pass
     
     # 4. 交易量检查

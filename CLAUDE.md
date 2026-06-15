@@ -48,10 +48,38 @@ python3 -m pytest 10-tests/unit/test_x.py::test_name  # single test
 cd dashboard && make test                             # backend pytest (dashboard/backend/tests)
 ```
 
+## Code review discipline (mandatory before declaring a change done)
+
+### Automatic subagent review — required after Python edits
+
+After editing ANY `.py` file in `06-tools/` or `dashboard/backend/`, immediately invoke the `python-reviewer` subagent before marking the task complete:
+
+```
+use subagent: python-reviewer
+```
+
+For files whose names include any of: `monitor`, `notif`, `telegram`, `sync`, `fetch`, `http`, `request`, `socket`, `api`, `clob`, `polymarket` — this is **mandatory**, not optional. The PostToolUse hook will surface a reminder automatically.
+
+### Exception handling checklist (every network/IO/subprocess edit)
+
+Explicitly verify every `except` clause:
+1. List every exception type the called library can raise (not just the obvious ones).
+2. For `urllib.request.urlopen`: `TimeoutError` / `socket.timeout` propagates directly from `resp.read()` — it is **not** wrapped in `URLError`. Must catch `(URLError, TimeoutError, OSError)`.
+3. `requests.*()` raises `requests.exceptions.Timeout` (wraps `socket.timeout`) — and separately `requests.exceptions.ConnectionError`. Both must be caught. A bare `except Exception` that does `continue` or `pass` silently drops both.
+4. Confirm the retry / fallback logic still runs under each exception path — do not accept "has try/except" at face value.
+5. After writing exception handling, ask: "what happens if the network hangs for 60s mid-read?" and trace it through the code.
+
+When reviewing **existing code** (not just new additions), apply the same checklist to any `except` block you read.
+
 ## Conventions
 - **Test isolation is enforced**: test code must run with a `--test` flag and write to `/tmp/`; production data dirs (`07-data/`) must never receive test fixtures. Honor this when adding scripts.
 - Database schema changes are done via hand-written `dashboard/backend/migrate_db*.py` scripts (no migration framework). There is no CI.
 - `.bak` / timestamped backup files and `backfill_*.py` / `cleanup_*.py` one-off scripts are scattered in the source tree — these are operational scripts, not part of the import graph.
+- **Crontab: 绝对路径，无例外**。cron 的工作目录是 `$HOME`，所有相对路径都会解析错误。每条 crontab 条目必须满足以下格式之一：
+  - `cd /absolute/path/to/project && python3 script.py` — 推荐，适合项目内脚本
+  - `python3 /absolute/path/to/script.py` — 适合路径固定的独立脚本
+  - PYTHONPATH 若用相对路径，必须在 `cd project_dir &&` 之后才有效
+  写完 crontab 条目后，逐行确认没有裸露的相对路径，再执行 `crontab` 安装。
 
 ## Known data-integrity issues (state, not aspiration)
 

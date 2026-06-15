@@ -52,7 +52,7 @@ def fetch_api(url: str, headers: dict = None, retries: int = 3) -> dict | list |
                 time.sleep(1)
             else:
                 return None
-        except (URLError, json.JSONDecodeError) as e:
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
             last_error = e
             if attempt < retries - 1:
                 print(f"Error fetching {url}: {e}, retrying... (attempt {attempt+1}/{retries})", file=sys.stderr)

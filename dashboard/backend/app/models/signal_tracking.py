@@ -134,7 +134,7 @@ class SignalTracking:
         if row['metadata']:
             try:
                 existing_metadata = json.loads(row['metadata'])
-            except:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 pass
         
         if metadata:
@@ -243,7 +243,7 @@ class SignalTracking:
             if signal.get('metadata'):
                 try:
                     signal['parsed_metadata'] = json.loads(signal['metadata'])
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     signal['parsed_metadata'] = {}
         
         conn.close()
@@ -280,7 +280,7 @@ class SignalTracking:
             if signal.get('metadata'):
                 try:
                     signal['parsed_metadata'] = json.loads(signal['metadata'])
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     signal['parsed_metadata'] = {}
         
         conn.close()
@@ -334,7 +334,7 @@ class SignalTracking:
             if report.get('report_data'):
                 try:
                     report['parsed_data'] = json.loads(report['report_data'])
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     report['parsed_data'] = {}
         
         conn.close()
@@ -363,7 +363,7 @@ class SignalTracking:
         if report.get('report_data'):
             try:
                 report['parsed_data'] = json.loads(report['report_data'])
-            except:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 report['parsed_data'] = {}
         
         return report
@@ -418,7 +418,7 @@ class SignalTracking:
                 if item.get(field):
                     try:
                         item[f'parsed_{field}'] = json.loads(item[field])
-                    except:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         item[f'parsed_{field}'] = {}
         
         conn.close()

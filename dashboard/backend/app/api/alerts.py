@@ -35,7 +35,7 @@ def get_alerts():
         try:
             import json
             alert['parsed_data'] = json.loads(alert.get('data', '{}'))
-        except:
+        except (json.JSONDecodeError, TypeError, ValueError):
             alert['parsed_data'] = {}
     
     conn.close()
@@ -64,7 +64,7 @@ def get_alert_detail(alert_id):
     try:
         import json
         alert_dict['parsed_data'] = json.loads(alert_dict.get('data', '{}'))
-    except:
+    except (json.JSONDecodeError, TypeError, ValueError):
         alert_dict['parsed_data'] = {}
     
     # 如果是鲸鱼警报，获取鲸鱼详细信息
@@ -193,7 +193,7 @@ def get_recent_alerts():
         try:
             import json
             alert['parsed_data'] = json.loads(alert.get('data', '{}'))
-        except:
+        except (json.JSONDecodeError, TypeError, ValueError):
             alert['parsed_data'] = {}
     
     conn.close()

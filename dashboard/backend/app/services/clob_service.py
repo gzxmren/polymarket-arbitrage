@@ -237,7 +237,7 @@ class CLOBService:
             if isinstance(token_ids, str):
                 try:
                     token_ids = json.loads(token_ids)
-                except:
+                except (json.JSONDecodeError, ValueError):
                     token_ids = []
             
             if len(token_ids) < 2:
@@ -248,7 +248,7 @@ class CLOBService:
             if isinstance(prices, str):
                 try:
                     prices = json.loads(prices)
-                except:
+                except (json.JSONDecodeError, ValueError):
                     prices = [0.5, 0.5]
             
             markets.append(MarketInfo(
@@ -285,7 +285,7 @@ class CLOBService:
         if isinstance(token_ids, str):
             try:
                 token_ids = json.loads(token_ids)
-            except:
+            except (json.JSONDecodeError, ValueError):
                 return None
         
         if len(token_ids) < 2:
@@ -346,7 +346,7 @@ class CLOBService:
         if isinstance(token_ids, str):
             try:
                 token_ids = json.loads(token_ids)
-            except:
+            except (json.JSONDecodeError, ValueError):
                 return None
         
         if len(token_ids) < 2:

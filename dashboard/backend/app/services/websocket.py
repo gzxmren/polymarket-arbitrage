@@ -59,7 +59,7 @@ def broadcast_new_alert(alert_id):
             alert_dict = dict(alert)
             try:
                 alert_dict['parsed_data'] = json.loads(alert_dict.get('data', '{}'))
-            except:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 alert_dict['parsed_data'] = {}
             
             broadcast_alert(alert_dict)

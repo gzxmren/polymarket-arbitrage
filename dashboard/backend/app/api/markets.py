@@ -49,7 +49,7 @@ def fetch_polymarket_markets(limit: int = 100) -> list:
             if isinstance(prices, str):
                 try:
                     prices = json.loads(prices)
-                except:
+                except (json.JSONDecodeError, ValueError):
                     prices = []
             
             if len(prices) < 2:

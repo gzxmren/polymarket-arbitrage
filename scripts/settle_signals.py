@@ -84,9 +84,21 @@ def settle_pending_signals(conn: sqlite3.Connection, dry_run: bool, debug: bool)
             # 用最新价格兜底
             exit_price = _get_latest_price(cur, market, direction)
 
-        if entry_price is None:
-            if debug:
-                print(f"[SKIP] signal_id={sig_id}, market={market}: 无入场价数据")
+        if entry_price is None or exit_price is None:
+            # 已到期超过72h仍无价格数据 → 标记为 no_data，不再重试
+            mature_hours = (now - exit_dt.replace(tzinfo=timezone.utc)).total_seconds() / 3600
+            if mature_hours > 72:
+                if debug:
+                    print(f"[NO_DATA] signal_id={sig_id}, market={market}: "
+                          f"到期后 {mature_hours:.0f}h 仍无价格，标记 no_data")
+                if not dry_run:
+                    cur.execute(
+                        "UPDATE signals SET status='no_data', closed_at=? WHERE id=?",
+                        (now.isoformat(), sig_id)
+                    )
+            else:
+                if debug:
+                    print(f"[SKIP] signal_id={sig_id}, market={market}: 暂无价格数据，等待中")
             skipped += 1
             continue
 

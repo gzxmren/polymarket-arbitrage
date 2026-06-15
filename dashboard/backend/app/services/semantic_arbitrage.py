@@ -241,7 +241,7 @@ class SemanticArbitrageEngine:
                             'market': m,
                             'yes_price': yes_price
                         })
-                    except:
+                    except (ValueError, TypeError, IndexError, json.JSONDecodeError):
                         continue
                 
                 # 检测价格差异过大的情况

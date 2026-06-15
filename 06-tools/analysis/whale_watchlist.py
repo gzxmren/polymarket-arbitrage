@@ -212,7 +212,7 @@ def record_alert(watchlist: Dict, wallet: str, alert_type: str, market: str = ""
                 alert_time = datetime.fromisoformat(alert["timestamp"].replace('Z', '+00:00'))
                 if (now - alert_time).total_seconds() < 60:
                     return  # 重复警报，跳过
-            except:
+            except (ValueError, AttributeError):
                 pass
     
     watchlist["alerts"].append({

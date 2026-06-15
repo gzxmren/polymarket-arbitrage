@@ -13,6 +13,7 @@ Polymarket 系统自动健康巡检
   5. CLOB 摄像头（最近采集时间）
   6. Cron 是否有重复条目
   7. 数据库关键表行数是否合理
+  8. Cron 健康（各 job 是否在预期频率内跑过）
 
 防刷屏: 同一问题 4h 内不重复告警。状态恢复时发"已修复"通知。
 
@@ -177,9 +178,18 @@ def check_signal_pipeline() -> Check:
 def check_logs() -> Check:
     """关键日志是否有崩溃 / 未处理异常（只看最近 24h 内写入的日志）"""
     log_files = {
-        "monitor_v2": Path("/tmp/monitor_v2.log"),
-        "clob_logger": Path("/tmp/clob_pair_logger.log"),
-        "leaderboard": LEADERBOARD_LOG,
+        "monitor_v2":     Path("/tmp/monitor_v2.log"),
+        "clob_logger":    Path("/tmp/clob_pair_logger.log"),
+        "leaderboard":    LEADERBOARD_LOG,
+        "monitor_lite":   Path("/tmp/monitor_lite.log"),
+        "data_quality":   Path("/tmp/data_quality_check.log"),
+        "cleanup":        Path("/tmp/polymarket_cleanup.log"),
+        "price_snapshot": Path("/tmp/snapshot_daily_prices.log"),
+        "settle_signals": Path("/tmp/settle_signals.log"),
+        "backup_configs": Path("/tmp/backup_configs.log"),
+        "cleanup_tmp":    Path("/tmp/cleanup_temp_files.log"),
+        "polycop":        PROJECT_ROOT / "07-data" / "logs" / "polycop_signal.log",
+        "whale_states":   PROJECT_ROOT / "07-data" / "logs" / "whale_states_update.log",
     }
     cutoff_mtime = time.time() - 24 * 3600
     problems = []
@@ -193,16 +203,65 @@ def check_logs() -> Check:
             lines = path.read_text(errors="replace").splitlines()[-200:]
         except Exception:
             continue
-        crashes = [l for l in lines if re.search(
-            r"Traceback|NameError|ImportError|SyntaxError|AttributeError|Exception:|Error:", l)]
-        if crashes:
-            problems.append(f"{name}: {len(crashes)}处异常（末行: {crashes[-1].strip()[:80]}）")
+        error_pat = re.compile(
+            r"Traceback|NameError|ImportError|SyntaxError|AttributeError|Exception:|Error:")
+        crash_indices = [i for i, l in enumerate(lines) if error_pat.search(l)]
+        if crash_indices:
+            # 若最后一条错误之后存在成功标志，说明已自行恢复，不告警
+            last_err_idx = crash_indices[-1]
+            recovered = any(
+                re.search(r"✅|完成|SUCCESS|completed", l, re.IGNORECASE)
+                for l in lines[last_err_idx + 1:]
+            )
+            if not recovered:
+                crashes = [lines[i] for i in crash_indices]
+                problems.append(f"{name}: {len(crashes)}处异常（末行: {crashes[-1].strip()[:80]}）")
 
     if problems:
         return Check("日志异常", "warn",
                      "；".join(problems),
                      "查看对应日志文件定位具体错误")
     return Check("日志异常", "ok", "关键日志无崩溃（24h内）")
+
+
+def check_cron_staleness() -> Check:
+    """检查各 cron job 是否在预期频率内跑过（通过日志 mtime 判断）"""
+    H = 3600
+    now = time.time()
+    jobs = [
+        # (display_name, log_path, max_stale_seconds)
+        ("monitor_v2(6h)",       Path("/tmp/monitor_v2.log"),                                    8 * H),
+        ("monitor_lite(1h)",     Path("/tmp/monitor_lite.log"),                                  2 * H),
+        ("whale_states(6h)",     PROJECT_ROOT / "07-data" / "logs" / "whale_states_update.log", 8 * H),
+        ("polycop(6h)",          PROJECT_ROOT / "07-data" / "logs" / "polycop_signal.log",      8 * H),
+        ("data_quality(日)",     Path("/tmp/data_quality_check.log"),                           25 * H),
+        ("price_snapshot(日)",   Path("/tmp/snapshot_daily_prices.log"),                        25 * H),
+        ("cleanup(日)",          Path("/tmp/polymarket_cleanup.log"),                           25 * H),
+        ("settle_signals(日)",   Path("/tmp/settle_signals.log"),                               25 * H),
+        ("backup_configs(日)",   Path("/tmp/backup_configs.log"),                               25 * H),
+        ("cleanup_tmp(日)",      Path("/tmp/cleanup_temp_files.log"),                           25 * H),
+        ("pzero_weekly(周)",     Path("/tmp/weekly_pzero.log"),                                 8 * 24 * H),
+        ("learning_review(周)",  Path("/tmp/weekly_learning_review.log"),                       8 * 24 * H),
+        ("leaderboard(周)",      LEADERBOARD_LOG,                                               8 * 24 * H),
+    ]
+    stale, missing = [], []
+    for name, path, max_stale in jobs:
+        if not path.exists():
+            missing.append(name)
+            continue
+        age = now - path.stat().st_mtime
+        if age > max_stale:
+            stale.append(f"{name}({age / H:.0f}h未跑)")
+
+    problems = []
+    if stale:
+        problems.append("超时: " + "、".join(stale))
+    if missing:
+        problems.append("无日志: " + "、".join(missing))
+    if problems:
+        return Check("Cron健康", "warn", "；".join(problems),
+                     "检查 crontab -l 条目是否正常；日志路径是否正确")
+    return Check("Cron健康", "ok", f"全部 {len(jobs)} 个 job 按时运行")
 
 
 def check_leaderboard_sync() -> Check:
@@ -321,6 +380,7 @@ def run_all_checks() -> List[Check]:
         check_monitor_freshness(),
         check_signal_pipeline(),
         check_logs(),
+        check_cron_staleness(),
         check_leaderboard_sync(),
         check_clob_camera(),
         check_cron_duplicates(),
