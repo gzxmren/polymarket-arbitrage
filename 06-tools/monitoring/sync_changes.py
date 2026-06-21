@@ -95,6 +95,10 @@ def save_changes_to_db(trades):
             ts = trade.get('timestamp', 0)
             timestamp = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else datetime.now(timezone.utc).isoformat()
             tx_hash = trade.get('transactionHash', '') or ''
+            if not tx_hash:
+                # tx_hash 为空的交易不受 idx_changes_tx_hash_unique 唯一索引约束，
+                # 抓取窗口重叠时无法去重——目前生产数据里没有这种情况，一旦出现需要立即关注。
+                print(f"⚠️ 交易缺少 tx_hash，无法去重防护: wallet={wallet[:10]}..., market={market}", flush=True)
 
             if size * price < 10:
                 continue
@@ -128,11 +132,14 @@ def save_changes_to_db(trades):
             cursor = conn.cursor()
 
             for row in changes_data:
+                # INSERT OR IGNORE: 配合 idx_changes_tx_hash_unique 唯一索引，
+                # 同一笔链上交易(tx_hash相同)被重复抓取时静默跳过，而不是插入重复行。
                 cursor.execute('''
-                    INSERT INTO changes (wallet, type, market, outcome, old_size, new_size, change_amount, timestamp, market_title, side, tx_hash)
+                    INSERT OR IGNORE INTO changes (wallet, type, market, outcome, old_size, new_size, change_amount, timestamp, market_title, side, tx_hash)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', row)
-                saved += 1
+                if cursor.rowcount > 0:
+                    saved += 1
 
             for row in whale_data:
                 wallet, pseudonym, now_iso, _ = row

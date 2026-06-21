@@ -16,6 +16,7 @@
 import os
 import sys
 import json
+import time
 import urllib.request
 import http.client
 import sqlite3
@@ -71,16 +72,25 @@ def ensure_table(conn):
     conn.commit()
 
 
-def fetch_active_markets(limit=50, offset=0):
-    """从 Gamma API 获取活跃市场列表"""
+def fetch_active_markets(limit=50, offset=0, retries=3, backoff=5):
+    """从 Gamma API 获取活跃市场列表
+
+    返回 None 表示请求失败（重试后仍失败）；返回 [] 表示 API 正常应答但没有更多数据。
+    两者必须区分，否则分页循环会把"这页请求失败"误当成"已经翻到最后一页"。
+    """
     url = f'{GAMMA_API}/markets?closed=false&order=volume24hr&ascending=false&limit={limit}&offset={offset}'
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'PolymarketMonitor/1.0', 'Accept-Encoding': 'identity'})
-        with _no_proxy_opener.open(req, timeout=60) as resp:
-            return json.loads(resp.read().decode())
-    except (urllib.error.URLError, http.client.IncompleteRead, TimeoutError, OSError, json.JSONDecodeError) as e:
-        print(f'❌ 获取市场失败 (offset={offset}): {e}', flush=True)
-        return []
+    last_err = None
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'PolymarketMonitor/1.0', 'Accept-Encoding': 'identity'})
+            with _no_proxy_opener.open(req, timeout=60) as resp:
+                return json.loads(resp.read().decode())
+        except (urllib.error.URLError, http.client.IncompleteRead, TimeoutError, OSError, json.JSONDecodeError) as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(backoff * (attempt + 1))
+    print(f'❌ 获取市场失败 (offset={offset}, 已重试{retries}次): {last_err}', flush=True)
+    return None
 
 
 def should_exclude(slug):
@@ -91,14 +101,25 @@ def should_exclude(slug):
     return any(slug_lower.startswith(prefix) for prefix in EXCLUDED_PREFIXES)
 
 
+class FetchAbortedError(RuntimeError):
+    """某一页请求在重试后仍失败，中止本轮采集（避免把部分数据当成完整数据写入）。"""
+
+
 def collect_all_markets(max_pages=40):
-    """分页获取所有活跃市场"""
+    """分页获取所有活跃市场
+
+    某一页请求失败（重试后仍失败）时直接中止整轮采集而不是当作"没有更多数据"
+    提前结束——否则会把"网络抖动导致只拿到一部分市场"悄悄当成"今天就这么多
+    市场"写入数据库，产生看似正常但实际不完整的快照。
+    """
     all_markets = []
     page_size = 50
     for page in range(max_pages):
         markets = fetch_active_markets(limit=page_size, offset=page * page_size)
-        if not markets:
-            break
+        if markets is None:
+            raise FetchAbortedError(f"第 {page} 页请求失败（offset={page * page_size}）")
+        if len(markets) == 0:
+            break  # 真正的最后一页：API 正常应答但已无更多数据
         all_markets.extend(markets)
         if len(markets) < page_size:
             break  # 最后一页
@@ -117,7 +138,12 @@ def snapshot(dry_run=False):
 
     # 获取市场数据
     print(f'📡 从 Gamma API 获取活跃市场...', flush=True)
-    markets = collect_all_markets()
+    try:
+        markets = collect_all_markets()
+    except FetchAbortedError as e:
+        print(f'❌ 采集中止: {e}（本轮跳过，不写入部分数据）', flush=True)
+        stats['errors'] += 1
+        return stats
     print(f'   获取 {len(markets)} 个市场', flush=True)
 
     if not markets:

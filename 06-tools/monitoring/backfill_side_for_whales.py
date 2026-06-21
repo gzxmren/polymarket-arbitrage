@@ -102,7 +102,9 @@ def process_wallet(db, wallet: str, trades: list) -> dict:
                  change_amount, timestamp, market_title, side, tx_hash)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, to_insert)
-        inserted = len(to_insert)
+        # rowcount 是真正插入成功的行数(executemany 累加每条语句的影响行数)，
+        # 排除被 idx_changes_tx_hash_unique 唯一索引 OR IGNORE 掉的重复 tx_hash。
+        inserted = cur.rowcount
         db.commit()
 
     return {'matched': matched, 'updated': updated, 'inserted': inserted, 'api_trades': len(trades)}

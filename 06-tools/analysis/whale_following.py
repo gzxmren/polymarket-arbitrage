@@ -22,18 +22,27 @@ except ImportError:
     from app.models.database import db
 
 
-# 与 snapshot_daily_prices.py 保持一致：这些市场无价格快照，信号无法结算
-_UNSETTLEABLE_PREFIXES = (
-    'btc-updown-', 'eth-updown-', 'sol-updown-',
-    'nba-', 'nhl-', 'mlb-', 'nfl-', 'mls-', 'ufc-',
-    'fifwc-', 'wta-', 'atp-', 'epl-', 'ucl-',
-)
+# 信号建议持有 48 小时（与 polymarket_monitor_v2.py::save_signals_to_db 的
+# suggested_holding_hours 保持一致）。市场必须在这之后仍未关闭，才有机会拿到出场价。
+SIGNAL_HOLDING_HOURS = 48
 
 
-def _is_settleable_market(market: str) -> bool:
-    """返回 False 表示该市场无价格快照，不应生成跟随信号。"""
-    slug = market.lower()
-    return not any(slug.startswith(p) for p in _UNSETTLEABLE_PREFIXES)
+def _is_settleable_by_end_date(end_date: Optional[str], min_hours: int = SIGNAL_HOLDING_HOURS) -> bool:
+    """市场距其 end_date（关闭时间）需 >= min_hours，否则信号到期前市场就已关闭/
+    结算，settle_signals.py 永远拿不到出场价（表现为永久 pending → no_data）。
+
+    用 daily_price_snapshots.end_date 数据驱动判定，取代手写前缀黑名单——黑名单
+    覆盖不全（新品类、新联赛层出不穷）且容易和其他模块的同类名单分叉。
+    """
+    if not end_date:
+        return False
+    try:
+        end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=timezone.utc)
+    return end_dt - datetime.now(timezone.utc) >= timedelta(hours=min_hours)
 
 
 @dataclass
@@ -135,7 +144,10 @@ class WhaleFollowingStrategy:
         return whales
 
     def get_recent_changes(self, wallet: str, hours: int = 24) -> List[Dict]:
-        """获取鲸鱼最近变动（直接查 changes 表，不依赖 positions JOIN）"""
+        """获取鲸鱼最近变动（直接查 changes 表，不依赖 positions JOIN）
+
+        每条记录额外带 'is_settleable' 字段（见 _is_settleable_by_end_date）。
+        """
         conn = db.get_connection()
         cursor = conn.cursor()
 
@@ -148,15 +160,36 @@ class WhaleFollowingStrategy:
               AND timestamp > ?
             ORDER BY ABS(change_amount) DESC
         ''', (wallet, cutoff.isoformat()))
+        rows = cursor.fetchall()
+
+        # 批量取每个市场"最新一条快照"的 end_date（不是 MAX(end_date)——end_date 会
+        # 随时间推移变化，例如临近截止日下调，或电竞赛程重新排期，MAX() 会捡到历史
+        # 上出现过的、已经过期的偏大值，导致市场被误判为"还很远才关闭"）。
+        markets = {row[0] for row in rows}
+        end_dates: Dict[str, str] = {}
+        if markets:
+            placeholders = ','.join('?' for _ in markets)
+            cursor.execute(f'''
+                SELECT market, end_date FROM (
+                    SELECT market, end_date,
+                           ROW_NUMBER() OVER (PARTITION BY market ORDER BY snapshot_date DESC) AS rn
+                    FROM daily_price_snapshots
+                    WHERE market IN ({placeholders})
+                )
+                WHERE rn = 1
+            ''', tuple(markets))
+            end_dates = {m: ed for m, ed in cursor.fetchall()}
 
         changes = []
-        for row in cursor.fetchall():
+        for row in rows:
+            market = row[0]
             changes.append({
-                'market': row[0],
-                'market_title': row[1] or row[0],
+                'market': market,
+                'market_title': row[1] or market,
                 'direction': row[2],           # 'BUY' or 'SELL'
                 'value_change': abs(row[3]),   # 直接用 change_amount，准确
-                'timestamp': row[4]
+                'timestamp': row[4],
+                'is_settleable': _is_settleable_by_end_date(end_dates.get(market)),
             })
 
         conn.close()
@@ -214,8 +247,8 @@ class WhaleFollowingStrategy:
             if change['value_change'] < self.min_trade_size:
                 continue
 
-            # 过滤无价格快照的市场（体育/加密短线），信号无法结算
-            if not _is_settleable_market(change['market']):
+            # 过滤距关闭时间不足持有期的市场（体育单场/加密短线/电竞等），信号无法结算
+            if not change['is_settleable']:
                 continue
 
             # 计算置信度

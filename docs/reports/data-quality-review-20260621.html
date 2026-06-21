@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket 数据review报告 — 2026-06-21</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f1117; color: #e1e4e8; line-height: 1.6; }
+  .header { background: linear-gradient(135deg, #1a1f2e 0%, #16213e 100%); padding: 40px 32px 30px; border-bottom: 2px solid #21262d; }
+  .header h1 { font-size: 26px; font-weight: 700; color: #58a6ff; margin-bottom: 8px; }
+  .header .subtitle { color: #8b949e; font-size: 14px; }
+  .header .ts { color: #3fb950; font-size: 13px; margin-top: 6px; font-family: monospace; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  .score-bar { display: flex; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+  .score-card { flex: 1; min-width: 160px; background: #161b22; border-radius: 12px; border: 1px solid #30363d; padding: 20px; text-align: center; }
+  .score-card .label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .score-card .value { font-size: 36px; font-weight: 700; margin: 8px 0 4px; }
+  .score-card .sub { font-size: 12px; color: #8b949e; }
+  .score-green { color: #3fb950; }
+  .score-yellow { color: #d29922; }
+  .score-red { color: #f85149; }
+
+  .overall-score { background: #161b22; border: 2px solid #21262d; border-radius: 16px; padding: 28px 32px; margin-bottom: 32px; display: flex; align-items: center; gap: 28px; }
+  .overall-score .big-score { font-size: 72px; font-weight: 800; line-height: 1; color: #d29922; }
+  .overall-score .big-label { font-size: 14px; color: #8b949e; }
+  .overall-score .verdict { font-size: 20px; font-weight: 600; color: #d29922; margin-bottom: 8px; }
+  .overall-score .desc { color: #8b949e; font-size: 14px; }
+
+  .section { margin-bottom: 32px; }
+  .section-title { font-size: 18px; font-weight: 600; color: #e1e4e8; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 8px; }
+  .section-title .icon { font-size: 20px; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }
+  .card h3 { font-size: 14px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b949e; font-weight: 500; padding: 6px 10px; border-bottom: 1px solid #21262d; }
+  td { padding: 8px 10px; border-bottom: 1px solid #161b22; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1c2128; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: #1a4731; color: #3fb950; }
+  .badge-yellow { background: #3d2f0f; color: #d29922; }
+  .badge-red { background: #3d1414; color: #f85149; }
+  .badge-gray { background: #21262d; color: #8b949e; }
+  .badge-blue { background: #0d2044; color: #58a6ff; }
+
+  .issue-list { list-style: none; }
+  .issue-list li { padding: 14px 16px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid; }
+  .issue-crit { background: #1e0a0a; border-color: #f85149; }
+  .issue-warn { background: #1e1500; border-color: #d29922; }
+  .issue-ok { background: #0a1e0a; border-color: #3fb950; }
+  .issue-list li .title { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
+  .issue-list li .detail { color: #8b949e; font-size: 13px; }
+
+  .job-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #1c2128; font-size: 13px; }
+  .job-row:last-child { border-bottom: none; }
+  .job-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .dot-green { background: #3fb950; }
+  .dot-red { background: #f85149; }
+  .dot-gray { background: #8b949e; }
+  .dot-yellow { background: #d29922; }
+  .job-name { flex: 1; font-weight: 500; }
+  .job-meta { color: #8b949e; font-size: 12px; }
+
+  .insight { background: #0d1b2a; border: 1px solid #1f6feb; border-radius: 8px; padding: 14px 16px; margin-top: 12px; font-size: 13px; color: #58a6ff; }
+  .insight strong { color: #79c0ff; }
+
+  footer { text-align: center; padding: 32px; color: #8b949e; font-size: 12px; border-top: 1px solid #21262d; margin-top: 40px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📊 Polymarket 数据review报告</h1>
+  <div class="subtitle">全库摸底 · 22张表逐一核查 · 是否满足"大户行为追踪 + 信号验证"的设计目标</div>
+  <div class="ts">生成时间：2026-06-21 ｜ 距上次全景报告(2026-06-07)：14天</div>
+</div>
+
+<div class="container">
+
+  <!-- Overall Score -->
+  <div class="overall-score">
+    <div class="big-score">58</div>
+    <div>
+      <div class="verdict">🟡 表层断路已修复，但深层覆盖率撑不起核心设计目标</div>
+      <div class="desc">
+        和 6/7 那次比，"空表/断路"类问题大多已解决：alerts 恢复活跃、signals 链路打通、今天又修了 3 个采集 bug。<br>
+        但这次摸到了更深一层的问题：系统名义上"重点关注"292个鲸鱼，实际只有18个在被持续追踪；<br>
+        鲸鱼实际交易的市场里60%从未被采过价格；信号结算样本至今只有3条。<br>
+        好比一辆车仪表盘的灯都正常亮（不报错），但邮箱里大部分油表数据其实是上次加油时候的旧值。
+      </div>
+    </div>
+  </div>
+
+  <!-- Score bar -->
+  <div class="score-bar">
+    <div class="score-card">
+      <div class="label">数据库健康</div>
+      <div class="value score-green">A</div>
+      <div class="sub">57MB · 死空间0.6% · 垃圾0.1%</div>
+    </div>
+    <div class="score-card">
+      <div class="label">采集新鲜度</div>
+      <div class="value score-green">B+</div>
+      <div class="sub">核心管道今日已更新</div>
+    </div>
+    <div class="score-card">
+      <div class="label">鲸鱼追踪覆盖率</div>
+      <div class="value score-red">D</div>
+      <div class="sub">重点关注74%零成交记录</div>
+    </div>
+    <div class="score-card">
+      <div class="label">信号验证闭环</div>
+      <div class="value score-red">D+</div>
+      <div class="sub">累计仅3条resolved</div>
+    </div>
+    <div class="score-card">
+      <div class="label">套利/Phase3</div>
+      <div class="value score-red">F</div>
+      <div class="sub">4张表仍空，功能悬空</div>
+    </div>
+    <div class="score-card">
+      <div class="label">调度稳定性</div>
+      <div class="value score-green">B+</div>
+      <div class="sub">本次复查顺手修了3处</div>
+    </div>
+  </div>
+
+  <!-- Section 0: full table inventory -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🗄️</span> 全表清单（22张，主库 polymarket.db）</div>
+    <div class="card">
+      <table>
+        <tr><th>表</th><th>行数</th><th>状态</th><th>备注</th></tr>
+        <tr><td>daily_price_snapshots</td><td>66,549</td><td><span class="badge badge-yellow">⚠️ 覆盖不全</span></td><td>见下方核心发现②</td></tr>
+        <tr><td>market_title_map</td><td>46,656</td><td><span class="badge badge-green">✅ 正常</span></td><td>slug→标题缓存，无空值无重复</td></tr>
+        <tr><td>positions_archive</td><td>39,612</td><td><span class="badge badge-green">✅ 正常</span></td><td>3x于positions，归档机制工作正常</td></tr>
+        <tr><td>concentration_history</td><td>34,748</td><td><span class="badge badge-yellow">⚠️ 覆盖不全</span></td><td>7天滚动保留(设计如此)，但仅覆盖106/292个重点关注鲸鱼</td></tr>
+        <tr><td>changes</td><td>25,988</td><td><span class="badge badge-yellow">⚠️ 有重复</span></td><td>752条完全重复行；BUY:SELL=21k:5k明显失衡</td></tr>
+        <tr><td>positions</td><td>13,243</td><td><span class="badge badge-green">✅ 正常</span></td><td>无脏值，与whales表无孤儿</td></tr>
+        <tr><td>whales</td><td>8,496</td><td><span class="badge badge-yellow">⚠️ 见核心发现①</span></td><td>官方垃圾判据仅0.08%，但"重点关注"覆盖率差</td></tr>
+        <tr><td>signals</td><td>28</td><td><span class="badge badge-yellow">⚠️ 样本极小</span></td><td>23 no_data / 2 pending / 3 resolved</td></tr>
+        <tr><td>leaderboard_history</td><td>350</td><td><span class="badge badge-blue">📋 参考</span></td><td>仅211个钱包均值1.65条，非完整周序列</td></tr>
+        <tr><td>leaderboard_whales</td><td>211</td><td><span class="badge badge-green">✅ 正常</span></td><td>按周cron，最近一次6/16(下次6/22)</td></tr>
+        <tr><td>leaderboard_trends</td><td>211</td><td><span class="badge badge-blue">📋 参考</span></td><td>动量计算依赖上方history，样本稀疏</td></tr>
+        <tr><td>alerts</td><td>55</td><td><span class="badge badge-green">✅ 已恢复</span></td><td>34条近7天，6/7报告"46天停摆"已解决；目前只有type=whale一类</td></tr>
+        <tr><td>signal_results</td><td>3</td><td><span class="badge badge-red">🔴 样本过小</span></td><td>对应仅2个钱包</td></tr>
+        <tr><td>whale_deep_analysis</td><td>11</td><td><span class="badge badge-red">🔴 全部过期</span></td><td>expires_at全在3月，功能疑似停用数月</td></tr>
+        <tr><td>arbitrage_feedback</td><td>2</td><td><span class="badge badge-gray">⚪ 历史遗留</span></td><td>对应唯一一条cross_market_arbitrage</td></tr>
+        <tr><td>whale_performance</td><td>2</td><td><span class="badge badge-red">🔴 样本过小</span></td><td>仅2个钱包，远未达到可判断胜率的量级</td></tr>
+        <tr><td>cross_market_arbitrage</td><td>1</td><td><span class="badge badge-gray">⚪ 已知砍掉</span></td><td>最后一条记录3/18，C-2方向已决策暂停</td></tr>
+        <tr><td>pair_cost_arbitrage(主DB)</td><td>0</td><td><span class="badge badge-blue">📋 功能已迁移</span></td><td>真实数据在独立07-data/clob_pair_log.db，主DB同名表是废弃schema</td></tr>
+        <tr><td>opportunity_history</td><td>0</td><td><span class="badge badge-red">🔴 从未使用</span></td><td>Phase-3，无调度触发</td></tr>
+        <tr><td>quality_reports</td><td>0</td><td><span class="badge badge-red">🔴 从未使用</span></td><td>Phase-3，代码已实现，0次调用</td></tr>
+        <tr><td>strategy_performance</td><td>0</td><td><span class="badge badge-red">🔴 从未使用</span></td><td>Phase-3</td></tr>
+        <tr><td>threshold_history</td><td>0</td><td><span class="badge badge-red">🔴 从未使用</span></td><td>Phase-3</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- Section 1: 核心发现① 鲸鱼追踪覆盖率 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🐋</span> 核心发现① ·"重点关注"鲸鱼名存实亡</div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>数字对比</h3>
+        <table>
+          <tr><td>whales.is_watched=1（重点关注名单）</td><td><strong>292</strong></td></tr>
+          <tr><td>07-data/whale_states/ 实际JSON文件数</td><td><strong style="color:#f85149">18</strong></td></tr>
+          <tr><td>重点关注里 changes_count=0（从无成交记录）</td><td><strong style="color:#f85149">216 个 (74%)</strong></td></tr>
+          <tr><td>concentration_history 近7天覆盖的钱包数</td><td><strong style="color:#f85149">106 个 (36%)</strong></td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3>根因</h3>
+        <p style="font-size:13px; color:#8b949e;">
+          鲸鱼JSON状态文件由 <code>update_whale_states.py</code> 每6h刷新，但它的发现逻辑来自 <code>whale_tracker_v2.py</code>
+          的"近期活跃交易扫描"——<strong style="color:#e1e4e8">完全不读取 is_watched 字段</strong>。
+          后备的"高价值鲸鱼占位"逻辑按 <code>total_volume DESC</code> 排序，也不优先重点关注名单，且每轮只补<strong>20个</strong>。
+        </p>
+        <p style="font-size:13px; color:#8b949e; margin-top:10px;">
+          结果：<code>is_watched</code> 这个字段只在<strong>下游消费</strong>时被读取（选信号候选、UI展示、写concentration_history的判断条件），
+          从未在<strong>JSON刷新源头</strong>被用来决定"该追踪谁"——"重点关注名单"和"实际被持续追踪的名单"是两套互不相交的东西。
+        </p>
+      </div>
+    </div>
+    <div class="insight">
+      <strong>影响：</strong>项目定位是"大户行为追踪平台"（CLAUDE.md 开篇定义），重点关注名单理应是最高优先级的追踪对象。
+      现状是其中3/4根本没有任何交易行为被记录——不是这些鲸鱼不活跃，而是系统从未去看过他们。
+      whale_following 信号生成依赖 changes 表，这一覆盖率缺口直接限制了能产生信号的鲸鱼池子大小。
+    </div>
+  </div>
+
+  <!-- Section 2: 核心发现② daily_price_snapshots覆盖率 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">📈</span> 核心发现② · 价格快照覆盖率不足，且与今天修的"分页缺陷"是两个不同层面的问题</div>
+    <div class="card">
+      <table>
+        <tr><td>changes 表里鲸鱼实际交易过的不同市场数</td><td><strong>9,158</strong></td></tr>
+        <tr><td>其中从未出现在 daily_price_snapshots 的市场数</td><td><strong style="color:#f85149">5,480 (60%)</strong></td></tr>
+      </table>
+      <p style="font-size:13px; color:#8b949e; margin-top:12px;">
+        今天复查并修复的"分页缺陷"（详见 <code>docs/DATA_QUALITY_FOLLOWUP_2026-06-21.md</code>）解决的是
+        "已经在采集范围内的市场，某几天数据缺失/不完整"。这里是更上一层的问题：
+        <code>snapshot_daily_prices.py</code> 按 <code>volume24hr</code> 排序只抓 Gamma API 的 top ~2000 活跃市场，
+        长尾/低交易量市场天然不在采集范围——鲸鱼一旦在这些市场交易，无论时间窗口对不对，从源头上就没有价格历史可用。
+      </p>
+    </div>
+    <div class="insight">
+      <strong>影响：</strong>这是比黑名单覆盖不全更大的天花板——即使 whale_following.py 的可结算判定逻辑做得再精确，
+      60%的鲸鱼交易市场依然因为"压根没采集过"而无法生成可结算信号。
+    </div>
+  </div>
+
+  <!-- Section 3: 信号-回测闭环 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🎯</span> 信号 → 结算 → 绩效 闭环现状</div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>链路打通了，但吞吐量极小</h3>
+        <table>
+          <tr><td>signals 累计</td><td>28 条（23 no_data / 2 pending / 3 resolved）</td></tr>
+          <tr><td>signal_results 累计</td><td>3 条</td></tr>
+          <tr><td>whale_performance 覆盖钱包</td><td>2 个</td></tr>
+        </table>
+        <p style="font-size:13px; color:#8b949e; margin-top:10px;">
+          其中2条resolved（id=17/19）是同一钱包同一市场的近似重复，落在6/16去重修复之前。
+          自6/16以来还没有新的resolved产生。
+        </p>
+      </div>
+      <div class="card">
+        <h3>与已有结论的关系（避免混淆）</h3>
+        <p style="font-size:13px; color:#8b949e;">
+          memory[stratified-findings-2026-06-08] 已经用 <code>08-backtests</code> 离线引擎在更大样本上判定
+          "鲸鱼信号资金加权-4~-5%不赚钱"——<strong style="color:#e1e4e8">那是另一套更大的历史数据集，结论依然有效，不受本节影响</strong>。
+          本节说的是<strong style="color:#d29922">这张实时 signals 表本身</strong>的积累速度：
+          距离"先验证再投"需要的 test_n≥40（见 backtest-engine-2026-06 memory）还差得远，
+          按现在的速度（5天0条新resolved）短期内也积累不起来。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 4: 套利与Phase3 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">⚖️</span> 套利记录与 Phase-3 自动化表</div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>套利相关3张表 — 历史遗留，非当前故障</h3>
+        <ul style="font-size:13px; color:#8b949e; padding-left:18px; line-height:2;">
+          <li><code>cross_market_arbitrage</code>：唯一1条记录是3/18，C-2跨市场套利方向已在6月初决策暂停（真等价对已被套到&lt;1¢），不是断路。</li>
+          <li><code>pair_cost_arbitrage</code>（主DB）：0行，但功能已迁移到独立的 <code>07-data/clob_pair_log.db</code>（545次扫描/32,341条记录，每30分钟运转正常）。主DB里的同名表是废弃schema，建议清理避免误读。</li>
+          <li><code>arbitrage_feedback</code>：2条，均绑定在上面那条3月记录上。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Phase-3 四张表 — 功能悬空，代码已写完没人触发</h3>
+        <p style="font-size:13px; color:#8b949e;">
+          <code>quality_reports</code> / <code>threshold_history</code> / <code>opportunity_history</code> / <code>strategy_performance</code>
+          均为0行。代码层面（<code>quality_report.py</code>、<code>threshold_optimizer.py</code>）和API路由（<code>app/api/signals.py</code>）
+          都已实现，但只能通过手动调用HTTP接口触发——APScheduler里只注册了 <code>data_sync</code> 一个job，没有任何cron/scheduler定期调用这些接口。
+          这是 CLAUDE.md 里"STILL OPEN"问题在2026-06-21的再次确认，状态没有变化。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 5: changes 表细节问题 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🔄</span> changes 表的两个细节问题</div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>752条完全重复行</h3>
+        <p style="font-size:13px; color:#8b949e;">
+          同 wallet+market+timestamp+change_amount 完全一致的行有752条。需要确认是同一笔交易被插入了两次（去重缺失），
+          还是确实存在同一时间戳的多笔独立交易（小概率但可能，取决于上游API时间戳精度）。未在本次范围内继续深挖，列为待办。
+        </p>
+      </div>
+      <div class="card">
+        <h3>BUY:SELL = 21k:5k（80/20失衡）</h3>
+        <p style="font-size:13px; color:#8b949e;">
+          changes 表里 BUY 20,988条，SELL 仅5,000条。可能是真实市场行为（鲸鱼买入多于卖出），
+          也可能是SELL方向的检测逻辑存在系统性漏报（例如清仓到0的情形未被正确归类）。建议下次排查时核对 sync_changes.py 对SELL的识别条件。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 6: data_sync 权威性结论 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🔧</span> data_sync.py vs data_sync_v2.py — 本次可以下结论了</div>
+    <div class="card">
+      <p style="font-size:13px; color:#8b949e;">
+        CLAUDE.md 长期标注"两个sync实现并存，权威性不明确"。核查 <code>scheduler.py:14,26-30</code>，
+        APScheduler 的 <code>data_sync</code> job 唯一导入的是 <code>from .data_sync import DataSyncService</code>。
+        全仓搜索 <code>data_sync_v2</code> 的引用，只有一个一次性脚本 <code>backfill_concentration.py</code> 在用，
+        没有任何cron/scheduler路径会触发它。
+      </p>
+      <div class="insight" style="margin-top:12px;">
+        <strong>结论：</strong><code>data_sync.py</code> 是唯一生效的版本，<code>data_sync_v2.py</code> 应视为废弃代码，
+        建议后续归档到 <code>99-archive/</code> 以减少误读风险（本次未做改动，留待用户决定）。
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 7: 今日已修复 -->
+  <div class="section">
+    <div class="section-title"><span class="icon">✅</span> 本次复查顺手修复的问题（已落地，未提交git）</div>
+    <ul class="issue-list">
+      <li class="issue-ok">
+        <div class="title">✅ daily_price_snapshots 分页缺陷</div>
+        <div class="detail">区分"请求失败"和"已翻到最后一页"，避免网络抖动时整天/部分缺失数据。详见 docs/DATA_QUALITY_FOLLOWUP_2026-06-21.md。</div>
+      </li>
+      <li class="issue-ok">
+        <div class="title">✅ whale_following.py 可结算市场判定改为数据驱动</div>
+        <div class="detail">从手写前缀黑名单改为查 daily_price_snapshots 最新快照的 end_date，自动适配新品类，不再挂一漏万。</div>
+      </li>
+      <li class="issue-ok">
+        <div class="title">✅ cleanup_stale_data.py 与 UTC 跨天错位</div>
+        <div class="detail">crontab 时间调整，消除系统性~8.5h"未清理"假阳性告警。</div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Section 8: Issue summary -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🚨</span> 问题汇总与优先级</div>
+    <ul class="issue-list">
+      <li class="issue-crit">
+        <div class="title">🔴 P0 · "重点关注"鲸鱼74%零成交记录，监控覆盖率名不副实</div>
+        <div class="detail">
+          <strong>白话解释：</strong>系统说自己在重点盯着292个大户，但实际上只有18个文件在被持续更新，剩下274个就像挂了名但没人跟班。<br>
+          <strong>建议：</strong>让 update_whale_states.py 的JSON刷新逻辑优先覆盖 is_watched=1 的钱包，而不是只靠"近期活跃扫描"被动发现。
+        </div>
+      </li>
+      <li class="issue-crit">
+        <div class="title">🔴 P0 · 60%鲸鱼交易市场从未被价格快照覆盖</div>
+        <div class="detail">
+          <strong>白话解释：</strong>鲸鱼在9158个市场交易过，但系统只对top ~2000活跃市场采价格，长尾市场连"能不能结算"的判断资格都没有。<br>
+          <strong>建议：</strong>评估是否需要为"changes表里出现过但从未被snapshot覆盖"的市场单独补抓快照，或接受这是设计取舍并在文档中明确。
+        </div>
+      </li>
+      <li class="issue-warn">
+        <div class="title">🟡 P1 · 信号验证闭环吞吐量过低（累计3条resolved）</div>
+        <div class="detail">距离统计可信的样本量（test_n≥40）差距很大，且近5天零增长，需要结合上面两条P0一起看才能改善。</div>
+      </li>
+      <li class="issue-warn">
+        <div class="title">🟡 P1 · changes 表752条完全重复行 + BUY/SELL比例失衡待查</div>
+        <div class="detail">未深挖根因，列为下次排查待办。</div>
+      </li>
+      <li class="issue-warn">
+        <div class="title">🟡 P2 · whale_deep_analysis 全部过期未刷新，Phase-3四表+pair_cost_arbitrage(主DB)是废弃/悬空功能</div>
+        <div class="detail">不影响核心数据质量，但建议清理废弃schema或明确归档，减少未来排查时的误读成本。</div>
+      </li>
+      <li class="issue-ok">
+        <div class="title">✅ 数据库整体健康保持良好</div>
+        <div class="detail">57MB，死空间0.6%，垃圾率0.08%，6/6那轮修复成果稳固保持。</div>
+      </li>
+      <li class="issue-ok">
+        <div class="title">✅ alerts 告警系统已恢复（6/7报告的"46天停摆"已解决）</div>
+        <div class="detail">近7天34条新告警，系统在正常产生告警，只是目前只有 whale 一种类型。</div>
+      </li>
+      <li class="issue-ok">
+        <div class="title">✅ data_sync.py 权威性疑案已澄清</div>
+        <div class="detail">scheduler唯一调度data_sync.py，data_sync_v2.py无调度路径，可视为废弃代码。</div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Conclusion -->
+  <div style="background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; text-align: center;">
+    <div style="font-size: 18px; font-weight: 600; color: #e1e4e8; margin-bottom: 8px;">结论</div>
+    <div style="color: #8b949e; font-size: 14px; max-width: 680px; margin: 0 auto; line-height: 1.8;">
+      数据库本身<strong style="color: #3fb950">干净健康</strong>，表层的"空表/断路"类问题（6/7报告的主要槽点）这次也基本看到已解决。<br>
+      但这次摸到了更深一层、更隐蔽的问题：<strong style="color: #f85149">"重点关注"名单和实际被追踪的对象是两套数据</strong>，
+      <strong style="color: #f85149">鲸鱼实际交易的市场里六成从未被采过价</strong>——这两条共同限制了信号生成的源头，
+      使得"先验证再投"所需的样本积累速度，比代码本身的健康度看起来要慢得多。<br><br>
+      建议下一步：把"is_watched 优先刷新"接入 update_whale_states.py 的发现逻辑，是性价比最高的单点改动——
+      不改变任何策略逻辑，只是让系统真正去看它自己说要重点关注的对象。
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  Polymarket 数据review报告 · 生成时间 2026-06-21 · 检查人：Claude Sonnet 4.6
+</footer>
+
+</body>
+</html>
