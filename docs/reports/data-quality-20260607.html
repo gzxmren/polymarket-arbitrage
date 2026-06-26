@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket 数据质量全景报告 — 2026-06-07</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f1117; color: #e1e4e8; line-height: 1.6; }
+  .header { background: linear-gradient(135deg, #1a1f2e 0%, #16213e 100%); padding: 40px 32px 30px; border-bottom: 2px solid #21262d; }
+  .header h1 { font-size: 26px; font-weight: 700; color: #58a6ff; margin-bottom: 8px; }
+  .header .subtitle { color: #8b949e; font-size: 14px; }
+  .header .ts { color: #3fb950; font-size: 13px; margin-top: 6px; font-family: monospace; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Score card */
+  .score-bar { display: flex; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+  .score-card { flex: 1; min-width: 180px; background: #161b22; border-radius: 12px; border: 1px solid #30363d; padding: 20px; text-align: center; }
+  .score-card .label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .score-card .value { font-size: 36px; font-weight: 700; margin: 8px 0 4px; }
+  .score-card .sub { font-size: 12px; color: #8b949e; }
+  .score-green { color: #3fb950; }
+  .score-yellow { color: #d29922; }
+  .score-red { color: #f85149; }
+
+  /* Overall score */
+  .overall-score { background: #161b22; border: 2px solid #21262d; border-radius: 16px; padding: 28px 32px; margin-bottom: 32px; display: flex; align-items: center; gap: 28px; }
+  .overall-score .big-score { font-size: 72px; font-weight: 800; line-height: 1; color: #d29922; }
+  .overall-score .big-label { font-size: 14px; color: #8b949e; }
+  .overall-score .verdict { font-size: 20px; font-weight: 600; color: #d29922; margin-bottom: 8px; }
+  .overall-score .desc { color: #8b949e; font-size: 14px; }
+
+  /* Section */
+  .section { margin-bottom: 32px; }
+  .section-title { font-size: 18px; font-weight: 600; color: #e1e4e8; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 8px; }
+  .section-title .icon { font-size: 20px; }
+
+  /* Two-col grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  /* Card */
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }
+  .card h3 { font-size: 14px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b949e; font-weight: 500; padding: 6px 10px; border-bottom: 1px solid #21262d; }
+  td { padding: 8px 10px; border-bottom: 1px solid #161b22; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1c2128; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: #1a4731; color: #3fb950; }
+  .badge-yellow { background: #3d2f0f; color: #d29922; }
+  .badge-red { background: #3d1414; color: #f85149; }
+  .badge-gray { background: #21262d; color: #8b949e; }
+  .badge-blue { background: #0d2044; color: #58a6ff; }
+
+  /* Issue list */
+  .issue-list { list-style: none; }
+  .issue-list li { padding: 14px 16px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid; }
+  .issue-crit { background: #1e0a0a; border-color: #f85149; }
+  .issue-warn { background: #1e1500; border-color: #d29922; }
+  .issue-ok { background: #0a1e0a; border-color: #3fb950; }
+  .issue-list li .title { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
+  .issue-list li .detail { color: #8b949e; font-size: 13px; }
+
+  /* Meter bar */
+  .meter { background: #21262d; border-radius: 4px; height: 8px; margin-top: 8px; overflow: hidden; }
+  .meter-fill { height: 100%; border-radius: 4px; }
+
+  /* Job status row */
+  .job-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #1c2128; font-size: 13px; }
+  .job-row:last-child { border-bottom: none; }
+  .job-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .dot-green { background: #3fb950; }
+  .dot-red { background: #f85149; }
+  .dot-gray { background: #8b949e; }
+  .dot-yellow { background: #d29922; }
+  .job-name { flex: 1; font-weight: 500; }
+  .job-meta { color: #8b949e; font-size: 12px; }
+
+  /* Insight box */
+  .insight { background: #0d1b2a; border: 1px solid #1f6feb; border-radius: 8px; padding: 14px 16px; margin-top: 12px; font-size: 13px; color: #58a6ff; }
+  .insight strong { color: #79c0ff; }
+
+  /* Summary table */
+  .summary-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 20px; font-size: 12px; }
+
+  footer { text-align: center; padding: 32px; color: #8b949e; font-size: 12px; border-top: 1px solid #21262d; margin-top: 40px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📊 Polymarket 数据质量全景报告</h1>
+  <div class="subtitle">全面扫描 · 数据库 + 调度层 + 鲸鱼画像 + 文件健康</div>
+  <div class="ts">生成时间：2026-06-07 ｜ 检查项：7大类 · 30+指标</div>
+</div>
+
+<div class="container">
+
+  <!-- Overall Score -->
+  <div class="overall-score">
+    <div class="big-score">68</div>
+    <div>
+      <div class="verdict">🟡 可运行，但信号链严重缺失</div>
+      <div class="desc">
+        采集层运转正常（数据库健康、鲸鱼每日更新），但从"数据"到"能赚钱"的核心链路断路：<br>
+        策略信号从未入库、套利记录为零、最大鲸鱼全部标记为"无活动"。<br>
+        现在就像一辆发动机完好、油箱有油，但变速箱脱档的车——转速有了，动力没传出去。
+      </div>
+    </div>
+  </div>
+
+  <!-- Score bar -->
+  <div class="score-bar">
+    <div class="score-card">
+      <div class="label">数据库健康</div>
+      <div class="value score-green">A</div>
+      <div class="sub">51.7MB · 死空间0.4%</div>
+    </div>
+    <div class="score-card">
+      <div class="label">数据新鲜度</div>
+      <div class="value score-green">B+</div>
+      <div class="sub">鲸鱼/仓位 今日已更新</div>
+    </div>
+    <div class="score-card">
+      <div class="label">信号追踪链</div>
+      <div class="value score-red">F</div>
+      <div class="sub">signals全空 · 无策略记录</div>
+    </div>
+    <div class="score-card">
+      <div class="label">调度稳定性</div>
+      <div class="value score-yellow">C+</div>
+      <div class="sub">backup持续失败 · 无告警</div>
+    </div>
+    <div class="score-card">
+      <div class="label">鲸鱼数据质量</div>
+      <div class="value score-yellow">B-</div>
+      <div class="sub">大鲸鱼活动标记异常</div>
+    </div>
+  </div>
+
+  <!-- Section 1: DB Health -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🗄️</span> 数据库整体健康</div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>核心指标</h3>
+        <table>
+          <tr><td>数据库大小</td><td><strong>51.7 MB</strong> <span class="badge badge-green">健康</span></td></tr>
+          <tr><td>死空间率</td><td><strong>0.4%</strong> <span class="badge badge-green">优秀</span></td></tr>
+          <tr><td>鲸鱼垃圾率</td><td><strong>0.0%</strong> <span class="badge badge-green">优秀</span></td></tr>
+          <tr><td>错标行数</td><td><strong>0 行</strong> <span class="badge badge-green">无误</span></td></tr>
+        </table>
+        <div class="insight">
+          <strong>背景：</strong>上个月VACUUM前数据库138MB、死空间47%。经过清理，现在磁盘利用率极高，这部分已完全修复。
+        </div>
+      </div>
+      <div class="card">
+        <h3>各表行数一览</h3>
+        <table>
+          <tr><th>表</th><th>行数</th><th>状态</th></tr>
+          <tr><td>whales（鲸鱼）</td><td>3,391</td><td><span class="badge badge-green">✅ 正常</span></td></tr>
+          <tr><td>positions（持仓）</td><td>11,668</td><td><span class="badge badge-green">✅ 正常</span></td></tr>
+          <tr><td>positions_archive</td><td>38,660</td><td><span class="badge badge-green">✅ 正常</span></td></tr>
+          <tr><td>changes（变动）</td><td>29,504</td><td><span class="badge badge-green">✅ 正常</span></td></tr>
+          <tr><td>daily_price_snapshots</td><td>46,648</td><td><span class="badge badge-green">✅ 正常</span></td></tr>
+          <tr><td>concentration_history</td><td>54,029</td><td><span class="badge badge-green">✅ 正常</span></td></tr>
+          <tr><td>market_title_map</td><td>46,656</td><td><span class="badge badge-green">✅ 正常</span></td></tr>
+          <tr><td>leaderboard_history</td><td>275</td><td><span class="badge badge-blue">📋 参考</span></td></tr>
+          <tr><td>leaderboard_whales</td><td>169</td><td><span class="badge badge-blue">📋 参考</span></td></tr>
+          <tr><td>alerts（告警）</td><td>50</td><td><span class="badge badge-yellow">⚠️ 全是旧的</span></td></tr>
+          <tr><td>signals（信号）</td><td><strong>0</strong></td><td><span class="badge badge-red">🔴 空表！</span></td></tr>
+          <tr><td>signal_results</td><td><strong>0</strong></td><td><span class="badge badge-red">🔴 空表！</span></td></tr>
+          <tr><td>whale_performance</td><td><strong>0</strong></td><td><span class="badge badge-red">🔴 空表！</span></td></tr>
+          <tr><td>pair_cost_arbitrage</td><td><strong>0</strong></td><td><span class="badge badge-red">🔴 空表！</span></td></tr>
+          <tr><td>quality_reports</td><td><strong>0</strong></td><td><span class="badge badge-red">🔴 空表！</span></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 2: Data Freshness -->
+  <div class="section">
+    <div class="section-title"><span class="icon">⏱️</span> 数据新鲜度检查</div>
+    <div class="card">
+      <table>
+        <tr><th>数据类型</th><th>最新记录时间</th><th>新鲜度</th><th>说明</th></tr>
+        <tr>
+          <td>🐋 鲸鱼数据</td>
+          <td>2026-06-07 18:07</td>
+          <td><span class="badge badge-green">今天 ✅</span></td>
+          <td>3,391个地址，30天内全部更新</td>
+        </tr>
+        <tr>
+          <td>📊 持仓快照</td>
+          <td>2026-06-07 10:07</td>
+          <td><span class="badge badge-green">今天 ✅</span></td>
+          <td>11,668条现有持仓</td>
+        </tr>
+        <tr>
+          <td>🔄 鲸鱼变动</td>
+          <td>2026-06-07 09:04</td>
+          <td><span class="badge badge-green">今天 ✅</span></td>
+          <td>7天内新增6,291条变动记录</td>
+        </tr>
+        <tr>
+          <td>📈 每日价格快照</td>
+          <td>2026-06-07</td>
+          <td><span class="badge badge-green">今天 ✅</span></td>
+          <td>46,648条覆盖1,949个活跃市场</td>
+        </tr>
+        <tr>
+          <td>🏆 排行榜数据</td>
+          <td>近期（每周一更新）</td>
+          <td><span class="badge badge-blue">正常 ✅</span></td>
+          <td>275条历史，169个跟踪钱包</td>
+        </tr>
+        <tr>
+          <td>🚨 系统告警</td>
+          <td>2026-04-22（46天前！）</td>
+          <td><span class="badge badge-yellow">⚠️ 停摆</span></td>
+          <td>50条全是旧告警，无新告警产生</td>
+        </tr>
+        <tr>
+          <td>🎯 信号记录</td>
+          <td>从未写入</td>
+          <td><span class="badge badge-red">🔴 断路</span></td>
+          <td>signals表0行，策略追踪完全失效</td>
+        </tr>
+        <tr>
+          <td>📊 套利记录</td>
+          <td>从未写入</td>
+          <td><span class="badge badge-red">🔴 断路</span></td>
+          <td>pair_cost_arbitrage 0行，DB写入链断路</td>
+        </tr>
+      </table>
+    </div>
+    <div class="insight" style="margin-top: 12px;">
+      <strong>通俗解释：</strong> 系统就像一个勤快的记者——每天都在采访（采集数据），但采访记录从来不发表（写入信号表）。告警系统46天没响，不是真的没事，而是"喇叭的线被拔了"。
+    </div>
+  </div>
+
+  <!-- Section 3: Whale Quality -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🐋</span> 鲸鱼数据质量深检</div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>按资金量分级</h3>
+        <table>
+          <tr><th>等级</th><th>钱包数</th><th>平均变动次数</th><th>标记为"有活动"</th></tr>
+          <tr>
+            <td>🐋 超级鲸(&gt;$1M)</td>
+            <td>2</td>
+            <td>90次</td>
+            <td><span class="badge badge-red">0个 🔴</span></td>
+          </tr>
+          <tr>
+            <td>🐬 大鲸($100k-1M)</td>
+            <td>10</td>
+            <td>40次</td>
+            <td><span class="badge badge-red">0个 🔴</span></td>
+          </tr>
+          <tr>
+            <td>🐟 中鲸($10k-100k)</td>
+            <td>87</td>
+            <td>23次</td>
+            <td><span class="badge badge-yellow">8个 🟡</span></td>
+          </tr>
+          <tr>
+            <td>🐠 小鲸($1k-10k)</td>
+            <td>510</td>
+            <td>8次</td>
+            <td><span class="badge badge-green">134个 ✅</span></td>
+          </tr>
+          <tr>
+            <td>🦐 微鲸(&lt;$1k)</td>
+            <td>2,820</td>
+            <td>1.5次</td>
+            <td><span class="badge badge-green">1,817个 ✅</span></td>
+          </tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3>⚠️ 大鲸"无活动"问题解析</h3>
+        <p style="font-size:13px; color:#8b949e; margin-bottom:12px;">
+          12个资产超过$100k的最大钱包，<strong style="color:#f85149">全部标记为 has_activity=0</strong>（无活动）。
+        </p>
+        <div style="font-size: 13px; color: #8b949e;">
+          <p><strong style="color:#e1e4e8">可能原因A（无害）：</strong>这些是"历史交易大户"——资金多但当前没有持仓快照，只有过去的volume记录。系统的逻辑是：当前没仓位 → has_activity=0。</p>
+          <br>
+          <p><strong style="color:#f85149">可能原因B（有问题）：</strong>has_activity更新逻辑只在sync-changes时触发，如果最大鲸鱼的变动记录没有被正确同步，就会被错误地标记为无活动。</p>
+          <br>
+          <p><strong style="color:#d29922">影响：</strong>回测策略（C0逆鲸鱼）主要追踪大资金鲸鱼，如果最大12个钱包数据失真，回测基础可信度存疑。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 4: Cron Jobs -->
+  <div class="section">
+    <div class="section-title"><span class="icon">⚙️</span> 调度任务运行状态</div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>✅ 正常运行中</h3>
+        <div class="job-row">
+          <div class="job-dot dot-green"></div>
+          <div class="job-name">monitor-lite 监控引擎</div>
+          <div class="job-meta">今日09:04 · 每小时</div>
+        </div>
+        <div class="job-row">
+          <div class="job-dot dot-green"></div>
+          <div class="job-name">sync-changes 变动同步</div>
+          <div class="job-meta">Jun 6 15:56 · 每90分钟</div>
+        </div>
+        <div class="job-row">
+          <div class="job-dot dot-green"></div>
+          <div class="job-name">check-polycop-signal 信号检查</div>
+          <div class="job-meta">Jun 6 12:03 · 每6小时</div>
+        </div>
+        <div class="job-row">
+          <div class="job-dot dot-green"></div>
+          <div class="job-name">update-whale-states 鲸鱼状态</div>
+          <div class="job-meta">Jun 6 12:03 · 每6小时</div>
+        </div>
+        <div class="job-row">
+          <div class="job-dot dot-green"></div>
+          <div class="job-name">daily-price-snapshot 价格快照</div>
+          <div class="job-meta">Jun 6 16:00 · 每日16点</div>
+        </div>
+        <div class="job-row">
+          <div class="job-dot dot-green"></div>
+          <div class="job-name">polymarket-cleanup 数据清理</div>
+          <div class="job-meta">Jun 6 03:30 · 每日03:30</div>
+        </div>
+        <div class="job-row">
+          <div class="job-dot dot-green"></div>
+          <div class="job-name">data-quality-check 质检</div>
+          <div class="job-meta">Jun 6 08:03 · 每日08:00</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>🚨 有问题 / 未运行</h3>
+        <div class="job-row">
+          <div class="job-dot dot-red"></div>
+          <div class="job-name">backup-configs 配置备份</div>
+          <div class="job-meta">连续失败 · Jun 5-6全部超时</div>
+        </div>
+        <div class="job-row">
+          <div class="job-dot dot-gray"></div>
+          <div class="job-name">monitor-v2 完整监控引擎</div>
+          <div class="job-meta">❌ 已禁用 · 已停6周</div>
+        </div>
+        <div class="job-row">
+          <div class="job-dot dot-yellow"></div>
+          <div class="job-name">weekly-pzero 周复验</div>
+          <div class="job-meta">在系统crontab，非OpenClaw管理</div>
+        </div>
+        <div class="job-row">
+          <div class="job-dot dot-yellow"></div>
+          <div class="job-name">leaderboard 排行榜同步</div>
+          <div class="job-meta">在系统crontab，无推送无告警</div>
+        </div>
+        <br>
+        <div style="font-size: 12px; color: #8b949e; background: #1e0a0a; border-radius: 6px; padding: 10px;">
+          <strong style="color: #f85149">backup-configs 失败详情：</strong><br>
+          Jun 5: 4次连续超时（03:02, 03:04, 03:08, 03:15）<br>
+          Jun 6: 1次超时（03:02）<br>
+          失败原因：<code>cron: job execution timed out (last phase: model-call-started)</code><br>
+          推测：备份脚本调用了AI模型接口，等待超时
+        </div>
+      </div>
+    </div>
+
+    <!-- Monitor-lite behavior note -->
+    <div class="insight" style="margin-top: 16px;">
+      <strong>⚠️ 监控引擎的"北京白天盲区"问题：</strong>
+      monitor-lite 设定为只在美东时间 8:00-22:00（交易时段）完整运行。对应北京时间约为 <strong>20:00-10:00（次日）</strong>。
+      也就是说：北京时间每天 <strong>10:00-20:00（白天工作时间）</strong>，监控引擎会跳过执行！
+      这对一个中国用户来说是个盲区。Polymarket 本身是24小时交易，所以这个"交易时段"限制存在疑问。
+    </div>
+  </div>
+
+  <!-- Section 5: File Health -->
+  <div class="section">
+    <div class="section-title"><span class="icon">📁</span> 07-data 文件目录健康</div>
+    <div class="card">
+      <table>
+        <tr><th>文件年龄</th><th>文件数量</th><th>占用空间</th><th>状态</th></tr>
+        <tr>
+          <td>今天（今日产生）</td>
+          <td>142 个</td>
+          <td>18.7 MB</td>
+          <td><span class="badge badge-green">✅ 活跃采集中</span></td>
+        </tr>
+        <tr>
+          <td>近7天</td>
+          <td>93 个</td>
+          <td>65.6 MB</td>
+          <td><span class="badge badge-green">✅ 正常</span></td>
+        </tr>
+        <tr>
+          <td>近30天</td>
+          <td>369 个</td>
+          <td>259.8 MB</td>
+          <td><span class="badge badge-yellow">🟡 较多</span></td>
+        </tr>
+        <tr>
+          <td><strong>超过30天（旧数据）</strong></td>
+          <td><strong>1,960 个</strong></td>
+          <td><strong>177.7 MB</strong></td>
+          <td><span class="badge badge-red">🔴 积压，待清理</span></td>
+        </tr>
+      </table>
+      <div style="margin-top: 14px; font-size: 13px; color: #8b949e;">
+        <strong style="color: #d29922">问题：</strong>1,960个超过30天的JSON文件仍在磁盘上，占用近178MB。主要是 <code>monitor_report_*.json</code>（最大单文件1.4MB）。
+        清理脚本（polymarket-cleanup）已在运行，但没有针对这类旧报告文件的规则。
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 6: Critical Issues Summary -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🚨</span> 问题汇总与优先级</div>
+    <ul class="issue-list">
+
+      <li class="issue-crit">
+        <div class="title">🔴 P0 · 信号追踪链完全断路（signals/signal_results/whale_performance 全空）</div>
+        <div class="detail">
+          <strong>白话解释：</strong>系统发现了交易机会、推送了Telegram通知，但从来没有记录"这次信号最终对不对"。就像做了100次预测但从来不对答案，根本不知道策略有没有效。<br>
+          <strong>根本原因：</strong>monitor-v2已禁用6周，它是唯一会写入signals表的模块。<br>
+          <strong>影响：</strong>C0逆鲸鱼策略的OOS积累完全停滞，test_n卡在17（需≥40才能可靠判断）。
+        </div>
+      </li>
+
+      <li class="issue-crit">
+        <div class="title">🔴 P0 · pair_cost_arbitrage表为空 · 套利信号没有持久化</div>
+        <div class="detail">
+          <strong>白话解释：</strong>monitor-lite每小时扫描市场，发现套利机会后推送Telegram，但从来不写入数据库。结果：历史上发现了多少套利机会？什么时候多？什么市场多？完全不知道。<br>
+          <strong>影响：</strong>无法回溯分析套利策略的历史表现。
+        </div>
+      </li>
+
+      <li class="issue-crit">
+        <div class="title">🔴 P0 · backup-configs 连续失败（Jun 5-6，共5次超时）</div>
+        <div class="detail">
+          <strong>白话解释：</strong>每天凌晨3点的配置备份任务从Jun 5开始就超时了，而且没有任何告警通知。如果系统配置被意外修改或丢失，没有最新备份。<br>
+          <strong>失败原因：</strong><code>model-call-started</code> 阶段超时——备份任务调用AI模型时卡住了。<br>
+          <strong>上次成功：</strong>Jun 3 03:00（4天前）。
+        </div>
+      </li>
+
+      <li class="issue-warn">
+        <div class="title">🟡 P1 · 最大12个鲸鱼（>$100k）全部标记为"无活动"</div>
+        <div class="detail">
+          <strong>白话解释：</strong>系统认为资金最多的12个大户都"没在活动"，但它们有90次平均交易记录。这可能是正常的（只是当前没持仓），也可能是数据更新逻辑有bug。<br>
+          <strong>影响：</strong>如果是bug，C0策略的信号来源质量存疑——大鲸鱼的动作可能被忽略了。
+        </div>
+      </li>
+
+      <li class="issue-warn">
+        <div class="title">🟡 P1 · 告警系统停摆（46天无新告警）</div>
+        <div class="detail">
+          <strong>白话解释：</strong>50条旧告警都是46天前的，之后再没有产生过一条新告警。这不太可能是因为真的"万事顺利"——更可能是告警生成逻辑没被触发。<br>
+          <strong>影响：</strong>任何新的异常（数据错误、信号异常）都不会报警。
+        </div>
+      </li>
+
+      <li class="issue-warn">
+        <div class="title">🟡 P1 · 北京白天监控盲区（10:00-20:00 CST跳过执行）</div>
+        <div class="detail">
+          <strong>白话解释：</strong>monitor-lite设定为只在美东交易时间运行，导致北京时间白天10点到晚上8点之间，监控引擎每小时虽然启动但什么都不做。Polymarket是24小时平台，这个限制是否合理需要确认。
+        </div>
+      </li>
+
+      <li class="issue-warn">
+        <div class="title">🟡 P2 · 07-data旧文件积压（1,960个文件，178MB，超30天未清理）</div>
+        <div class="detail">
+          <strong>白话解释：</strong>旧的监控报告JSON文件堆积了近两个月，清理脚本没有针对这类文件的规则。不影响准确性，但浪费磁盘空间。
+        </div>
+      </li>
+
+      <li class="issue-ok">
+        <div class="title">✅ 已解决 · 数据库核心健康良好</div>
+        <div class="detail">DB大小51.7MB（原138MB）、死空间0.4%（原47%）、垃圾行0.0%（原98%误判）——上一轮修复成果保持稳固。</div>
+      </li>
+
+      <li class="issue-ok">
+        <div class="title">✅ 已解决 · 主要采集管道正常运转</div>
+        <div class="detail">鲸鱼数据、持仓、变动、价格快照均为今日最新，每日/每小时任务按计划执行。数据采集层健康。</div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Section 7: What to fix -->
+  <div class="section">
+    <div class="section-title"><span class="icon">🎯</span> 与P0修复计划的对应关系</div>
+    <div class="card">
+      <p style="font-size: 13px; color: #8b949e; margin-bottom: 14px;">
+        上次制定的调度层P0计划与本次数据质量发现完全吻合，印证了修复的必要性：
+      </p>
+      <table>
+        <tr><th>计划任务</th><th>数据质量发现</th><th>紧迫性</th></tr>
+        <tr>
+          <td>任务1：修复backup-configs失败</td>
+          <td>Jun 5-6连续5次超时失败，4天无成功备份</td>
+          <td><span class="badge badge-red">立即</span></td>
+        </tr>
+        <tr>
+          <td>任务2：重新接通monitor-v2 DB写入</td>
+          <td>signals/pair_cost_arbitrage全空，信号链断路</td>
+          <td><span class="badge badge-red">立即</span></td>
+        </tr>
+        <tr>
+          <td>任务3：核心任务加失败告警</td>
+          <td>46天无新告警，backup失败未通知</td>
+          <td><span class="badge badge-yellow">本周</span></td>
+        </tr>
+        <tr>
+          <td>任务4：weekly-pzero迁移OpenClaw</td>
+          <td>在系统crontab，无推送无监控</td>
+          <td><span class="badge badge-yellow">本周</span></td>
+        </tr>
+        <tr>
+          <td>任务5：信号追踪闭环</td>
+          <td>signal_results/whale_performance全空，无法判断策略效果</td>
+          <td><span class="badge badge-yellow">本周</span></td>
+        </tr>
+        <tr>
+          <td>任务6：旧文件轮转</td>
+          <td>1,960个30天+旧文件，178MB</td>
+          <td><span class="badge badge-gray">P2</span></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- Conclusion -->
+  <div style="background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; text-align: center;">
+    <div style="font-size: 18px; font-weight: 600; color: #e1e4e8; margin-bottom: 8px;">结论</div>
+    <div style="color: #8b949e; font-size: 14px; max-width: 600px; margin: 0 auto; line-height: 1.8;">
+      系统的<strong style="color: #3fb950">数据采集层（地基）健康</strong>，每天按时采集鲸鱼/价格/变动数据。<br>
+      但系统的<strong style="color: #f85149">信号追踪层（上层建筑）完全缺失</strong>——采集到的数据没有转化为可验证的策略记录。<br><br>
+      今天P0修复的核心目标：<strong style="color: #58a6ff">接通信号链 + 修复备份 + 给核心任务加上"哨兵"</strong>。<br>
+      完成后，系统才能真正开始积累OOS数据，为未来实盘做准备。
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  Polymarket 数据质量报告 · 生成时间 2026-06-07 · 检查人：Claude Sonnet 4.6
+</footer>
+
+</body>
+</html>
