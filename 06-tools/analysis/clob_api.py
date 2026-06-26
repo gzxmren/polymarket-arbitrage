@@ -15,6 +15,7 @@ import ssl
 import sys
 from urllib.request import urlopen, Request
 from urllib.error import URLError
+from http.client import IncompleteRead
 from typing import Dict, List, Optional
 
 CLOB_API = "https://clob.polymarket.com"
@@ -33,7 +34,7 @@ def fetch_clob_api(endpoint: str) -> Optional[Dict]:
         req = Request(url, headers={"User-Agent": "PolymarketTrader/2.0"})
         with urlopen(req, timeout=30, context=ssl_context) as resp:
             return json.loads(resp.read().decode())
-    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+    except (URLError, TimeoutError, OSError, IncompleteRead, json.JSONDecodeError) as e:
         print(f"[clob_api] CLOB request failed: {url} — {e}", file=sys.stderr)
         return None
 
@@ -45,7 +46,7 @@ def fetch_gamma_api(endpoint: str) -> Optional[Dict]:
         req = Request(url, headers={"User-Agent": "PolymarketTrader/2.0"})
         with urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode())
-    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+    except (URLError, TimeoutError, OSError, IncompleteRead, json.JSONDecodeError) as e:
         print(f"[clob_api] Gamma request failed: {url} — {e}", file=sys.stderr)
         return None
 

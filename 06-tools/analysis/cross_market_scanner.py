@@ -15,6 +15,7 @@ import ssl
 import time
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+from http.client import IncompleteRead
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -52,7 +53,7 @@ def fetch_api(url: str, headers: dict = None, retries: int = 3) -> dict | list |
                 time.sleep(1)
             else:
                 return None
-        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        except (URLError, TimeoutError, OSError, IncompleteRead, json.JSONDecodeError) as e:
             last_error = e
             if attempt < retries - 1:
                 print(f"Error fetching {url}: {e}, retrying... (attempt {attempt+1}/{retries})", file=sys.stderr)

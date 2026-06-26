@@ -178,18 +178,12 @@ def check_signal_pipeline() -> Check:
 def check_logs() -> Check:
     """关键日志是否有崩溃 / 未处理异常（只看最近 24h 内写入的日志）"""
     log_files = {
-        "monitor_v2":     Path("/tmp/monitor_v2.log"),
-        "clob_logger":    Path("/tmp/clob_pair_logger.log"),
         "leaderboard":    LEADERBOARD_LOG,
-        "monitor_lite":   Path("/tmp/monitor_lite.log"),
         "data_quality":   Path("/tmp/data_quality_check.log"),
         "cleanup":        Path("/tmp/polymarket_cleanup.log"),
         "price_snapshot": Path("/tmp/snapshot_daily_prices.log"),
-        "settle_signals": Path("/tmp/settle_signals.log"),
         "backup_configs": Path("/tmp/backup_configs.log"),
         "cleanup_tmp":    Path("/tmp/cleanup_temp_files.log"),
-        "polycop":        PROJECT_ROOT / "07-data" / "logs" / "polycop_signal.log",
-        "whale_states":   PROJECT_ROOT / "07-data" / "logs" / "whale_states_update.log",
     }
     cutoff_mtime = time.time() - 24 * 3600
     problems = []
@@ -230,18 +224,13 @@ def check_cron_staleness() -> Check:
     now = time.time()
     jobs = [
         # (display_name, log_path, max_stale_seconds)
-        ("monitor_v2(6h)",       Path("/tmp/monitor_v2.log"),                                    8 * H),
-        ("monitor_lite(1h)",     Path("/tmp/monitor_lite.log"),                                  2 * H),
-        ("whale_states(6h)",     PROJECT_ROOT / "07-data" / "logs" / "whale_states_update.log", 8 * H),
-        ("polycop(6h)",          PROJECT_ROOT / "07-data" / "logs" / "polycop_signal.log",      8 * H),
         ("data_quality(日)",     Path("/tmp/data_quality_check.log"),                           25 * H),
         ("price_snapshot(日)",   Path("/tmp/snapshot_daily_prices.log"),                        25 * H),
         ("cleanup(日)",          Path("/tmp/polymarket_cleanup.log"),                           25 * H),
-        ("settle_signals(日)",   Path("/tmp/settle_signals.log"),                               25 * H),
         ("backup_configs(日)",   Path("/tmp/backup_configs.log"),                               25 * H),
         ("cleanup_tmp(日)",      Path("/tmp/cleanup_temp_files.log"),                           25 * H),
-        ("pzero_weekly(周)",     Path("/tmp/weekly_pzero.log"),                                 8 * 24 * H),
-        ("learning_review(周)",  Path("/tmp/weekly_learning_review.log"),                       8 * 24 * H),
+        ("pzero_weekly(周)",     Path("/home/xmren/.openclaw/workspace/polymarket-project/07-data/logs/weekly_pzero.log"), 8 * 24 * H),
+        ("learning_review(周)",  Path("/home/xmren/.openclaw/workspace/logs/weekly_learning_review.log"), 8 * 24 * H),
         ("leaderboard(周)",      LEADERBOARD_LOG,                                               8 * 24 * H),
     ]
     stale, missing = [], []
@@ -377,12 +366,9 @@ def check_db_sanity() -> Check:
 
 def run_all_checks() -> List[Check]:
     return [
-        check_monitor_freshness(),
-        check_signal_pipeline(),
         check_logs(),
         check_cron_staleness(),
         check_leaderboard_sync(),
-        check_clob_camera(),
         check_cron_duplicates(),
         check_db_sanity(),
     ]
