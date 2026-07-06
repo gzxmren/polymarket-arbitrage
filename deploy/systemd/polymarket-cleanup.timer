@@ -1,0 +1,9 @@
+[Unit]
+Description=Run Polymarket cleanup daily at 08:10, catch up after suspend/boot
+
+[Timer]
+OnCalendar=*-*-* 08:10:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

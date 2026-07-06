@@ -1,0 +1,10 @@
+[Unit]
+Description=Polymarket cleanup stale data
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project
+ExecStart=/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/06-tools/monitoring/cleanup_stale_data.py
+StandardOutput=append:/tmp/polymarket_cleanup.log
+StandardError=append:/tmp/polymarket_cleanup.log

@@ -1,0 +1,11 @@
+[Unit]
+Description=Polymarket H6 slippage probe (read-only measurement, no orders)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project
+Environment="PYTHONPATH=/home/xmren/.openclaw/workspace/polymarket-project/06-tools/monitoring:/home/xmren/.openclaw/workspace/polymarket-project/06-tools/analysis"
+ExecStart=/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/06-tools/monitoring/h6_slippage_probe.py
+StandardOutput=append:/home/xmren/.openclaw/workspace/polymarket-project/07-data/logs/slippage_probe.log
+StandardError=append:/home/xmren/.openclaw/workspace/polymarket-project/07-data/logs/slippage_probe.log

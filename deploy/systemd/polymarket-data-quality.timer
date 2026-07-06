@@ -1,0 +1,9 @@
+[Unit]
+Description=Run Polymarket data quality check daily at 08:30, catch up after suspend/boot
+
+[Timer]
+OnCalendar=*-*-* 08:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

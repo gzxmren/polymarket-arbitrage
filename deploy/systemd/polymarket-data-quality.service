@@ -1,0 +1,10 @@
+[Unit]
+Description=Polymarket data quality check
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project
+ExecStart=/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/06-tools/monitoring/data_quality_check.py
+StandardOutput=append:/tmp/data_quality_check.log
+StandardError=append:/tmp/data_quality_check.log

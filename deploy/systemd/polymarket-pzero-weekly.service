@@ -1,0 +1,10 @@
+[Unit]
+Description=Polymarket P0-B pzero OOS weekly re-verification
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project
+ExecStart=/usr/bin/bash /home/xmren/.openclaw/workspace/polymarket-project/scripts/weekly_pzero.sh
+StandardOutput=append:/home/xmren/.openclaw/workspace/polymarket-project/07-data/logs/weekly_pzero.log
+StandardError=append:/home/xmren/.openclaw/workspace/polymarket-project/07-data/logs/weekly_pzero.log
