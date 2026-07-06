@@ -1,0 +1,469 @@
+<style>
+  :root {
+    --bg: #ECEFF3;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --ink: #16202B;
+    --ink-soft: #4A5763;
+    --ink-faint: #78848F;
+    --line: #D4DBE2;
+    --accent: #B0740F;
+    --accent-tint: #F3E9D6;
+    --good: #2E7A57;
+    --good-tint: #E1EFE7;
+    --bad: #B24C2C;
+    --bad-tint: #F3E3DC;
+    --serif: "Charter", "Bitstream Charter", "Iowan Old Style", Georgia, "Times New Roman", serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --measure: 66ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F141A;
+      --surface: #161E27;
+      --surface-2: #1B242E;
+      --ink: #DCE3EB;
+      --ink-soft: #98A5B2;
+      --ink-faint: #6C7883;
+      --line: #28323C;
+      --accent: #E2A64C;
+      --accent-tint: #2A2418;
+      --good: #5DBB8E;
+      --good-tint: #16271F;
+      --bad: #DA7A55;
+      --bad-tint: #2A1B14;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ECEFF3; --surface: #FFFFFF; --surface-2: #F4F6F8;
+    --ink: #16202B; --ink-soft: #4A5763; --ink-faint: #78848F; --line: #D4DBE2;
+    --accent: #B0740F; --accent-tint: #F3E9D6;
+    --good: #2E7A57; --good-tint: #E1EFE7; --bad: #B24C2C; --bad-tint: #F3E3DC;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F141A; --surface: #161E27; --surface-2: #1B242E;
+    --ink: #DCE3EB; --ink-soft: #98A5B2; --ink-faint: #6C7883; --line: #28323C;
+    --accent: #E2A64C; --accent-tint: #2A2418;
+    --good: #5DBB8E; --good-tint: #16271F; --bad: #DA7A55; --bad-tint: #2A1B14;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.125rem;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(1.5rem, 5vw, 5rem) 1.25rem 6rem;
+  }
+  .col { max-width: var(--measure); margin: 0 auto; }
+
+  .col > * + * { margin-top: 1.15rem; }
+  p { margin: 0; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  header.hero { margin-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5.4vw, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0.9rem 0 0;
+  }
+  .standfirst {
+    font-size: clamp(1.2rem, 2.4vw, 1.45rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-top: 1.4rem;
+    text-wrap: pretty;
+  }
+  .byline {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-top: 1.8rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+  }
+  .byline b { color: var(--ink-soft); font-weight: 500; }
+
+  section { margin-top: clamp(3rem, 7vw, 4.5rem); }
+  .sec-mark {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex; align-items: center; gap: 0.7rem;
+    margin-bottom: 1.1rem;
+  }
+  .sec-mark .n { color: var(--accent); font-weight: 600; }
+  .sec-mark .bar { flex: 1; height: 1px; background: var(--line); }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(1.55rem, 3.4vw, 2.15rem);
+    line-height: 1.16;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin: 1.8rem 0 0.4rem;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+
+  blockquote {
+    margin: 2rem 0;
+    padding: 0.2rem 0 0.2rem 1.5rem;
+    border-left: 3px solid var(--accent);
+    font-size: clamp(1.3rem, 2.8vw, 1.6rem);
+    line-height: 1.4;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  aside.note {
+    margin: 2rem 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.5rem 1.6rem;
+  }
+  aside.note .tag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.7rem;
+  }
+  aside.note p { font-size: 1.02rem; line-height: 1.62; color: var(--ink-soft); }
+  aside.note p + p { margin-top: 0.7rem; }
+  aside.note b { color: var(--ink); }
+
+  figure { margin: 2rem 0; }
+  figure .cap {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    margin-top: 0.7rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .card .card-hd {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .tbl-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th, td {
+    padding: 0.6rem 1.1rem;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.hl td { background: var(--accent-tint); }
+  td.pos { color: var(--good); }
+  td.neg { color: var(--bad); }
+  .foot td {
+    font-weight: 700;
+    border-top: 2px solid var(--line);
+    color: var(--ink);
+  }
+
+  .bars { display: flex; flex-direction: column; gap: 0.55rem; padding: 1.1rem; }
+  .bar-row { display: grid; grid-template-columns: 9.5rem 1fr auto; align-items: center; gap: 0.8rem; }
+  .bar-row .lbl { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-soft); }
+  .bar-track { height: 0.7rem; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; }
+  .bar-row .val { font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--ink); min-width: 5.5rem; text-align: right; }
+
+  .verdict {
+    display: inline-flex; align-items: baseline; gap: 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0.9rem;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .verdict.fail { color: var(--bad); background: var(--bad-tint); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .verdict.pass { color: var(--good); background: var(--good-tint); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
+
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; margin: 2rem 0; }
+  .kv > div { background: var(--surface); padding: 1rem 1.1rem; }
+  .kv .k { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+  .kv .v { font-family: var(--serif); font-size: 1.5rem; font-weight: 700; margin-top: 0.3rem; font-variant-numeric: tabular-nums; }
+  .kv .v.pos { color: var(--good); }
+  .kv .v.neg { color: var(--bad); }
+
+  hr.end { border: none; border-top: 1px solid var(--line); margin: 3.5rem 0 1.5rem; }
+  .endnote { font-family: var(--mono); font-size: 0.76rem; line-height: 1.7; color: var(--ink-faint); }
+  .endnote b { color: var(--ink-soft); font-weight: 500; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(12px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="col">
+
+    <header class="hero">
+      <p class="eyebrow">Field Notes · Quant Research</p>
+      <h1>I set out to make my strategy more profitable — and disproved my own good idea</h1>
+      <p class="standfirst">Half a day's investigation into prediction markets, slippage, and honesty — and why disproving yourself is often worth more than confirming yourself.</p>
+      <p class="byline">
+        <span><b>Subject</b> Polymarket · H6 contrarian strategy</span>
+        <span><b>Date</b> 2026-07-07</span>
+        <span><b>Read</b> ~12 min</span>
+      </p>
+    </header>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">00</span><span>Start</span><span class="bar"></span></div>
+      <h2>A thin — but possibly real — edge</h2>
+      <p>Some background first. We have a strategy called <strong>H6</strong>, running on the prediction market Polymarket. Its logic in one line: <strong>pick obscure, soon-to-resolve small markets whose outcome isn't yet locked in, and bet against the whales</strong> — because big players tend to overpay on impulse, pushing the price too far, after which it reverts.</p>
+      <p>After several weeks of out-of-sample validation, it showed a <em>positive, seemingly reproducible</em> edge. But a painfully thin one: after trading costs, roughly <strong>+1.5%</strong> per dollar. The direction is right, yet that cushion is uncomfortably slim.</p>
+      <p>Which led to the most natural thought in the world — <strong>can we tune it to make more?</strong></p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">01</span><span>The question</span><span class="bar"></span></div>
+      <h2>From 1.5% to 4.5% — where are those 3 points hiding?</h2>
+      <p>I swept the cost assumption from optimistic to conservative, to see how sensitive the profit is. One table said it all:</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">H6 net return vs slippage assumption · at resolution · "drop-top" = net after removing the single biggest trade</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>Cost preset</th><th>Slippage</th><th>Headline net</th><th>Drop-top net</th></tr></thead>
+            <tbody>
+              <tr><td>zero (ceiling)</td><td>0%</td><td class="pos">+6.00%</td><td class="pos">+4.92%</td></tr>
+              <tr><td>optimistic</td><td>0.2%</td><td class="pos">+5.76%</td><td class="pos">+3.88%</td></tr>
+              <tr><td>base</td><td>0.5%</td><td class="pos">+5.24%</td><td class="pos">+2.64%</td></tr>
+              <tr class="hl"><td>conservative (realistic)</td><td>1.5%</td><td class="pos">+4.30%</td><td class="pos">+1.48%</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">Push slippage from 0 to 1.5% and the reproducible edge grinds from +4.9% down to +1.5%.</figcaption>
+      </figure>
+
+      <p>The key finding: <strong>most of that 3-point gap is slippage, not strategy.</strong> Slippage alone eats about two-thirds of the profit. In other words — if you want to earn more, don't rack your brain tuning the strategy; first pin down something we'd actually just been guessing at:</p>
+      <blockquote>What is our real slippage — 0.5%, 1.5%, or worse?</blockquote>
+      <p>That 1.5% in the backtest was a made-up number. To move forward, we had to <strong>measure it</strong>, not keep guessing.</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">02</span><span>Concept</span><span class="bar"></span></div>
+      <h2>What is slippage? Explained through buying vegetables</h2>
+      <p>Don't let the jargon scare you. <strong>Slippage = the gap between the price you had in mind and the price you actually pay.</strong></p>
+      <aside class="note">
+        <span class="tag">Analogy · The market stall</span>
+        <p>You want to buy tomatoes at the "going rate." At a <b>busy stall</b> — rows of sellers undercutting each other, plenty of stock — you get them at a fair price, paying barely a cent extra.</p>
+        <p>But go buy some <b>obscure, about-to-spoil odds-and-ends</b> — where a single seller guards the whole corner — and he names whatever price he likes. Want a little more? He marks it up on the spot. What you actually pay is well above the "going rate."</p>
+        <p>That extra is slippage. <b>The quieter the market, and the more urgently you buy, the bigger it gets.</b></p>
+      </aside>
+      <p>Prediction markets are the same. Some markets are busy on both sides with prices held tight — you can trade with almost no loss; others are half-dead, and a single order sweeps the thin resting quotes and immediately jolts the price. The difference is enormous — and we'd never actually measured it.</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">03</span><span>The tool</span><span class="bar"></span></div>
+      <h2>Building a ruler: the slippage probe</h2>
+      <p>Because the system is read-only and places no real orders, "practising execution" here doesn't mean risking real money. It means <strong>building an instrument to measure real execution cost</strong>: in the kind of markets the strategy would trade, pull the live order book and compute what a $200 order would actually pay, and how much it slips.</p>
+      <p>Building the ruler hit two traps, both worth recording — because had either gone unnoticed, every measured number would have been wrong:</p>
+      <h3>Trap 1: the book is sorted "backwards"</h3>
+      <p>The exchange returns the sell-order list sorted <em>high to low</em>, so the best price (lowest ask) sits at the <em>end</em> of the array. An existing helper naively took the first element, mistaking the worst price for the best — which is why it kept reporting absurd 196% spreads. Once caught, I switched to robustly taking the true best price and walking the book from the lowest ask up.</p>
+      <h3>Trap 2: dead markets snuck in</h3>
+      <p>The first pass set the volume floor too loose, so a swarm of "weather micro-markets settling that same day" crept in — extremely thin, no real trading — dragging the median slippage to a ridiculous 92%. The live strategy would never touch them. Raise the floor to markets with genuine activity, and the picture snapped back to sanity.</p>
+      <p>Ruler calibrated, the instrument now runs on a timer every 4 hours, quietly accumulating the real slippage distribution in the background.</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">04</span><span>Finding</span><span class="bar"></span></div>
+      <h2>So what's the relationship between slippage and market category?</h2>
+      <p>The first batch of data came back with a startlingly clean pattern. First, median slippage by market category:</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">Median slippage on a $200 buy, by market type (shorter is better)</div>
+          <div class="bars">
+            <div class="bar-row"><span class="lbl">Sports / esports</span><span class="bar-track"><span class="bar-fill" style="width:7%;background:var(--good)"></span></span><span class="val">159 bps</span></div>
+            <div class="bar-row"><span class="lbl">Other events</span><span class="bar-track"><span class="bar-fill" style="width:9%;background:var(--good)"></span></span><span class="val">185 bps</span></div>
+            <div class="bar-row"><span class="lbl">Weather buckets</span><span class="bar-track"><span class="bar-fill" style="width:26%;background:var(--accent)"></span></span><span class="val">551 bps</span></div>
+            <div class="bar-row"><span class="lbl">Politics / macro</span><span class="bar-track"><span class="bar-fill" style="width:37%;background:var(--accent)"></span></span><span class="val">806 bps</span></div>
+            <div class="bar-row"><span class="lbl">Crypto up/down · strike</span><span class="bar-track"><span class="bar-fill" style="width:100%;background:var(--bad)"></span></span><span class="val">2155 bps</span></div>
+          </div>
+        </div>
+        <figcaption class="cap">Slippage on crypto "price-ladder" markets is a dozen times that of sports.</figcaption>
+      </figure>
+
+      <p>But "category" is <strong>not</strong> the real cause — it's just a proxy. The actual causal chain runs like this:</p>
+      <blockquote>Category → price level &amp; book structure → bid-ask spread → slippage</blockquote>
+      <p>The evidence is hard: in the data, <strong>the correlation between spread and slippage is 0.93</strong> — how wide the spread is basically determines how big the slippage is. And what sets the spread? Two things:</p>
+      <p><strong>One: how far the price is from 0.5.</strong> The minimum price increment is one cent. On a market priced at 0.45, a one-cent tick is just 2%; on one priced at 0.02, a one-cent tick is 50%. So <em>the closer to the edge (near 0 or 1), the more the spread blows up in percentage terms</em>. Crypto's median price is only 0.09, precisely because it's full of deep out-of-the-money, lottery-like contracts ("will it reach some far-off price").</p>
+      <p><strong>Two: whether the money is concentrated or spread thin.</strong> Sports handicap lines are engineered by market makers to sit near 0.5 — two-sided, active, tight spreads; whereas the "ladder" markets in crypto and weather smear liquidity across a dozen buckets, each thin and near the edge.</p>
+      <aside class="note">
+        <span class="tag">Counterintuitive · Don't be fooled by "busy"</span>
+        <p>Crypto markets actually have daily volume on par with sports, sometimes higher — <b>yet slippage a dozen times worse</b>. Because their "busyness" is scattered across a long row of prices nobody wants.</p>
+        <p>So to judge whether a market is tradeable, <b>don't look at how busy it is — look at whether the specific price you want to buy has anyone there to trade with.</b></p>
+      </aside>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">05</span><span>The idea</span><span class="bar"></span></div>
+      <h2>A seemingly brilliant improvement</h2>
+      <p>Following this pattern, an improvement leapt out on its own — and it looked <em>economically motivated, not mere parameter-fiddling</em>:</p>
+      <blockquote>Add a price floor to the strategy; trade only balanced markets, and avoid the slippage black hole of edge-priced ones.</blockquote>
+      <p>I sliced the historical trades by entry price to test the idea. At the time, the data looked like a perfect score:</p>
+
+      <div class="kv">
+        <div><div class="k">Edge band &lt;0.20 · drop-top</div><div class="v neg">−27%</div></div>
+        <div><div class="k">Balanced 0.2–0.85 · drop-top</div><div class="v pos">+35.5%</div></div>
+        <div><div class="k">Edge band win rate</div><div class="v">2%</div></div>
+      </div>
+
+      <p>The edge band isn't just a slippage black hole — even its "gross profit" is fake: a 2% win rate, propped up by a handful of jackpot lottery tickets into a falsely high average that <strong>turns negative once you strip out the luck</strong>. The balanced band, by contrast, has a steady edge spread across many trades — a drop-top of +35.5%. Isn't this a triple win? Shed the priciest cost, shed the fakest return, keep the real thing.</p>
+      <p>I nearly believed it. But this project has one iron rule that stopped me.</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">06</span><span>Discipline</span><span class="bar"></span></div>
+      <h2>Not so fast — "out-of-sample exams" and pre-registration</h2>
+      <p>That +35.5% was an <strong>in-sample</strong> finding — I took <em>all the history I already knew</em> and looked back to find a pattern. The problem: you're inventing the rule <em>after</em> seeing the answers, so it's guaranteed to look good on this batch of data — which says nothing about whether it holds on fresh data.</p>
+      <aside class="note">
+        <span class="tag">Analogy · The exam</span>
+        <p><b>In-sample</b>: summarising a "rule" by looking at draws that have already happened — hindsight; you can spin it any way you like.</p>
+        <p><b>Out-of-sample (OOS)</b>: taking that rule and using it to predict draws you <b>haven't seen yet</b>, to check if it still works. Only if it still makes money on unseen data does it count.</p>
+      </aside>
+      <p>So before touching the test, I wrote a <strong>pre-registration note</strong>: nailing down the rule (price floor 0.20), the metric, and the <em>pass/fail line</em> in advance. After the run, you may only rule against it — no changing the criteria afterward. That way the result counts either way, and any reviewer can see exactly what was wagered and whether anyone cheated.</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">07</span><span>Reality</span><span class="bar"></span></div>
+      <h2>An honest slap in the face</h2>
+      <p>I sent the price-floored version (call it H7) into that honest exam machine, tested across 6 rolling windows one by one. The result:</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">H7 (with floor) vs H6 (no floor) · at resolution · drop-top net</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>Window</th><th>H6 drop-top</th><th>H7 drop-top</th><th>H7 − H6</th></tr></thead>
+            <tbody>
+              <tr><td>05-18 – 06-05</td><td class="pos">+5.4%</td><td class="pos">+2.1%</td><td class="neg">−3.3%</td></tr>
+              <tr><td>06-08</td><td class="pos">+2.2%</td><td class="pos">+2.1%</td><td class="neg">−0.1%</td></tr>
+              <tr><td>06-15</td><td class="pos">+2.6%</td><td class="pos">+2.3%</td><td class="neg">−0.3%</td></tr>
+            </tbody>
+            <tfoot><tr class="foot"><td>Red line ②: clearly beats H6</td><td colspan="2">0 / 6 met</td><td class="neg">FAIL</td></tr></tfoot>
+          </table></div>
+        </div>
+        <figcaption class="cap">With the price floor added, drop-top didn't improve — it came in slightly below the original in every window.</figcaption>
+      </figure>
+
+      <p style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;">
+        <span class="verdict fail">Pre-registered verdict · FAIL</span>
+        <span style="color:var(--ink-soft);font-size:0.98rem;">The price floor <b style="color:var(--ink)">does not improve</b> the gross edge; by its own criteria the direction is disproven out-of-sample.</span>
+      </p>
+
+      <p>Where did that seductive +35.5% go? It was a mirage. <strong>The "drop-top" metric, at the full-strategy level, already strips out the lottery effect</strong> — the single biggest trade it removes is often precisely that jackpot ticket in the edge band. Since the de-luck work is already being done, cutting the whole edge band beforehand is just <em>doing the same thing a second way</em> — adding nothing real.</p>
+      <blockquote>What looks like a perfect score in-sample shows its true face the moment it steps out-of-sample.</blockquote>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">08</span><span>The twist</span><span class="bar"></span></div>
+      <h2>The deeper lesson: the ruler can't measure its own value</h2>
+      <p>But this exam also exposed something more important — and not as a way to excuse the failure; a genuine methodological blind spot.</p>
+      <p>My test gave <em>both</em> the old and new versions the same fixed 0.5% slippage. Yet the <strong>entire value</strong> of a price floor lies in the fact that "slippage varies with price" (edge band ~7.7% vs balanced ~1.2%). In other words —</p>
+      <blockquote>I used a ruler that can't measure the value of a price floor.</blockquote>
+      <p>Under this fixed-cost ruler, the edge-band trades in the original strategy are charged only a "fake low cost," when in reality they'd pay far more slippage. Swap in a <strong>price-dependent cost model</strong> and the original gets dragged down hard by those expensive trades, while the floored version is barely touched — and only then would the price floor reveal its true net value.</p>
+      <p>So the accurate conclusion isn't "this direction is dead," but:</p>
+      <div class="kv">
+        <div><div class="k">Gross-edge improvement</div><div class="v neg">None (disproven)</div></div>
+        <div><div class="k">Net value from saved slippage</div><div class="v" style="color:var(--accent)">Unknown</div></div>
+        <div><div class="k">Next step</div><div class="v" style="font-size:1.05rem;line-height:1.3;">Price-aware<br>cost model</div></div>
+      </div>
+      <p>And that "price-dependent cost model" needs to be calibrated with exactly the data the slippage probe is accumulating in the background. So the ordering is right: run the fixed-cost exam first (done — disproved the gross-edge improvement); run the price-aware exam once the probe has two weeks of data. That follow-up test is already pre-registered too.</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">09</span><span>Coda</span><span class="bar"></span></div>
+      <h2>Why disproving yourself is a good thing</h2>
+      <p>Tallying up the half-day: we tried to tune the strategy to earn more, and <em>didn't</em> — OOS honestly told us "the tune-the-strategy road is blocked for now." But in the same process, we dug out that the real bottleneck is "price-dependent slippage," built the instrument to measure it, and incidentally punctured a pretty mirage we'd nearly believed.</p>
+      <p>This isn't a failure. <strong>Disproving "I thought this would make money" and seeing clearly "where the real problem is" is worth far more than blind optimism.</strong> The most expensive mistake in quant work is never "failing to find a profitable strategy" — it's "mistaking an in-sample mirage for a real rule and betting real money on it."</p>
+      <blockquote>Pre-registration and out-of-sample testing aren't there to prove you're smart — they're there to stop you fooling yourself.</blockquote>
+      <p>Next time around, two things to watch: how much real slippage data the probe has gathered, and — once we finally have a ruler that measures accurately — whether that temporarily-condemned price floor gets acquitted.</p>
+    </section>
+
+    <hr class="end">
+    <p class="endnote">
+      <b>Methodology.</b> "Drop-top" is the capital-weighted net return after removing the trade that contributes most to the weighted sum, used to exclude fake edges propped up by a few lottery-like winners. "At resolution" means holding to market settlement and redeeming at $0/$1 (no slippage at that point); slippage is paid only once, on entry. All percentages are capital-weighted, capped at $200 per trade. Figures here come from a single-batch snapshot and historical backtests; they are interim evidence, not a final conclusion.<br>
+      <b>Polymarket H6 research · 2026-07-07 · Read-only monitoring; not investment advice.</b>
+    </p>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      els.forEach(function (e) { e.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>

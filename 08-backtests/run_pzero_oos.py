@@ -17,6 +17,9 @@ P0-B 攻坚 — 能否找到一个 OOS(样本外)资金加权 ≥0 的候选?
           预登记避免事后手挑;等数据积累后验证。
   C0:    2026-06-06 新增 — 逆鲸鱼(大额+超流动 Yes BUY 反转为 No);经济动机:有效市场中
           鲸鱼无信息优势,大单造成价格冲击随后均值回归,逆势可捕获回归。独立分析模块。
+  H7:    2026-07-06 新增 — H6 + 价格下限≥0.20;经济动机:滑点探针实测贴边盘(<0.2)滑点~770bps
+          (均衡盘~120bps)且历史分层显示贴边盘毛利抗单点为负(纯彩票)。预登记单+红线见
+          docs/PREREG_H7_PRICE_FLOOR_2026-07-06.md(下限 0.20 锁定,不做多下限择优)。
 
 用法:
   PYTHONPATH=08-backtests python3 08-backtests/run_pzero_oos.py
@@ -62,6 +65,9 @@ def make_filters(prices):
     def micro_h5(r):   # H6: H5 + 微仓(容量前沿探针);注意 per-trade cap 须在 cw() 里施加
         return liquid_ok(r) and short_dted(r) and not_certain(r)
 
+    def micro_h7(r):   # H7: H6 + 价格下限≥0.20(避贴边盘);见 docs/PREREG_H7_PRICE_FLOOR_2026-07-06.md
+        return liquid_ok(r) and short_dted(r) and (0.20 <= r.entry_price < 0.85)
+
     return {
         "H0 基线(全量)":              lambda r: True,
         "H1 避超流动(<200k)":         liquid_ok,
@@ -70,6 +76,7 @@ def make_filters(prices):
         "H4 H1+H2":                   lambda r: liquid_ok(r) and short_dted(r),
         "H5 H1+H2+H3(精选+流动)":     lambda r: liquid_ok(r) and short_dted(r) and not_certain(r),
         "H6 H5+微仓$200":             micro_h5,   # 评估时配合 cw(cap=200)
+        "H7 H6+价格下限≥0.20":        micro_h7,   # 评估时配合 cw(cap=200)
     }
 
 
@@ -154,8 +161,8 @@ def main():
               f"{'test_n':>8}{'test剔top':>11}{'判决':>8}")
         json_out["horizons"][H] = {}
         for name, fn in filters.items():
-            # H6 专用: 每笔限仓 $200 (对应容量前沿的预登记探针)
-            cap = 200.0 if name.startswith("H6") else None
+            # H6/H7 专用: 每笔限仓 $200 (对应容量前沿的预登记探针)
+            cap = 200.0 if name.startswith(("H6", "H7")) else None
             tr = [r for r in train if fn(r)]
             te = [r for r in test if fn(r)]
             tr_cw, _ = cw(tr, cap=cap)

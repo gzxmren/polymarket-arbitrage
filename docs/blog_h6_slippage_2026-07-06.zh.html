@@ -1,0 +1,480 @@
+<style>
+  :root {
+    --bg: #ECEFF3;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --ink: #16202B;
+    --ink-soft: #4A5763;
+    --ink-faint: #78848F;
+    --line: #D4DBE2;
+    --accent: #B0740F;
+    --accent-tint: #F3E9D6;
+    --good: #2E7A57;
+    --good-tint: #E1EFE7;
+    --bad: #B24C2C;
+    --bad-tint: #F3E3DC;
+    --serif: "Charter", "Bitstream Charter", "Iowan Old Style", Georgia, "Songti SC", "Noto Serif CJK SC", STSong, serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --measure: 66ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F141A;
+      --surface: #161E27;
+      --surface-2: #1B242E;
+      --ink: #DCE3EB;
+      --ink-soft: #98A5B2;
+      --ink-faint: #6C7883;
+      --line: #28323C;
+      --accent: #E2A64C;
+      --accent-tint: #2A2418;
+      --good: #5DBB8E;
+      --good-tint: #16271F;
+      --bad: #DA7A55;
+      --bad-tint: #2A1B14;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ECEFF3; --surface: #FFFFFF; --surface-2: #F4F6F8;
+    --ink: #16202B; --ink-soft: #4A5763; --ink-faint: #78848F; --line: #D4DBE2;
+    --accent: #B0740F; --accent-tint: #F3E9D6;
+    --good: #2E7A57; --good-tint: #E1EFE7; --bad: #B24C2C; --bad-tint: #F3E3DC;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F141A; --surface: #161E27; --surface-2: #1B242E;
+    --ink: #DCE3EB; --ink-soft: #98A5B2; --ink-faint: #6C7883; --line: #28323C;
+    --accent: #E2A64C; --accent-tint: #2A2418;
+    --good: #5DBB8E; --good-tint: #16271F; --bad: #DA7A55; --bad-tint: #2A1B14;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.125rem;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(1.5rem, 5vw, 5rem) 1.25rem 6rem;
+  }
+  .col { max-width: var(--measure); margin: 0 auto; }
+  .wide { max-width: 52rem; margin: 0 auto; }
+
+  /* ---- rhythm ---- */
+  .col > * + * { margin-top: 1.15rem; }
+  p { margin: 0; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  /* ---- eyebrow / labels ---- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  /* ---- hero ---- */
+  header.hero { margin-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5.4vw, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0.9rem 0 0;
+  }
+  .standfirst {
+    font-size: clamp(1.2rem, 2.4vw, 1.45rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-top: 1.4rem;
+    text-wrap: pretty;
+  }
+  .byline {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-top: 1.8rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+  }
+  .byline b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ---- section ---- */
+  section { margin-top: clamp(3rem, 7vw, 4.5rem); }
+  .sec-mark {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex; align-items: center; gap: 0.7rem;
+    margin-bottom: 1.1rem;
+  }
+  .sec-mark .n { color: var(--accent); font-weight: 600; }
+  .sec-mark .bar { flex: 1; height: 1px; background: var(--line); }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(1.55rem, 3.4vw, 2.15rem);
+    line-height: 1.16;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin: 1.8rem 0 0.4rem;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+
+  /* ---- pull quote ---- */
+  blockquote {
+    margin: 2rem 0;
+    padding: 0.2rem 0 0.2rem 1.5rem;
+    border-left: 3px solid var(--accent);
+    font-size: clamp(1.3rem, 2.8vw, 1.6rem);
+    line-height: 1.4;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  /* ---- aside (analogy) ---- */
+  aside.note {
+    margin: 2rem 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.5rem 1.6rem;
+  }
+  aside.note .tag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.7rem;
+  }
+  aside.note p { font-size: 1.02rem; line-height: 1.62; color: var(--ink-soft); }
+  aside.note p + p { margin-top: 0.7rem; }
+  aside.note b { color: var(--ink); }
+
+  /* ---- data figure ---- */
+  figure { margin: 2rem 0; }
+  figure .cap {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    margin-top: 0.7rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .card .card-hd {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .tbl-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th, td {
+    padding: 0.6rem 1.1rem;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.hl td { background: var(--accent-tint); }
+  td.pos { color: var(--good); }
+  td.neg { color: var(--bad); }
+  .foot td {
+    font-weight: 700;
+    border-top: 2px solid var(--line);
+    color: var(--ink);
+  }
+
+  /* ---- bar row (category) ---- */
+  .bars { display: flex; flex-direction: column; gap: 0.55rem; padding: 1.1rem; }
+  .bar-row { display: grid; grid-template-columns: 8.5rem 1fr auto; align-items: center; gap: 0.8rem; }
+  .bar-row .lbl { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-soft); }
+  .bar-track { height: 0.7rem; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; }
+  .bar-row .val { font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--ink); min-width: 5.5rem; text-align: right; }
+
+  /* ---- verdict chip ---- */
+  .verdict {
+    display: inline-flex; align-items: baseline; gap: 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0.9rem;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .verdict.fail { color: var(--bad); background: var(--bad-tint); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .verdict.pass { color: var(--good); background: var(--good-tint); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
+
+  /* ---- key-value strip ---- */
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; margin: 2rem 0; }
+  .kv > div { background: var(--surface); padding: 1rem 1.1rem; }
+  .kv .k { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+  .kv .v { font-family: var(--serif); font-size: 1.5rem; font-weight: 700; margin-top: 0.3rem; font-variant-numeric: tabular-nums; }
+  .kv .v.pos { color: var(--good); }
+  .kv .v.neg { color: var(--bad); }
+
+  hr.end { border: none; border-top: 1px solid var(--line); margin: 3.5rem 0 1.5rem; }
+  .endnote { font-family: var(--mono); font-size: 0.76rem; line-height: 1.7; color: var(--ink-faint); }
+  .endnote b { color: var(--ink-soft); font-weight: 500; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(12px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="col">
+
+    <header class="hero">
+      <p class="eyebrow">量化研究手记 · Field Notes</p>
+      <h1>我想把策略调得更赚，结果亲手证伪了自己的好点子</h1>
+      <p class="standfirst">一次关于预测市场、滑点、和"诚实"的半天调查——以及为什么"证伪自己"往往比"验证自己"更值钱。</p>
+      <p class="byline">
+        <span><b>主题</b> Polymarket · H6 逆势策略</span>
+        <span><b>日期</b> 2026-07-07</span>
+        <span><b>阅读</b> 约 12 分钟</span>
+      </p>
+    </header>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">00</span><span>起点</span><span class="bar"></span></div>
+      <h2>一个薄薄的、但可能是真的边际</h2>
+      <p>先交代背景。我们有一个叫 <strong>H6</strong> 的策略，在预测市场 Polymarket 上运行。它的逻辑一句话讲清：<strong>专挑冷门、快开奖、结果还没定死的小市场，跟大户反着下注</strong>——因为大户往往会"冲动付高价"，把价格推过头，随后回归。</p>
+      <p>经过好几周的样本外验证，它显示出一个<em>正的、看起来可复制的</em>边际。但小得可怜：扣掉交易成本后，每投一块钱大概只赚一分半（<strong>约 +1.5%</strong>）。方向是对的，可这个垫子薄得让人不安。</p>
+      <p>于是有了那个再自然不过的念头——<strong>能不能把它调得更赚一点？</strong></p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">01</span><span>问题</span><span class="bar"></span></div>
+      <h2>从 1.5% 到 4.5%，那 3 个点藏在哪？</h2>
+      <p>我把成本从乐观到保守扫了一遍，想看看利润对成本有多敏感。结果一张表就说清了一切：</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">H6 净利 vs 滑点假设 · 最终结算口径 · "抗单点"=剔除最大单笔后的真实可复制净利</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>成本档</th><th>滑点假设</th><th>表头净利</th><th>抗单点净利</th></tr></thead>
+            <tbody>
+              <tr><td>zero（理论上限）</td><td>0%</td><td class="pos">+6.00%</td><td class="pos">+4.92%</td></tr>
+              <tr><td>optimistic</td><td>0.2%</td><td class="pos">+5.76%</td><td class="pos">+3.88%</td></tr>
+              <tr><td>base</td><td>0.5%</td><td class="pos">+5.24%</td><td class="pos">+2.64%</td></tr>
+              <tr class="hl"><td>conservative（更真实）</td><td>1.5%</td><td class="pos">+4.30%</td><td class="pos">+1.48%</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">滑点从 0 调到 1.5%，可复制净利从 +4.9% 一路被磨到 +1.5%。</figcaption>
+      </figure>
+
+      <p>关键发现：<strong>那 3 个点的缺口，大头是滑点，不是策略。</strong>光"滑点"这一项，就吃掉了约三分之二的利润。也就是说——想赚更多，与其绞尽脑汁改策略，不如先搞清楚一件我们其实一直在猜的事：</p>
+      <blockquote>我们的真实滑点，到底是 0.5%、1.5%，还是更糟？</blockquote>
+      <p>回测里那个 1.5% 是拍脑袋填的。要往前走，就得把它<strong>量出来</strong>，而不是继续猜。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">02</span><span>概念</span><span class="bar"></span></div>
+      <h2>滑点是什么？用买菜讲清楚</h2>
+      <p>先别被术语吓到。<strong>滑点 = 你心里想的价，和实际成交的价，之间的差。</strong></p>
+      <aside class="note">
+        <span class="tag">类比 · 菜市场</span>
+        <p>你想按"行情价"买 2 斤西红柿。在<b>热门菜摊</b>——一排摊主互相压价、货又足——你几乎按公道价就买到了，多付的极少。</p>
+        <p>但去买<b>快过期的冷门边角料</b>——整个市场就一两个摊主守着——他爱开什么价开什么价，你想多买一点，他立刻坐地起价。你实际付的，比"行情价"贵出一大截。</p>
+        <p>这多付的部分，就是滑点。<b>市场越冷清、你买得越急，滑点越大。</b></p>
+      </aside>
+      <p>预测市场也一样。有的市场买卖两旺、价格咬得很紧，下单几乎无损；有的市场半死不活，你一笔单子下去就把稀薄的挂单扫光、价格立刻飙起来。区别巨大——而我们此前从没真正量过它。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">03</span><span>工具</span><span class="bar"></span></div>
+      <h2>造一把尺子：滑点测量探针</h2>
+      <p>因为系统是只读的、不真下单，"练成交"在这里的准确含义不是拿真钱去试，而是<strong>造一套测量真实成交成本的仪器</strong>：在策略会下注的那类市场上，把真实盘口抓下来，算"如果下 $200 会实际付多少、滑点多少"。</p>
+      <p>造尺子的过程踩了两个坑，都值得记下来——因为任何一个没发现，测出来的数就全是错的：</p>
+      <h3>坑一：盘口是"倒着"排的</h3>
+      <p>交易所返回的卖单列表，价格是<em>从高到低</em>排的，最优价（最低卖价）藏在数组末尾。现成的工具函数想当然地取了第一个，于是把最差价当成了最优价——难怪它一直报出 196% 这种荒谬的价差。发现后，改成自己稳健地取最优价、并从最低价开始"走盘口"。</p>
+      <h3>坑二：把"死盘"也算进来了</h3>
+      <p>第一版把成交量下限设得太松，结果一堆"当天就结算的天气微market"混了进来——这些盘极端稀薄、没人交易，把中位滑点拉到了 92% 的荒唐值。策略实盘根本不会碰它们。把下限提到有真实活跃度的水平后，画面才回归理性。</p>
+      <p>尺子校准好，仪器挂上了每 4 小时自动跑的定时器，开始在后台默默积累真实滑点的分布。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">04</span><span>发现</span><span class="bar"></span></div>
+      <h2>滑点和市场类别，到底什么关系？</h2>
+      <p>第一批数据出来，规律干净得惊人。先按市场类别看中位滑点：</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">各类市场 · $200 买单中位滑点（越短越好）</div>
+          <div class="bars">
+            <div class="bar-row"><span class="lbl">体育 / 电竞</span><span class="bar-track"><span class="bar-fill" style="width:7%;background:var(--good)"></span></span><span class="val">159 bps</span></div>
+            <div class="bar-row"><span class="lbl">其他事件</span><span class="bar-track"><span class="bar-fill" style="width:9%;background:var(--good)"></span></span><span class="val">185 bps</span></div>
+            <div class="bar-row"><span class="lbl">天气分桶</span><span class="bar-track"><span class="bar-fill" style="width:26%;background:var(--accent)"></span></span><span class="val">551 bps</span></div>
+            <div class="bar-row"><span class="lbl">政治 / 宏观</span><span class="bar-track"><span class="bar-fill" style="width:37%;background:var(--accent)"></span></span><span class="val">806 bps</span></div>
+            <div class="bar-row"><span class="lbl">加密涨跌 / 价位</span><span class="bar-track"><span class="bar-fill" style="width:100%;background:var(--bad)"></span></span><span class="val">2155 bps</span></div>
+          </div>
+        </div>
+        <figcaption class="cap">加密"价位阶梯"类的滑点，是体育类的十几倍。</figcaption>
+      </figure>
+
+      <p>但"类别"其实<strong>不是</strong>真正的原因，它只是个代理变量。真正的因果链是这样的：</p>
+      <blockquote>类别 → 价格位置 & 盘口结构 → 买卖价差 → 滑点</blockquote>
+      <p>证据很硬：在数据里，<strong>价差和滑点的相关系数高达 0.93</strong>——价差多宽，滑点基本就多大。那价差又由什么决定？两件事：</p>
+      <p><strong>一是价格离 0.5 有多远。</strong>报价最小跳动是 1 分钱。一个价格 0.45 的盘，跳 1 分只占 2%；一个价格 0.02 的盘，跳 1 分就是 50%。所以<em>越贴边（接近 0 或 1）的盘，价差占比天然爆炸</em>。加密类中位价只有 0.09，正是因为里面全是"涨到某个很难到的价位"这种深度价外的彩票式合约。</p>
+      <p><strong>二是钱是集中还是分散。</strong>体育的让分盘被做市商设计成贴着 0.5、双边活跃、价差窄；而加密、天气的"阶梯盘"把流动性摊薄到十几个桶里，每个桶又薄又贴边。</p>
+      <aside class="note">
+        <span class="tag">反直觉 · 别被"热闹"骗了</span>
+        <p>加密类的日成交额其实跟体育一个量级，甚至更高——<b>但滑点差了十几倍</b>。因为它的热闹，是分散在一长排没人要的价位上的。</p>
+        <p>所以判断一个市场好不好交易，<b>不看它多热闹，要看你想买的那个具体盘口有没有人陪你玩。</b></p>
+      </aside>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">05</span><span>灵光</span><span class="bar"></span></div>
+      <h2>一个看起来很妙的改进</h2>
+      <p>顺着这个规律，一个改进方向自己蹦了出来，而且看起来<em>有经济道理、不是乱调参数</em>：</p>
+      <blockquote>给策略加一个价格下限，只做均衡盘，避开贴边盘的滑点黑洞。</blockquote>
+      <p>我把历史交易按入场价切开，验证这个想法。数据当时看起来像一记满分：</p>
+
+      <div class="kv">
+        <div><div class="k">贴边盘 &lt;0.20 · 抗单点</div><div class="v neg">−27%</div></div>
+        <div><div class="k">均衡盘 0.2–0.85 · 抗单点</div><div class="v pos">+35.5%</div></div>
+        <div><div class="k">贴边盘胜率</div><div class="v">2%</div></div>
+      </div>
+
+      <p>贴边盘不但滑点是黑洞，连"毛利"都是假的——胜率 2%，靠极少数中奖彩票撑起一个虚高的平均数，<strong>去掉运气就是亏</strong>。而均衡盘的边际稳、摊在很多笔上、抗单点高达 +35.5%。这不是三赢吗？甩掉最贵的成本、甩掉最假的收益、保住真东西。</p>
+      <p>我几乎就要相信它了。但这个项目有一条铁律拦住了我。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">06</span><span>纪律</span><span class="bar"></span></div>
+      <h2>先别急——"样本外考试"和预登记</h2>
+      <p>上面那个 +35.5% 是<strong>样本内</strong>的发现——我拿着<em>全部已知的历史</em>，回头找出一条规律。问题在于：你是<em>知道答案之后</em>再编规律的，怎么编都对。它在这批数据上好看是必然的，不代表换一批新数据还灵。</p>
+      <aside class="note">
+        <span class="tag">类比 · 考试</span>
+        <p><b>样本内</b>：看着已经开过的奖去总结"规律"——事后诸葛亮，怎么说都对。</p>
+        <p><b>样本外（OOS）</b>：把这条规律拿去预测你<b>还没看过</b>的开奖，看它还灵不灵。只有在没见过的数据上还赚钱，才算数。</p>
+      </aside>
+      <p>所以在动手测之前，我先写了一张<strong>预登记单</strong>：把规则（价格下限 0.20）、判据、以及<em>通过/不通过的红线</em>全部钉死。跑完只能对照它宣判，不许事后改。这样无论结果好坏都算数，谁来复查都能看到当初赌的是什么、有没有耍赖。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">07</span><span>现实</span><span class="bar"></span></div>
+      <h2>一记诚实的耳光</h2>
+      <p>把带价格下限的新版本（记作 H7）送进那台诚实的考试机器，6 个滚动窗口逐一考。结果是：</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">H7（有下限） vs H6（无下限） · 最终结算 · 抗单点净利</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>时间窗</th><th>H6 抗单点</th><th>H7 抗单点</th><th>H7 − H6</th></tr></thead>
+            <tbody>
+              <tr><td>05-18 ~ 06-05</td><td class="pos">+5.4%</td><td class="pos">+2.1%</td><td class="neg">−3.3%</td></tr>
+              <tr><td>06-08</td><td class="pos">+2.2%</td><td class="pos">+2.1%</td><td class="neg">−0.1%</td></tr>
+              <tr><td>06-15</td><td class="pos">+2.6%</td><td class="pos">+2.3%</td><td class="neg">−0.3%</td></tr>
+            </tbody>
+            <tfoot><tr class="foot"><td>红线②：明显高于 H6</td><td colspan="2">0 / 6 达标</td><td class="neg">未通过</td></tr></tfoot>
+          </table></div>
+        </div>
+        <figcaption class="cap">加了价格下限之后，抗单点非但没变好，反而每个窗口都比原版略低。</figcaption>
+      </figure>
+
+      <p style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;">
+        <span class="verdict fail">预登记判定 · 未通过</span>
+        <span style="color:var(--ink-soft);font-size:0.98rem;">价格下限对毛边际<b style="color:var(--ink)">没有改善</b>，方向按原判据被 OOS 证伪。</span>
+      </p>
+
+      <p>那个诱人的 +35.5% 去哪了？它是个幻觉。<strong>"抗单点"这个指标，在完整策略层面本来就已经把彩票效应剔掉了</strong>——它删掉的那"最大单笔"，往往正是贴边盘里的那张中奖彩票。既然去运气的活儿已经在做，我提前把整个贴边盘砍掉，不过是<em>换一种方式重复同一件事</em>，没有新增任何真东西。</p>
+      <blockquote>样本内看着像满分的东西，一到样本外，原形毕露。</blockquote>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">08</span><span>转折</span><span class="bar"></span></div>
+      <h2>更深的一课：尺子本身量不出它的价值</h2>
+      <p>但这次考试也暴露了一个更重要的东西——而且不是给失败圆场，是真正的方法论盲点。</p>
+      <p>我的测试给新旧两版<em>都</em>用了同一个 0.5% 的固定滑点。可价格下限的<strong>全部价值</strong>，恰恰在于"滑点是随价格变的"（贴边盘 ~7.7% vs 均衡盘 ~1.2%）。也就是说——</p>
+      <blockquote>我用了一把量不出价格下限价值的尺子。</blockquote>
+      <p>在这把固定成本的尺子下，原版策略里那些贴边盘交易只被收了"假的低成本"，可它们真实要付高得多的滑点。如果换上一个<strong>随价格变的真实成本模型</strong>，原版会被这些贵单子狠狠拖累，而带下限的新版几乎不受影响——那时候，价格下限才可能真正显出它的净价值。</p>
+      <p>所以准确的结论不是"这个方向死了"，而是：</p>
+      <div class="kv">
+        <div><div class="k">毛边际改善</div><div class="v neg">无（已证伪）</div></div>
+        <div><div class="k">省滑点的净价值</div><div class="v" style="color:var(--accent)">未知</div></div>
+        <div><div class="k">下一步</div><div class="v" style="font-size:1.05rem;line-height:1.3;">价格敏感<br>成本模型</div></div>
+      </div>
+      <p>而那个"随价格变的成本模型"，正好要用滑点探针在后台攒的数据来标定。所以顺序是对的：固定成本的考试先跑（已跑，证伪毛利改善）；价格敏感成本的考试，等探针攒够两周再跑。这个后续测试，也已经预登记好了。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">09</span><span>尾声</span><span class="bar"></span></div>
+      <h2>为什么"证伪自己"是好事</h2>
+      <p>盘点这半天：我们想把策略调得更赚，<em>没</em>调成——OOS 诚实地告诉我们"改策略这条路暂时不通"。但同一过程里，我们挖出了真正的瓶颈是"随价格变的滑点"，造好了测量它的仪器，还顺手戳破了一个差点信了的漂亮幻觉。</p>
+      <p>这不是失败。<strong>把"以为能赚"证伪、把"真问题在哪"看清，比盲目乐观值钱得多。</strong>量化里最贵的错误，从来不是"没找到赚钱的策略"，而是"把一个样本内的幻觉当成真规律，拿真钱去赌"。</p>
+      <blockquote>预登记和样本外，不是拿来验证你聪明的，是拿来防你自欺的。</blockquote>
+      <p>下一次回来，要看的是两件事：探针攒了多少真实滑点数据，以及——当我们终于用上一把量得准的尺子时，那个被暂时判死的价格下限，会不会翻案。</p>
+    </section>
+
+    <hr class="end">
+    <p class="endnote">
+      <b>方法说明。</b>"抗单点"指剔除对加权贡献最大的单笔交易后的资金加权净收益，用于排除少数彩票式赢家撑起的假边际。"最终结算口径"指持有到市场开奖按 $0/$1 兑付（此时无滑点），滑点只在进场付一次。所有百分比为资金加权、每笔封顶 $200。本文数字来自单批次快照与历史回测，属阶段性证据，非最终结论。<br>
+      <b>Polymarket H6 研究 · 2026-07-07 · 只读监控，不构成投资建议。</b>
+    </p>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      els.forEach(function (e) { e.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>
