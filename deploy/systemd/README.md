@@ -10,7 +10,7 @@
 全部设 `Persistent=true`——机器从睡眠/关机恢复后会**自动补跑错过的一次**。
 详见 `docs/`（及项目记忆 cron-suspend-miss-fix-2026-07-06）。
 
-## 四个单元
+## 五个单元
 
 | 单元 | 频率 | 作用 |
 |------|------|------|
@@ -18,6 +18,7 @@
 | `polymarket-data-quality` | 每日 08:30 | `data_quality_check.py` 只读数据质检 |
 | `polymarket-pzero-weekly` | 每周一 09:30 | `weekly_pzero.sh` P0-B OOS 复验(推进 cutoff) |
 | `polymarket-slippage-probe` | 每 4 小时 | `h6_slippage_probe.py` H6 宇宙滑点测量 |
+| `openclaw-learning-review` | 每周日 09:00 | `weekly_learning_review.py` 每周学习整理(工作区级,非 polymarket 专属;2026-07-10 从 crontab 迁入,同样因 suspend 漏跑) |
 
 ## ⚠️ 路径是本机硬编码
 
@@ -32,13 +33,14 @@ cp deploy/systemd/*.service deploy/systemd/*.timer ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now \
   polymarket-cleanup.timer polymarket-data-quality.timer \
-  polymarket-pzero-weekly.timer polymarket-slippage-probe.timer
+  polymarket-pzero-weekly.timer polymarket-slippage-probe.timer \
+  openclaw-learning-review.timer
 ```
 
 ## 查看状态
 
 ```bash
-systemctl --user list-timers 'polymarket-*' --all
+systemctl --user list-timers 'polymarket-*' 'openclaw-*' --all
 journalctl --user -u polymarket-slippage-probe.service -n 50
 ```
 

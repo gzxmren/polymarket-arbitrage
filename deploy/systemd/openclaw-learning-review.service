@@ -1,0 +1,10 @@
+[Unit]
+Description=OpenClaw weekly learning review (replaces weekly-learning-review cron)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace
+ExecStart=/usr/bin/python3 /home/xmren/.openclaw/workspace/scripts/weekly_learning_review.py
+StandardOutput=append:/home/xmren/.openclaw/workspace/logs/weekly_learning_review.log
+StandardError=append:/home/xmren/.openclaw/workspace/logs/weekly_learning_review.log

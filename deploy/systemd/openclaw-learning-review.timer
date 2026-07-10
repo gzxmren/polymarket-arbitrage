@@ -1,0 +1,9 @@
+[Unit]
+Description=Run OpenClaw weekly learning review (Sun 09:00), catch up after suspend/boot
+
+[Timer]
+OnCalendar=Sun *-*-* 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
