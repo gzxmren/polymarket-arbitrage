@@ -7,6 +7,11 @@
           {
             "type": "command",
             "command": "/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/scripts/session_start_brief.py"
+          },
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/scripts/pzero_review_digest.py",
+            "timeout": 10
           }
         ]
       }
