@@ -1,0 +1,470 @@
+<style>
+  :root {
+    --bg: #ECEFF3;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --ink: #16202B;
+    --ink-soft: #4A5763;
+    --ink-faint: #78848F;
+    --line: #D4DBE2;
+    --accent: #B0740F;
+    --accent-tint: #F3E9D6;
+    --good: #2E7A57;
+    --good-tint: #E1EFE7;
+    --bad: #B24C2C;
+    --bad-tint: #F3E3DC;
+    --serif: "Charter", "Bitstream Charter", "Iowan Old Style", Georgia, "Songti SC", "Noto Serif CJK SC", STSong, serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --measure: 66ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F141A;
+      --surface: #161E27;
+      --surface-2: #1B242E;
+      --ink: #DCE3EB;
+      --ink-soft: #98A5B2;
+      --ink-faint: #6C7883;
+      --line: #28323C;
+      --accent: #E2A64C;
+      --accent-tint: #2A2418;
+      --good: #5DBB8E;
+      --good-tint: #16271F;
+      --bad: #DA7A55;
+      --bad-tint: #2A1B14;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ECEFF3; --surface: #FFFFFF; --surface-2: #F4F6F8;
+    --ink: #16202B; --ink-soft: #4A5763; --ink-faint: #78848F; --line: #D4DBE2;
+    --accent: #B0740F; --accent-tint: #F3E9D6;
+    --good: #2E7A57; --good-tint: #E1EFE7; --bad: #B24C2C; --bad-tint: #F3E3DC;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F141A; --surface: #161E27; --surface-2: #1B242E;
+    --ink: #DCE3EB; --ink-soft: #98A5B2; --ink-faint: #6C7883; --line: #28323C;
+    --accent: #E2A64C; --accent-tint: #2A2418;
+    --good: #5DBB8E; --good-tint: #16271F; --bad: #DA7A55; --bad-tint: #2A1B14;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.125rem;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(1.5rem, 5vw, 5rem) 1.25rem 6rem;
+  }
+  .col { max-width: var(--measure); margin: 0 auto; }
+
+  .col > * + * { margin-top: 1.15rem; }
+  p { margin: 0; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  header.hero { margin-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5.4vw, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0.9rem 0 0;
+  }
+  .standfirst {
+    font-size: clamp(1.2rem, 2.4vw, 1.45rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-top: 1.4rem;
+    text-wrap: pretty;
+  }
+  .byline {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-top: 1.8rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+  }
+  .byline b { color: var(--ink-soft); font-weight: 500; }
+
+  section { margin-top: clamp(3rem, 7vw, 4.5rem); }
+  .sec-mark {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex; align-items: center; gap: 0.7rem;
+    margin-bottom: 1.1rem;
+  }
+  .sec-mark .n { color: var(--accent); font-weight: 600; }
+  .sec-mark .bar { flex: 1; height: 1px; background: var(--line); }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(1.55rem, 3.4vw, 2.15rem);
+    line-height: 1.16;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin: 1.8rem 0 0.4rem;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+
+  blockquote {
+    margin: 2rem 0;
+    padding: 0.2rem 0 0.2rem 1.5rem;
+    border-left: 3px solid var(--accent);
+    font-size: clamp(1.3rem, 2.8vw, 1.6rem);
+    line-height: 1.4;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  aside.note {
+    margin: 2rem 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.5rem 1.6rem;
+  }
+  aside.note .tag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.7rem;
+  }
+  aside.note p { font-size: 1.02rem; line-height: 1.62; color: var(--ink-soft); }
+  aside.note p + p { margin-top: 0.7rem; }
+  aside.note b { color: var(--ink); }
+
+  figure { margin: 2rem 0; }
+  figure .cap {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    margin-top: 0.7rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .card .card-hd {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .tbl-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th, td {
+    padding: 0.6rem 1.1rem;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.hl td { background: var(--accent-tint); }
+  td.pos { color: var(--good); }
+  td.neg { color: var(--bad); }
+  .foot td {
+    font-weight: 700;
+    border-top: 2px solid var(--line);
+    color: var(--ink);
+  }
+
+  .bars { display: flex; flex-direction: column; gap: 0.55rem; padding: 1.1rem; }
+  .bar-row { display: grid; grid-template-columns: 8.5rem 1fr auto; align-items: center; gap: 0.8rem; }
+  .bar-row .lbl { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-soft); }
+  .bar-track { height: 0.7rem; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; }
+  .bar-row .val { font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--ink); min-width: 5.5rem; text-align: right; }
+
+  .verdict {
+    display: inline-flex; align-items: baseline; gap: 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0.9rem;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .verdict.fail { color: var(--bad); background: var(--bad-tint); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .verdict.pass { color: var(--good); background: var(--good-tint); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
+  .verdict.warn { color: var(--accent); background: var(--accent-tint); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; margin: 2rem 0; }
+  .kv > div { background: var(--surface); padding: 1rem 1.1rem; }
+  .kv .k { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+  .kv .v { font-family: var(--serif); font-size: 1.5rem; font-weight: 700; margin-top: 0.3rem; font-variant-numeric: tabular-nums; }
+  .kv .v.pos { color: var(--good); }
+  .kv .v.neg { color: var(--bad); }
+
+  hr.end { border: none; border-top: 1px solid var(--line); margin: 3.5rem 0 1.5rem; }
+  .endnote { font-family: var(--mono); font-size: 0.76rem; line-height: 1.7; color: var(--ink-faint); }
+  .endnote b { color: var(--ink-soft); font-weight: 500; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(12px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="col">
+
+    <header class="hero">
+      <p class="eyebrow">量化研究手记 · Field Notes · 三部曲 之三</p>
+      <h1>判决：那个 92 分，是自己批卷子批出来的</h1>
+      <p class="standfirst">把"自己猜"换成"问官方要答案"，其他一切不变。十二个格子，全部翻负。项目唯一的净正候选，死了——而这是这两天<em>最有价值</em>的成果。</p>
+      <p class="byline">
+        <span><b>主题</b> Polymarket · 真值口径检验 · 选择偏差</span>
+        <span><b>日期</b> 2026-07-15</span>
+        <span><b>系列</b> 三部曲之三(共三篇 · 完)</span>
+      </p>
+    </header>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">00</span><span>前情</span><span class="bar"></span></div>
+      <h2>一个怀疑，和一套可以验证它的答案</h2>
+      <p>前两篇的故事压缩成三句话：</p>
+      <ul style="margin:0;padding-left:1.3rem;color:var(--ink-soft)">
+        <li>我们找到了项目<strong>第一个</strong>通过全部预登记红线的净正候选：利用长热偏差买热门那一侧，净 +0.46%，胜率 92%。</li>
+        <li>去官方补数据时发现，回测判断"市场结束没、谁赢了"用的是<strong>自己猜的土规则</strong>——看终值价收没收敛到 0 或 1。</li>
+        <li>这条规则判胜负从不出错，但会<strong>静默丢掉</strong>终值没收敛的盘——而那正是"买热门"策略该亏钱的案例。</li>
+      </ul>
+      <p>现在我们手上有 9161 个市场的官方权威答案。是时候验了。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">01</span><span>实验设计</span><span class="bar"></span></div>
+      <h2>只动一个变量，其他全部焊死</h2>
+      <p>这个测试的全部价值，取决于一件事：<strong>自变量必须有且只有一个</strong>。否则结果出来也说明不了任何问题。</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">测试 A · 两臂对照</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>维度</th><th>两臂是否相同</th></tr></thead>
+            <tbody>
+              <tr><td>市场范围</td><td class="pos">✅ 同</td></tr>
+              <tr><td>价格序列 / 入场价</td><td class="pos">✅ 同（都用库里的）</td></tr>
+              <tr><td>容量、成本模型</td><td class="pos">✅ 同</td></tr>
+              <tr><td>入场规则</td><td class="pos">✅ 同</td></tr>
+              <tr><td>band 网格 / 时间切点</td><td class="pos">✅ 同</td></tr>
+              <tr class="hl"><td><b>怎么知道谁赢了</b></td><td class="neg">❌ <b>唯一变量</b>：自己猜 vs 问官方</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">连红线判据都是直接 import 原脚本的，构造上不可能漂移——我想放水也没地方放。</figcaption>
+      </figure>
+
+      <p>为了防止自己事后找补，我在跑数据前先写了预登记单，把判决语义钉死：</p>
+      <ul style="margin:0;padding-left:1.3rem;color:var(--ink-soft)">
+        <li>代理过、官方也过（<strong>同一个 band</strong>）→ 偏差不是主因；</li>
+        <li>代理过、官方全不过 → <strong>+0.46% 是偏差的产物，候选作废</strong>；</li>
+        <li>代理过、官方只有<em>别的</em> band 过 → <strong>不算存活</strong>，属多重比较嫌疑。</li>
+      </ul>
+      <p>红线<strong>一个字都没改</strong>，是从被检验对象自己的预登记单里逐字抄来的。这是这份单子可信度的唯一来源——我唯一能动的手脚就是改红线，而红线是抄的、可以 diff。</p>
+      <aside class="note">
+        <span class="tag">诚实声明</span>
+        <p>这份预登记单<b>不是纯净的事前登记</b>：写它的时候回填还在跑，我为了验证代码路径跑过一次冒烟测试，<b>已经瞥见了部分中间数字</b>。这一点我写进了单子的第 0 节，而不是假装没发生。</p>
+      </aside>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">02</span><span>判决</span><span class="bar"></span></div>
+      <h2>十二个格子，全部翻负</h2>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">净收益 · 资金加权 · 代理真值 vs 官方真值</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>band</th><th>代理真值（旧）</th><th>官方真值</th><th>差</th></tr></thead>
+            <tbody>
+              <tr class="hl"><td>0.60</td><td class="pos">+0.30% 🟢过</td><td class="neg"><b>−4.05%</b> 🔴</td><td class="neg">−4.35%</td></tr>
+              <tr><td>0.70</td><td class="neg">−0.98%</td><td class="neg"><b>−4.55%</b> 🔴</td><td class="neg">−3.57%</td></tr>
+              <tr><td>0.80</td><td class="neg">−1.28%</td><td class="neg"><b>−5.80%</b> 🔴</td><td class="neg">−4.52%</td></tr>
+              <tr><td>0.90</td><td class="neg">−1.56%</td><td class="neg"><b>−5.18%</b> 🔴</td><td class="neg">−3.63%</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">4 个 band × 3 个时间切点 = 12 个格子，在官方真值下全部为负（−3.9% 到 −6.0%），剔掉最大一笔后依然全负。</figcaption>
+      </figure>
+
+      <p><span class="verdict fail">🔴 判决：edge 在权威真值下消失 → 原 +0.46% 是剔除偏差的产物</span></p>
+      <p>这不是擦边翻车，是塌方。而且数据完整性闸门以 <strong>100.0% 对齐</strong>（2384 个市场）通过了——所以这个结论<em>不是</em>脏数据造成的。</p>
+      <p>嫌疑坐实的那个数字：<strong>代理规则认 1837 个市场，官方认 9161 个。它丢掉了 80%。</strong></p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">03</span><span>凶器</span><span class="bar"></span></div>
+      <h2>它留下的，全是赢面更大的那些</h2>
+      <p>光看"丢了 80%"还不够，得看<strong>丢的和留的有什么不同</strong>。这是全市场（官方已结算的）实测：</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">代理规则留下的 vs 丢掉的</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th></th><th>场数</th><th>热门侧入场价（中位）</th><th>买热门胜率</th></tr></thead>
+            <tbody>
+              <tr class="hl"><td>✅ 留下的</td><td>1776</td><td class="pos"><b>0.905</b></td><td class="pos"><b>88%</b></td></tr>
+              <tr><td>❌ 丢掉的</td><td>7351</td><td class="neg"><b>0.745</b></td><td class="neg"><b>75%</b></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">留存率 19.5%。留下的入场价中位 0.905——那已经是"基本赢定了"的价位。</figcaption>
+      </figure>
+
+      <p>看那个 <strong>0.905</strong> 就全明白了。价格贴到 0.9 意味着什么？意味着我们拍下这张快照的时候，<strong>胜负基本已经明朗</strong>，市场上所有人都看出来了，所以价格才会贴那么高。土规则说"价格够极端 → 算它已结束"，于是留下它们。</p>
+      <p>而被丢掉的 7351 场，入场价中位 <strong>0.745</strong>——还有悬念、还可能翻船。土规则看到这个价说"没收敛，还没结束"，全部丢掉。</p>
+      <p>后果直接写在最后一列：在"基本赢定了"的那批里，买热门赢 <strong>88%</strong>；在真正有悬念的那批里，只赢 <strong>75%</strong>。</p>
+      <blockquote>那 88% 不是本事，是在终场哨快响的时候才下注。</blockquote>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">04</span><span>最狠的一刀</span><span class="bar"></span></div>
+      <h2>连"偏差存在"本身，都大部分是幻觉</h2>
+      <p>如果说前面那些还只是"这个策略不赚钱"，那下面这个数字，是把整个方向判了死刑。</p>
+      <p>看<strong>毛利</strong>——还没扣任何成本、纯粹的市场偏差有多大：</p>
+
+      <div class="kv">
+        <div><div class="k">毛偏差 · 代理口径</div><div class="v pos">+5.66%</div></div>
+        <div><div class="k">毛偏差 · 官方口径</div><div class="v neg">+0.74%</div></div>
+        <div><div class="k">交易成本</div><div class="v neg">≈ 4.8%</div></div>
+        <div><div class="k">胜率变化</div><div class="v">92% → 83%</div></div>
+      </div>
+
+      <p>我们以为测到的那个"教科书级长热偏差"——<strong>它本身就大部分是幻觉</strong>。真实的毛偏差只有 <strong>+0.74%</strong>，而过路费要 <strong>4.8%</strong>。</p>
+      <p>这意味着：<strong>这个 edge 从毛利层面就不够付过路费。</strong>它不是"扣完成本后薄了一点"，是"根本没有足够的肉"。</p>
+      <p>而这一刀顺带砍掉了昨天所有的后续工作——价格下限护栏、半凯利仓位、甜区精炼，<strong>全是在给一个不存在的 edge 做精装修</strong>。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">05</span><span>教训</span><span class="bar"></span></div>
+      <h2>真正要记住的，不是这次的结论</h2>
+      <p>候选死了，这只是个结果。真正值钱的是那条规律：</p>
+      <blockquote>绝不可用与"结果"相关的变量去筛样本。</blockquote>
+      <p>这次的具体形态是：<strong>价格够极端 ↔ 胜负已明朗 ↔ 热门必赢</strong>。用"价格收没收敛"筛样本，等于用"结果明不明朗"筛样本——样本里就必然只剩赢定了的。</p>
+      <p>请注意这条比"别用快照价判结算"更普适：<strong>换任何一个和结果沾边的变量，都会同样炸。</strong>记这条，别只记这次的表面症状。</p>
+      <h3>第二个凶手：静默</h3>
+      <p>这条规则丢掉 7351 个市场，<strong>一声不吭</strong>。没有报错、没有警告、没有日志，只有一个看起来挺合理的 +0.46%。</p>
+      <p>所以修法不只是"换个真值源"，而是：<strong>任何降级、任何剔除，都必须出声计数。</strong>沉默才是真凶。</p>
+      <h3>边界：快照价并不是垃圾</h3>
+      <p>有个界要划准，否则会矫枉过正：</p>
+      <ul style="margin:0;padding-left:1.3rem;color:var(--ink-soft)">
+        <li>❌ 用快照价推<strong>事实</strong>（"结算了吗""谁赢了"）——官方有权威答案，不该猜。</li>
+        <li>✅ 用快照价当<strong>价格</strong>（<code>edge = p − m</code> 里的 m）——真实且不可替代。把它一起扔了，策略就没了。</li>
+      </ul>
+      <p>一句话：<strong>快照价是"当时的价"，不是"最后的答案"。当价用合法，当答案用致命。</strong></p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">06</span><span>止损</span><span class="bar"></span></div>
+      <h2>好消息：这个偏差只朝一个方向吹</h2>
+      <p>发现这条土规则还被 <code>engine/portfolio.py</code> 用着、<strong>8 个回测脚本</strong>依赖它时，第一反应是"完了，几个月的结论全要重来"。</p>
+      <p>但仔细一想，不是。关键在于<strong>这个偏差的方向是单向的——它只会抬高收益</strong>。而那些脚本得出的结论是：</p>
+      <ul style="margin:0;padding-left:1.3rem;color:var(--ink-soft)">
+        <li>跟鲸鱼：🔴 不赚钱（净 −2.29%，资金加权 −4% 到 −5%）</li>
+        <li>跨市场套利：🔴 不成立</li>
+      </ul>
+      <p>也就是说，<strong>它们是在被人为放水的情况下，依然是亏的</strong>。放水后仍不及格，真实水平只会更差。</p>
+      <blockquote>偏差吹不倒本来就趴着的，只可能吹起本来站不住的。</blockquote>
+      <p>所以：过去所有 🔴 <strong>证伪</strong>的结论，<em>不受影响，反而更牢固</em>；唯一有风险的，正是唯一那个 🟢 正候选——也就是今天被拆穿的这个。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">07</span><span>结账</span><span class="bar"></span></div>
+      <h2>这两天，到底赚了还是亏了</h2>
+      <p>诚实结账。</p>
+      <h3>亏的</h3>
+      <p>项目唯一的净正候选没了。<strong>回到零。</strong>昨天记下的"项目首个净正候选"要划掉——记忆、文档、预登记单，全部已改成作废状态。留着比没有更危险。</p>
+      <h3>赚的</h3>
+      <ul style="margin:0;padding-left:1.3rem;color:var(--ink-soft)">
+        <li><strong>一套权威数据资产</strong>：十四个月历史、23 万个日价点、9161 个官方真值。这比昨天好得多的起点。</li>
+        <li><strong>一条铁律</strong>：不可用与结果相关的变量筛样本；任何剔除必须出声。</li>
+        <li><strong>过去的 🔴 结论更牢固了</strong>——它们是在放水下仍然亏的。</li>
+        <li>还有最要紧的那条——</li>
+      </ul>
+      <blockquote>一个赔率为负的策略，在碰真钱之前被拦下了。</blockquote>
+      <p>如果不是今天被拆穿，这个候选的下一步就是影子盘，然后是微仓实盘。它带着 −4% 的真实赔率，和一份 92% 胜率的漂亮简历。</p>
+      <p>代价是<strong>几个小时和 23 万个数据点</strong>，不是真金白银。这就是这两天最值钱的成果。</p>
+      <h3>接下来</h3>
+      <p>第一件事是<strong>修引擎的真值源</strong>——理由不是洁癖：那 9161 个权威真值现在是资产，但只要土规则还在，未来<em>任何</em>新假设的回测都会被同一个偏差污染，我们会一次次得到假阳性。改法：优先读官方真值、读不到才降级，<strong>且降级必须打印计数</strong>。</p>
+      <p>至于"接下来测什么"——不急着定。刚烧掉一个候选，而昨天的教训正是：在薄弱证据上急着往前推，做的全是无用功。</p>
+      <p>还挂着两件事：<strong>容量数据缺口</strong>（官方接口不提供逐日成交量，这是加深历史做回测前必须先解决的），以及监控的鲸鱼报告停在 06-26、快三周没有新文件。</p>
+      <p>这个项目至今没有一条被证明能赚钱的路。但它有一样东西是真的：<strong>每一条死路，都是被自己亲手、诚实地关上的。</strong></p>
+    </section>
+
+    <hr class="end">
+    <p class="endnote">
+      <b>系列</b> 三部曲之三（完）· <b>之一</b>《我们以为，终于找到了第一个能赚钱的策略》· <b>之二</b>《去官方要数据的路上，我撞见了更要紧的事》<br>
+      <b>技术档案</b> 预登记单 <code>docs/PREREG_TRUTH_CHECK_2026-07-15.md</code> · 脚本 <code>08-backtests/run_calibration_truth_check.py</code> · 原始输出 <code>08-backtests/results/truth_check_20260715.txt</code><br>
+      <b>作废声明</b> 07-14 的结论《市场校准长热偏差＝首个净正候选》已于本日正式作废。<br>
+      <b>声明</b> 本文所有数字均为回测结果，未投入任何真实资金。本系列记录的是研究过程，不构成投资建议。
+    </p>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      els.forEach(function (e) { e.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>

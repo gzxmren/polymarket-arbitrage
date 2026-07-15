@@ -263,7 +263,7 @@
       <h1>I set out to make my strategy more profitable — and disproved my own good idea</h1>
       <p class="standfirst">Half a day's investigation into prediction markets, slippage, and honesty — and why disproving yourself is often worth more than confirming yourself.</p>
       <p class="byline">
-        <span><b>Subject</b> Polymarket · H6 contrarian strategy</span>
+        <span><b>Subject</b> Polymarket · H6 follow-the-whale strategy</span>
         <span><b>Date</b> 2026-07-07</span>
         <span><b>Read</b> ~12 min</span>
       </p>
@@ -272,7 +272,13 @@
     <section class="reveal">
       <div class="sec-mark"><span class="n">00</span><span>Start</span><span class="bar"></span></div>
       <h2>A thin — but possibly real — edge</h2>
-      <p>Some background first. We have a strategy called <strong>H6</strong>, running on the prediction market Polymarket. Its logic in one line: <strong>pick obscure, soon-to-resolve small markets whose outcome isn't yet locked in, and bet against the whales</strong> — because big players tend to overpay on impulse, pushing the price too far, after which it reverts.</p>
+      <aside class="note">
+        <span class="tag">Correction · 2026-07-15</span>
+        <p><b>This post originally had H6's direction backwards</b>, describing it as betting <b>against</b> the whales, with the rationale that big players overpay on impulse and the price reverts. <b>That is a different strategy (C0, contrarian)</b> — not H6.</p>
+        <p>Per the code (<code>run_pzero_oos.py:139</code> calls <code>strategies/follow_whale.generate_signals</code>, whose docstring reads "follow whales: BUY only by default"): <b>H6 <em>follows</em> the whales</b>. The premise is that in illiquid backwaters, whales <em>may</em> hold an information edge — which is exactly why H1 filters out highly liquid markets, where they don't. The paragraph below has been corrected.</p>
+        <p>⚠️ Also note: <b>H6/H7 were falsified on 2026-07-15</b> — once real exit slippage is paid, all 4 test windows go negative. This post retains historical value only.</p>
+      </aside>
+      <p>Some background first. We have a strategy called <strong>H6</strong>, running on the prediction market Polymarket. Its logic in one line: <strong>pick obscure, soon-to-resolve small markets whose outcome isn't yet locked in, and follow the whales in</strong> — betting that in these thinly-watched corners, the big players know more than the market does.</p>
       <p>After several weeks of out-of-sample validation, it showed a <em>positive, seemingly reproducible</em> edge. But a painfully thin one: after trading costs, roughly <strong>+1.5%</strong> per dollar. The direction is right, yet that cushion is uncomfortably slim.</p>
       <p>Which led to the most natural thought in the world — <strong>can we tune it to make more?</strong></p>
     </section>

@@ -23,10 +23,25 @@ from dataclasses import dataclass
 @dataclass
 class CostModel:
     fee_bps: float = 0.0          # 交易手续费(基点),Polymarket 默认 0
-    slippage_bps: float = 50.0    # 滑点垫(基点)
+    slippage_bps: float = 50.0    # 滑点垫(基点);slip_curve 为 None 时用此 flat 值
     gas_usd: float = 0.02         # 每笔 gas(美元)
     capacity_frac: float = 0.02   # 单信号可吃市场容量(volume_24h)的比例
     impact_coef: float = 0.5      # 超容量部分的线性冲击系数(收益惩罚)
+
+    # 价格敏感滑点曲线(可选,默认 None=沿用 flat slippage_bps,行为完全不变)。
+    # slip_curve[i] 是离边距离 d=min(price,1-price) 落在 [i*width,(i+1)*width) 桶的滑点 bps;
+    # 最后一桶收所有 d≥(len-1)*width。由 h7b 探针标定注入(见 run_h7b_price_sensitive.py)。
+    slip_curve: tuple[float, ...] | None = None
+    slip_curve_width: float = 0.05
+
+    def slip_bps_for(self, raw_price: float) -> float:
+        """该入场价对应的滑点 bps。无曲线→flat;有曲线→按离边距离 d 查桶。"""
+        if self.slip_curve is None:
+            return self.slippage_bps
+        d = min(raw_price, 1.0 - raw_price)
+        i = int(d / self.slip_curve_width)
+        i = max(0, min(i, len(self.slip_curve) - 1))
+        return self.slip_curve[i]
 
     # ---- 入场 ----
 
@@ -34,8 +49,9 @@ class CostModel:
         """
         成交价(含手续费+滑点)。买入时价格变差(更高),卖出时更低。
         价格是 0~1 的概率,乘性叠加损耗;对尾部价(≈0.99)也成立。
+        滑点按 slip_bps_for(raw_price):无曲线时是 flat,有曲线时随离边距离变。
         """
-        drag = (self.fee_bps + self.slippage_bps) / 10_000.0
+        drag = (self.fee_bps + self.slip_bps_for(raw_price)) / 10_000.0
         if side == "BUY":
             px = raw_price * (1.0 + drag)
             return min(px, 1.0)

@@ -1,0 +1,434 @@
+<style>
+  :root {
+    --bg: #ECEFF3;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --ink: #16202B;
+    --ink-soft: #4A5763;
+    --ink-faint: #78848F;
+    --line: #D4DBE2;
+    --accent: #B0740F;
+    --accent-tint: #F3E9D6;
+    --good: #2E7A57;
+    --good-tint: #E1EFE7;
+    --bad: #B24C2C;
+    --bad-tint: #F3E3DC;
+    --serif: "Charter", "Bitstream Charter", "Iowan Old Style", Georgia, "Songti SC", "Noto Serif CJK SC", STSong, serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --measure: 66ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F141A;
+      --surface: #161E27;
+      --surface-2: #1B242E;
+      --ink: #DCE3EB;
+      --ink-soft: #98A5B2;
+      --ink-faint: #6C7883;
+      --line: #28323C;
+      --accent: #E2A64C;
+      --accent-tint: #2A2418;
+      --good: #5DBB8E;
+      --good-tint: #16271F;
+      --bad: #DA7A55;
+      --bad-tint: #2A1B14;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ECEFF3; --surface: #FFFFFF; --surface-2: #F4F6F8;
+    --ink: #16202B; --ink-soft: #4A5763; --ink-faint: #78848F; --line: #D4DBE2;
+    --accent: #B0740F; --accent-tint: #F3E9D6;
+    --good: #2E7A57; --good-tint: #E1EFE7; --bad: #B24C2C; --bad-tint: #F3E3DC;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F141A; --surface: #161E27; --surface-2: #1B242E;
+    --ink: #DCE3EB; --ink-soft: #98A5B2; --ink-faint: #6C7883; --line: #28323C;
+    --accent: #E2A64C; --accent-tint: #2A2418;
+    --good: #5DBB8E; --good-tint: #16271F; --bad: #DA7A55; --bad-tint: #2A1B14;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.125rem;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(1.5rem, 5vw, 5rem) 1.25rem 6rem;
+  }
+  .col { max-width: var(--measure); margin: 0 auto; }
+
+  .col > * + * { margin-top: 1.15rem; }
+  p { margin: 0; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  header.hero { margin-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5.4vw, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0.9rem 0 0;
+  }
+  .standfirst {
+    font-size: clamp(1.2rem, 2.4vw, 1.45rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-top: 1.4rem;
+    text-wrap: pretty;
+  }
+  .byline {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-top: 1.8rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+  }
+  .byline b { color: var(--ink-soft); font-weight: 500; }
+
+  section { margin-top: clamp(3rem, 7vw, 4.5rem); }
+  .sec-mark {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex; align-items: center; gap: 0.7rem;
+    margin-bottom: 1.1rem;
+  }
+  .sec-mark .n { color: var(--accent); font-weight: 600; }
+  .sec-mark .bar { flex: 1; height: 1px; background: var(--line); }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(1.55rem, 3.4vw, 2.15rem);
+    line-height: 1.16;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin: 1.8rem 0 0.4rem;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+
+  blockquote {
+    margin: 2rem 0;
+    padding: 0.2rem 0 0.2rem 1.5rem;
+    border-left: 3px solid var(--accent);
+    font-size: clamp(1.3rem, 2.8vw, 1.6rem);
+    line-height: 1.4;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  aside.note {
+    margin: 2rem 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.5rem 1.6rem;
+  }
+  aside.note .tag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.7rem;
+  }
+  aside.note p { font-size: 1.02rem; line-height: 1.62; color: var(--ink-soft); }
+  aside.note p + p { margin-top: 0.7rem; }
+  aside.note b { color: var(--ink); }
+
+  figure { margin: 2rem 0; }
+  figure .cap {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    margin-top: 0.7rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .card .card-hd {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .tbl-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th, td {
+    padding: 0.6rem 1.1rem;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.hl td { background: var(--accent-tint); }
+  td.pos { color: var(--good); }
+  td.neg { color: var(--bad); }
+  .foot td {
+    font-weight: 700;
+    border-top: 2px solid var(--line);
+    color: var(--ink);
+  }
+
+  .bars { display: flex; flex-direction: column; gap: 0.55rem; padding: 1.1rem; }
+  .bar-row { display: grid; grid-template-columns: 8.5rem 1fr auto; align-items: center; gap: 0.8rem; }
+  .bar-row .lbl { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-soft); }
+  .bar-track { height: 0.7rem; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; }
+  .bar-row .val { font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--ink); min-width: 5.5rem; text-align: right; }
+
+  .verdict {
+    display: inline-flex; align-items: baseline; gap: 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0.9rem;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .verdict.fail { color: var(--bad); background: var(--bad-tint); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .verdict.pass { color: var(--good); background: var(--good-tint); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
+  .verdict.warn { color: var(--accent); background: var(--accent-tint); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; margin: 2rem 0; }
+  .kv > div { background: var(--surface); padding: 1rem 1.1rem; }
+  .kv .k { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+  .kv .v { font-family: var(--serif); font-size: 1.5rem; font-weight: 700; margin-top: 0.3rem; font-variant-numeric: tabular-nums; }
+  .kv .v.pos { color: var(--good); }
+  .kv .v.neg { color: var(--bad); }
+
+  hr.end { border: none; border-top: 1px solid var(--line); margin: 3.5rem 0 1.5rem; }
+  .endnote { font-family: var(--mono); font-size: 0.76rem; line-height: 1.7; color: var(--ink-faint); }
+  .endnote b { color: var(--ink-soft); font-weight: 500; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(12px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="col">
+
+    <header class="hero">
+      <p class="eyebrow">量化研究手记 · Field Notes · 三部曲 之一</p>
+      <h1>我们以为，终于找到了第一个能赚钱的策略</h1>
+      <p class="standfirst">七月十四日，这个项目第一次有了一个通过全部预登记红线的净正候选。胜率 92%，跨三个时间窗一致为正。我甚至已经开始给它做精装修了。<em>这篇文章讲的是它是怎么来的——以及为什么它看起来那么可信。</em></p>
+      <p class="byline">
+        <span><b>主题</b> Polymarket · 市场校准偏差 · 长热偏差</span>
+        <span><b>日期</b> 2026-07-14</span>
+        <span><b>系列</b> 三部曲之一(共三篇)</span>
+      </p>
+    </header>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">00</span><span>起点</span><span class="bar"></span></div>
+      <h2>赚钱这件事，其实只有一个公式</h2>
+      <p>先把这个项目在干什么，用一句话说清楚。</p>
+      <p>Polymarket 是个预测市场。每个市场就是一个问题——"某某会不会在六月底前当选"——你可以买"会"或者"不会"。价格就是市场认为的概率：标价 0.62，意思是市场觉得这事有 62% 的可能发生。猜对了，每股赔付 1 块；猜错了，归零。</p>
+      <p>那什么时候能赚钱？只有一个公式：</p>
+      <blockquote>edge = p − m</blockquote>
+      <p><strong>m</strong> 是市场的标价（市场认为的概率）。<strong>p</strong> 是<em>真实</em>概率（你认为的、并且你是对的）。两者之差，就是你的优势。</p>
+      <p>市场标价 0.62，而真实概率其实是 0.70——那你每买一股就占了 8 分钱的便宜。反过来，你的 p 要是估错了，你就是那个被占便宜的人。</p>
+      <p>所以整个项目，几个月来，本质上只在找一样东西：<strong>一个靠得住的 p。</strong></p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">01</span><span>此前的失败</span><span class="bar"></span></div>
+      <h2>我们找 p 找了很久，一直没找到</h2>
+      <p>最直觉的想法是：<strong>跟着聪明人下注。</strong>如果有个大户（我们叫"鲸鱼"）总是赢，那他买什么我买什么，他的判断就是我的 p。</p>
+      <p>这个方向我们查得很彻底，结论很难看：<strong>不赚钱。</strong>净收益 −2.29%，按资金加权后是 −4% 到 −5%。</p>
+      <aside class="note">
+        <span class="tag">名词 · 资金加权</span>
+        <p>"资金加权"的意思是：<b>按你实际投进去多少钱来算收益</b>，而不是每笔交易不管大小都算一票。</p>
+        <p>这个区别是致命的。假设你有 99 笔小单各赚 1%，1 笔大单亏 50%——按"每笔一票"算，你 99% 的胜率，风光得很；按真金白银算，你在亏钱。<b>只有资金加权的数字，才是你银行账户里真实发生的事。</b>过去很多看起来漂亮的结论，一换成资金加权就原形毕露。</p>
+      </aside>
+      <p>还试过跨市场套利（同一件事在两个市场标价不同，两边同时下注锁定差价）——查下来，真正等价的市场对早就被人套到不足一分钱，剩下的都是"看起来一样、其实规格不同"的陷阱。</p>
+      <p>所以到七月中旬，我们的处境是：<strong>试过的路都堵死了，而且堵得很干净。</strong>这不是坏事——省下的都是真钱——但确实没有一条正收益的路。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">02</span><span>新想法</span><span class="bar"></span></div>
+      <h2>如果 p 不用去"打听"，而是市场自己送上门呢？</h2>
+      <p>七月十四日，我们换了个问题。以前一直在问"怎么比市场更懂"——这需要私有信息，很难。新问题是：</p>
+      <blockquote>市场会不会有一种<em>系统性的、可预测的</em>犯错方式？</blockquote>
+      <p>如果有，那我们根本不需要懂内幕。我们只需要知道"市场在什么情况下总是错向同一边"，然后站在它错的反面。</p>
+      <p>而这种东西，在赌博研究里是<strong>一个有名字的老现象</strong>，叫<strong>长热偏差</strong>（favorite–longshot bias）。赛马场上研究了近一百年，规律稳定得像物理定律：</p>
+      <ul style="margin:0;padding-left:1.3rem;color:var(--ink-soft)">
+        <li><strong>冷门总是被高估</strong>——标价 10% 的事，实际发生率往往只有 6%、7%。</li>
+        <li><strong>热门总是被低估</strong>——标价 90% 的事，实际发生率往往有 94%、95%。</li>
+      </ul>
+      <p>为什么？因为买彩票的快感。人们愿意为"万一中了呢"多付一点钱，于是把冷门的价格顶高了；相应地，热门那边就便宜了。</p>
+      <p>如果 Polymarket 上也有这个偏差，那么 <strong>p 就是市场自己的系统性误差</strong>——不需要任何内幕，只需要统计。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">03</span><span>实测</span><span class="bar"></span></div>
+      <h2>偏差确实在，而且长得跟教科书一模一样</h2>
+      <p>我们把库里所有市场的历史价格拿出来，做一件很朴素的事：<strong>把所有标价 0.10 的市场找出来，看它们实际发生了多少次。</strong>然后 0.20、0.30……逐档统计。这叫<em>校准曲线</em>。</p>
+      <p>结果出来，形状教科书得让人心里一动：</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">市场标价 vs 实际发生率 · 校准误差</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>价格区间</th><th>方向</th><th>偏差幅度</th></tr></thead>
+            <tbody>
+              <tr><td>低价侧（m ≤ 0.5，冷门）</td><td>市场<b>高估</b></td><td class="neg">3 – 9 个点</td></tr>
+              <tr><td>高价侧（m ≥ 0.8，热门）</td><td>市场<b>低估</b></td><td class="pos">4 – 5 个点</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">冷门被高估、热门被低估——正是长热偏差该有的样子。幅度也合理，不像是程序算错了。</figcaption>
+      </figure>
+
+      <p>方向对、幅度合理、和百年赛马研究一致。<strong>那就买热门那一侧。</strong>规则简单到没有调参空间：只要某一侧的标价高过某个门槛（我们叫 band，测了 0.60 / 0.70 / 0.80 / 0.90 四档，全部列出，不挑好看的报），就买那一侧。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">04</span><span>结果</span><span class="bar"></span></div>
+      <h2>它通过了全部红线</h2>
+      <p>这个项目有条铁规矩：<strong>在跑数据之前，先把"什么算通过"白纸黑字写死</strong>（我们叫"预登记"）。否则人总会不自觉地事后找一个刚好能通过的标准——那是自欺。</p>
+      <p>红线是这么定的：按资金加权算净收益要为正；<em>剔掉赚最多的那一笔之后依然为正</em>（防止全靠一次撞大运）；而且要在三个不同的时间切点上一致为正（防止只是某段时间的巧合）。</p>
+      <p>band 0.60 的成绩单：</p>
+
+      <div class="kv">
+        <div><div class="k">净收益 · 资金加权</div><div class="v pos">+0.46%</div></div>
+        <div><div class="k">剔掉最大一笔后</div><div class="v pos">+0.56%</div></div>
+        <div><div class="k">胜率</div><div class="v">92%</div></div>
+        <div><div class="k">三个时间窗</div><div class="v pos">全为正</div></div>
+      </div>
+
+      <p><span class="verdict pass">🟢 通过预登记红线</span></p>
+      <p>这是这个项目<strong>有史以来第一个</strong>通过全部红线、扣掉真实成本后仍然为正的候选。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">05</span><span>为什么当时觉得可信</span><span class="bar"></span></div>
+      <h2>它和"跟鲸鱼"，看起来是两种东西</h2>
+      <p>说实话，当时最打动我的不是那个 +0.46%——那个数字薄得可怜。是它的<strong>性格</strong>和以往所有失败的尝试都不一样：</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">性格对照</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th></th><th>跟鲸鱼（已证伪）</th><th>校准偏差（新候选）</th></tr></thead>
+            <tbody>
+              <tr><td>胜率</td><td class="neg">极低，靠偶尔暴击</td><td class="pos">92%，很多次小赢</td></tr>
+              <tr><td>形态</td><td class="neg">买彩票</td><td class="pos">宽基、稳定</td></tr>
+              <tr><td>资金加权后</td><td class="neg">转负</td><td class="pos">仍为正</td></tr>
+              <tr><td>剔掉最大一笔</td><td class="neg">塌了</td><td class="pos">还站着</td></tr>
+              <tr><td>依赖什么</td><td class="neg">别人的私有信息</td><td class="pos">市场结构性偏差</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">左边是"押中一次就翻身"的彩票逻辑，右边是"薄利多销"的结构逻辑。后者听起来才像个真策略。</figcaption>
+      </figure>
+
+      <p>"很多次小赢"和"偶尔一次暴击"，是完全不同的两种东西。前者意味着背后有个稳定的机制，后者可能只是运气被算成了本事。<strong>这个候选看起来属于前者。</strong></p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">06</span><span>精装修</span><span class="bar"></span></div>
+      <h2>于是我开始给它添砖加瓦</h2>
+      <p>既然有苗头，自然想让它更厚。当天又做了两件事：</p>
+      <h3>一、价格下限（护栏）</h3>
+      <p>我们的滑点探针早就发现：<strong>越贴边的市场，滑点越是黑洞</strong>——价格贴到 0.15 以内，交易成本能从几百个基点飙到上万。（滑点＝你看到的价和真实成交价之间的差，可以想成买菜时摊主临时加价那部分。）所以给策略加一条价格下限，避开黑洞区。实测确实是真实改进。</p>
+      <h3>二、半凯利仓位</h3>
+      <p>既然担心 p 估得不准，那就别每笔都押一样多——按"优势有多大"来定仓位，而且只押理论值的一半（半凯利），留足安全边际。结果仓位加权后的净收益确实更高了（+1.3% 到 +4.3%）。</p>
+      <p><strong>但这里冒出了第一个不祥的信号。</strong>粗略复利模拟显示：<span class="verdict fail">回撤 91% – 95%</span></p>
+      <p>一部分是度量方法的缺陷，但另一部分是真的：<strong>我们的 p 只用两个月数据拟合出来，太糙了</strong>——糙到即便只押半个凯利，也依然是过度下注。</p>
+      <p>这件事把"需要更多历史数据"，从一个"有了更好"的选项，顶成了<strong>前提</strong>。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">07</span><span>裂缝</span><span class="bar"></span></div>
+      <h2>回头看，当时脚下有两道裂缝</h2>
+      <p>那天收工时，我把已知的软肋老老实实记了下来：</p>
+      <ul style="margin:0;padding-left:1.3rem;color:var(--ink-soft)">
+        <li><strong>垫子极薄。</strong>+0.46% 意味着成本稍微估偏一点，它就翻负。</li>
+        <li><strong>只有两个月数据。</strong>而且三个时间切点互相嵌套，不是真正独立的验证。</li>
+        <li><strong>滑点曲线只有九天探针。</strong>初判而已。</li>
+      </ul>
+      <p>这些我都写进了记录，也提醒自己"别把 +0.46% 当能赚钱"。</p>
+      <p>但真正要命的那道裂缝，<strong>当时完全不在我的清单上</strong>。它藏在一个我从没怀疑过的地方——</p>
+      <blockquote>我们的回测，是怎么知道"这个市场已经结束了、谁赢了"的？</blockquote>
+      <p>我一直默认这是道送分题。事实上，代码在这里做了一件<em>我从没检查过</em>的事：它<strong>自己猜</strong>。</p>
+      <p>下一篇：为了解决"数据只有两个月"，我去 Polymarket 官方接口重新拉历史。本来只是一次补数据的苦力活，结果在路上撞见了更要紧的东西。</p>
+    </section>
+
+    <hr class="end">
+    <p class="endnote">
+      <b>系列</b> 三部曲之一 · 下一篇《去官方要数据的路上，我撞见了更要紧的事》<br>
+      <b>技术档案</b> 预登记单 <code>docs/PREREG_CALIBRATION_2026-07-14.md</code> · 脚本 <code>08-backtests/run_calibration_oos.py</code> / <code>run_calibration_kelly.py</code><br>
+      <b>前情</b> 07-07《我亲手证伪了自己的好点子》· 07-14《价格下限：是安全带，不是发动机》<br>
+      <b>声明</b> 本文所有数字均为回测结果，未投入任何真实资金。本系列记录的是研究过程，不构成投资建议。
+    </p>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      els.forEach(function (e) { e.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>

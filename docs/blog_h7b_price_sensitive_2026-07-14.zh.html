@@ -1,0 +1,468 @@
+<style>
+  :root {
+    --bg: #ECEFF3;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --ink: #16202B;
+    --ink-soft: #4A5763;
+    --ink-faint: #78848F;
+    --line: #D4DBE2;
+    --accent: #B0740F;
+    --accent-tint: #F3E9D6;
+    --good: #2E7A57;
+    --good-tint: #E1EFE7;
+    --bad: #B24C2C;
+    --bad-tint: #F3E3DC;
+    --serif: "Charter", "Bitstream Charter", "Iowan Old Style", Georgia, "Songti SC", "Noto Serif CJK SC", STSong, serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --measure: 66ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F141A;
+      --surface: #161E27;
+      --surface-2: #1B242E;
+      --ink: #DCE3EB;
+      --ink-soft: #98A5B2;
+      --ink-faint: #6C7883;
+      --line: #28323C;
+      --accent: #E2A64C;
+      --accent-tint: #2A2418;
+      --good: #5DBB8E;
+      --good-tint: #16271F;
+      --bad: #DA7A55;
+      --bad-tint: #2A1B14;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ECEFF3; --surface: #FFFFFF; --surface-2: #F4F6F8;
+    --ink: #16202B; --ink-soft: #4A5763; --ink-faint: #78848F; --line: #D4DBE2;
+    --accent: #B0740F; --accent-tint: #F3E9D6;
+    --good: #2E7A57; --good-tint: #E1EFE7; --bad: #B24C2C; --bad-tint: #F3E3DC;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F141A; --surface: #161E27; --surface-2: #1B242E;
+    --ink: #DCE3EB; --ink-soft: #98A5B2; --ink-faint: #6C7883; --line: #28323C;
+    --accent: #E2A64C; --accent-tint: #2A2418;
+    --good: #5DBB8E; --good-tint: #16271F; --bad: #DA7A55; --bad-tint: #2A1B14;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.125rem;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(1.5rem, 5vw, 5rem) 1.25rem 6rem;
+  }
+  .col { max-width: var(--measure); margin: 0 auto; }
+
+  .col > * + * { margin-top: 1.15rem; }
+  p { margin: 0; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  header.hero { margin-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5.4vw, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0.9rem 0 0;
+  }
+  .standfirst {
+    font-size: clamp(1.2rem, 2.4vw, 1.45rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-top: 1.4rem;
+    text-wrap: pretty;
+  }
+  .byline {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-top: 1.8rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+  }
+  .byline b { color: var(--ink-soft); font-weight: 500; }
+
+  section { margin-top: clamp(3rem, 7vw, 4.5rem); }
+  .sec-mark {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex; align-items: center; gap: 0.7rem;
+    margin-bottom: 1.1rem;
+  }
+  .sec-mark .n { color: var(--accent); font-weight: 600; }
+  .sec-mark .bar { flex: 1; height: 1px; background: var(--line); }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(1.55rem, 3.4vw, 2.15rem);
+    line-height: 1.16;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin: 1.8rem 0 0.4rem;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+
+  blockquote {
+    margin: 2rem 0;
+    padding: 0.2rem 0 0.2rem 1.5rem;
+    border-left: 3px solid var(--accent);
+    font-size: clamp(1.3rem, 2.8vw, 1.6rem);
+    line-height: 1.4;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  aside.note {
+    margin: 2rem 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.5rem 1.6rem;
+  }
+  aside.note .tag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.7rem;
+  }
+  aside.note p { font-size: 1.02rem; line-height: 1.62; color: var(--ink-soft); }
+  aside.note p + p { margin-top: 0.7rem; }
+  aside.note b { color: var(--ink); }
+
+  figure { margin: 2rem 0; }
+  figure .cap {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    margin-top: 0.7rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .card .card-hd {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .tbl-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th, td {
+    padding: 0.6rem 1.1rem;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.hl td { background: var(--accent-tint); }
+  td.pos { color: var(--good); }
+  td.neg { color: var(--bad); }
+  .foot td {
+    font-weight: 700;
+    border-top: 2px solid var(--line);
+    color: var(--ink);
+  }
+
+  .bars { display: flex; flex-direction: column; gap: 0.55rem; padding: 1.1rem; }
+  .bar-row { display: grid; grid-template-columns: 8.5rem 1fr auto; align-items: center; gap: 0.8rem; }
+  .bar-row .lbl { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-soft); }
+  .bar-track { height: 0.7rem; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; }
+  .bar-row .val { font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--ink); min-width: 5.5rem; text-align: right; }
+
+  .verdict {
+    display: inline-flex; align-items: baseline; gap: 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0.9rem;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .verdict.fail { color: var(--bad); background: var(--bad-tint); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .verdict.pass { color: var(--good); background: var(--good-tint); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
+  .verdict.warn { color: var(--accent); background: var(--accent-tint); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; margin: 2rem 0; }
+  .kv > div { background: var(--surface); padding: 1rem 1.1rem; }
+  .kv .k { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+  .kv .v { font-family: var(--serif); font-size: 1.5rem; font-weight: 700; margin-top: 0.3rem; font-variant-numeric: tabular-nums; }
+  .kv .v.pos { color: var(--good); }
+  .kv .v.neg { color: var(--bad); }
+
+  hr.end { border: none; border-top: 1px solid var(--line); margin: 3.5rem 0 1.5rem; }
+  .endnote { font-family: var(--mono); font-size: 0.76rem; line-height: 1.7; color: var(--ink-faint); }
+  .endnote b { color: var(--ink-soft); font-weight: 500; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(12px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="col">
+
+    <header class="hero">
+      <p class="eyebrow">量化研究手记 · Field Notes · 续集</p>
+      <h1>价格下限:是安全带,不是发动机</h1>
+      <p class="standfirst">上一篇我用一把"错的尺子"证伪了这个改进;今天换上探针的真实尺子重审,它确实有用。但请别误读——这是给一条<em>防亏损护栏</em>平反,不是找到了赚钱的策略。项目最根本的结论(还没有能赚钱的策略)一字未改。</p>
+      <p class="byline">
+        <span><b>主题</b> Polymarket · H6 逆势策略 · 价格下限复审</span>
+        <span><b>日期</b> 2026-07-14</span>
+        <span><b>前情</b> 见 07-07《我亲手证伪了自己的好点子》</span>
+      </p>
+    </header>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">00</span><span>前情提要</span><span class="bar"></span></div>
+      <h2>一个被"暂时判死"的好点子</h2>
+      <aside class="note">
+        <span class="tag">更正 · 2026-07-15</span>
+        <p><b>本文原文把 H6 的方向写反了</b>("跟大户<b>反着</b>下注")——那是另一条策略(C0 逆势)。核对代码(<code>run_pzero_oos.py:139</code> → <code>follow_whale.generate_signals</code>,docstring:"跟鲸鱼：默认只跟 BUY"):<b>H6 是「跟」大户下注</b>。下段已更正。</p>
+        <p>⚠️ 更要紧的是:<b>本文为 H7 的"平反"已于 2026-07-15 作废。</b>H6/H7 均被证伪——付上真实<b>卖出</b>滑点后 4/4 时间窗全负。本文只算对了一半:价格下限确实是真护栏,但它护住的东西本身不存在。见 07-15《判决：那个 92 分，是自己批卷子批出来的》。</p>
+      </aside>
+      <p>先把上回的故事一句话接上。我们有个策略叫 <strong>H6</strong>:在冷门、快开奖的小市场跟着大户下注。它有个薄薄的、可能是真的边际,但赚得很少。</p>
+      <p>为了让它更赚,我提了个看起来很有道理的改进——<strong>加一条"价格下限":只赌胜负未定的"中间盘",避开那些几乎已成定局的"贴边盘"。</strong>加了下限的版本,叫 <strong>H7</strong>。</p>
+      <p>但上一篇的样本外考试,给了 H7 一记耳光:<em>加了下限跟没加一样,甚至略差</em>,按预登记的红线被判"未通过"。</p>
+      <p>不过那篇结尾,我留了个没解开的疑点。而今天,就是回来解这个疑点的。</p>
+      <blockquote>问题也许不在主意,而在我用来考它的那把尺子本身。</blockquote>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">01</span><span>疑点</span><span class="bar"></span></div>
+      <h2>为什么说"尺子错了"?</h2>
+      <p>价格下限的<strong>全部意义</strong>,是躲开贴边盘的"滑点黑洞"。（滑点 = 你看到的价 和 实际成交的价 之间的差,可以想成买菜时摊主对你坐地起价那部分。）</p>
+      <p>可上一篇的考试,给 H6 和 H7 <em>都</em>用了同一个"到处一样"的固定滑点——不管中间盘还是贴边盘,都按同一个小数目算成本。</p>
+      <aside class="note">
+        <span class="tag">类比 · 大晴天测雨衣</span>
+        <p>你想证明"雨衣有用",却在<b>大晴天</b>做测试。穿不穿雨衣,结果当然一样——不是雨衣没用,是你测试的场景根本没下雨。</p>
+        <p>价格下限的价值只在"下雨天"(滑点随价格暴涨的贴边盘)才显现。用"到处不下雨"的固定滑点去测,永远测不出它。</p>
+      </aside>
+      <p>所以准确的结论从来不是"这方向死了",而是:<strong>得先造一把"会下雨"的尺子——一个滑点随价格变的真实成本模型——再重审一次。</strong>这把尺子的原料,正是这些天滑点探针在后台默默攒下的真实成交数据。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">02</span><span>造尺子</span><span class="bar"></span></div>
+      <h2>把探针数据,画成一张"真实加价地图"</h2>
+      <p>探针这些天试了 <strong>2216 笔 $200 的真实成交</strong>(正好和策略的下注规模一样),覆盖 9 天。我把它们按"价格离边有多远"分档,量出每一档的真实滑点。地图干净得惊人:</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">真实滑点 vs 价格离边距离 · $200 单 · 中位数(越短越好)</div>
+          <div class="bars">
+            <div class="bar-row"><span class="lbl">最贴边 &lt;0.05</span><span class="bar-track"><span class="bar-fill" style="width:100%;background:var(--bad)"></span></span><span class="val">15695 bps</span></div>
+            <div class="bar-row"><span class="lbl">很贴边 0.05–0.10</span><span class="bar-track"><span class="bar-fill" style="width:20%;background:var(--bad)"></span></span><span class="val">3079 bps</span></div>
+            <div class="bar-row"><span class="lbl">较贴边 0.10–0.15</span><span class="bar-track"><span class="bar-fill" style="width:13%;background:var(--accent)"></span></span><span class="val">2004 bps</span></div>
+            <div class="bar-row"><span class="lbl">临界 0.15–0.20</span><span class="bar-track"><span class="bar-fill" style="width:2%;background:var(--good)"></span></span><span class="val">303 bps</span></div>
+            <div class="bar-row"><span class="lbl">中间盘 0.20–0.35</span><span class="bar-track"><span class="bar-fill" style="width:2%;background:var(--good)"></span></span><span class="val">160–540 bps</span></div>
+            <div class="bar-row"><span class="lbl">最均衡 0.35–0.50</span><span class="bar-track"><span class="bar-fill" style="width:1%;background:var(--good)"></span></span><span class="val">110–250 bps</span></div>
+          </div>
+        </div>
+        <figcaption class="cap">最贴边的盘,滑点是中间盘的一百多倍。这正是"下雨天"——固定尺子完全看不见的暴雨区。</figcaption>
+      </figure>
+
+      <p>看这张图,那个"黑洞"是真实存在的:价格一旦贴到 0.15 以内,滑点就从几百个基点,一路狂飙到上万。而这,恰恰是 H6 会踩、H7 躲开的地方。</p>
+      <p>技术上我做了两件事:给成本模型加了一条<em>可选</em>的"价格→滑点"曲线(不开启时行为完全不变,不影响任何旧结果);然后把这张真实地图喂进去,重跑 H6 对 H7。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">03</span><span>翻案</span><span class="bar"></span></div>
+      <h2>换上准尺子,结果反转了</h2>
+      <p>用真实滑点地图重审,把 H6(无下限)和 H7(有下限)放进同一台考试机器,逐个时间窗对比"抗单点净利"(剔掉最大一笔运气后的真实可复制收益):</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">H6(无下限) vs H7(有下限) · 真实滑点地图 · 抗单点净利</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>时间窗</th><th>H6 无下限</th><th>H7 有下限</th><th>H7 − H6</th><th>谁胜</th></tr></thead>
+            <tbody>
+              <tr><td>全样本(6/13起)</td><td class="neg">−4.9%</td><td class="neg">−0.1%</td><td class="pos">+4.8%</td><td class="pos">H7</td></tr>
+              <tr><td>06-15 起</td><td class="neg">−5.4%</td><td class="neg">−0.7%</td><td class="pos">+4.8%</td><td class="pos">H7</td></tr>
+              <tr><td>06-19 起</td><td class="neg">−6.7%</td><td class="neg">−0.8%</td><td class="pos">+5.9%</td><td class="pos">H7</td></tr>
+              <tr><td>06-22 起</td><td class="neg">−6.3%</td><td class="neg">−0.5%</td><td class="pos">+5.8%</td><td class="pos">H7</td></tr>
+            </tbody>
+            <tfoot><tr class="foot"><td>红线:H7 净高于 H6</td><td colspan="3">4 / 4 时间窗达标</td><td class="pos">通过</td></tr></tfoot>
+          </table></div>
+        </div>
+        <figcaption class="cap">无下限的 H6 被贴边盘的真实高滑点拖成亏钱;有下限的 H7 躲开了,基本止血。每个窗口 H7 都赢。</figcaption>
+      </figure>
+
+      <p style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;">
+        <span class="verdict pass">复审判定 · 红线通过</span>
+        <span style="color:var(--ink-soft);font-size:0.98rem;">价格下限确实带来<b style="color:var(--ink)">真实净改善</b>——它堵住了一个真实的亏钱漏洞。</span>
+      </p>
+
+      <p>而且这结论很稳。我用了三把不同的尺子交叉验证,方向完全一致:</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">三把尺子 · 同一个结论</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>成本尺子</th><th>H6</th><th>H7</th><th>结果</th></tr></thead>
+            <tbody>
+              <tr><td>旧 · 固定 0.5%</td><td class="pos">微正</td><td class="pos">微正</td><td>H6 略胜(复现上篇证伪)</td></tr>
+              <tr class="hl"><td>新 · 真实中位</td><td class="neg">约 −5%</td><td>约 ≈0</td><td class="pos">H7 胜 4/4</td></tr>
+              <tr><td>新 · 真实均值(尾部更狠)</td><td class="neg">约 −20%</td><td class="neg">约 −15%</td><td class="pos">H7 胜 4/4</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">固定尺子下 H6 略胜(重现了上篇的证伪);一换成真实尺子,H7 全面反超。上篇的疑点,坐实了。</figcaption>
+      </figure>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">04</span><span>清醒</span><span class="bar"></span></div>
+      <h2>但我泼了三盆冷水</h2>
+      <p>翻案是真的,但我没让它听起来像"发财了"。有三件事必须说死,否则就是自欺:</p>
+
+      <h3>冷水一:躲开坑 ≠ 会赚钱</h3>
+      <p>看清楚那张表的绝对值:加了下限的 H7,也只是从"明确亏钱"变成了<strong>大致不赔不赚</strong>(约 0%),<em>它本身还是不赚钱</em>。</p>
+      <blockquote>价格下限是"安全带",不是"发动机"。它能防你出事,但不能让车自己往前开。</blockquote>
+      <p>所以它是必要的,却远不充分。它平反的是"这条规则有没有用"(有),不是"这个策略能不能赚钱"(还不能)。</p>
+
+      <h3>冷水二:数据只有一个月,还是嵌套的</h3>
+      <p>跟大户的信号只从 <strong>6 月 13 号</strong>开始,总共就一个月。表里那 4 个"时间窗"其实是同一个月切出来的、层层嵌套的切片,<em>不是四个互相独立的月份</em>。一致性可以参考,但独立证据的分量不足。</p>
+
+      <h3>冷水三:这只是"初判"</h3>
+      <p>探针才攒了 9 天,原计划要满 2 周(约 7 月 20 号)才够标定。所以今天这个是<strong>初步判断,不是最终定论</strong>。</p>
+
+      <div class="kv">
+        <div><div class="k">价格下限有用吗</div><div class="v pos">是(平反)</div></div>
+        <div><div class="k">H7 本身赚钱吗</div><div class="v neg">否(≈打平)</div></div>
+        <div><div class="k">独立月份</div><div class="v">1 个月</div></div>
+        <div><div class="k">状态</div><div class="v" style="color:var(--accent)">初判</div></div>
+      </div>
+      <p style="display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;">
+        <span class="verdict warn">纪律 · 当前不碰真钱</span>
+        <span style="color:var(--ink-soft);font-size:0.98rem;">待探针满窗后复跑,出官方判决。</span>
+      </p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">05</span><span>对账</span><span class="bar"></span></div>
+      <h2>今天推翻了以前哪条结论?——一条都没有</h2>
+      <p>这一篇读起来"绿色"字眼变多了(翻案、胜、通过),很容易让人以为项目方向变了。所以我把之前几份文档的<strong>总结论</strong>逐一拎出来,和今天当面对账:</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">历次结论 vs 今天 · 逐条对账</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>文档 · 日期</th><th>当时的结论</th><th>今天的关系</th></tr></thead>
+            <tbody>
+              <tr><td>盈利决策<br>06-06</td><td>没有一个"资金加权为正"的策略;edge 只在薄市场,放大即亏(−0.85%/每元)</td><td class="pos">未推翻,反而强化——真实滑点下 H6 资金加权为负,H7 仅打平,<b>仍无为正候选</b></td></tr>
+              <tr><td>跟大户证伪<br>06-08</td><td>跟大户对小资金无可放大 edge;"看着为正"是分母效应幻觉</td><td class="pos">未推翻——今天连"薄薄 +1.5%"那点残余,也在真实成本下被戳穿</td></tr>
+              <tr><td>滑点博客<br>07-07</td><td>价格下限被固定成本证伪;疑心是尺子错了</td><td>今天正是它<b>登记的复审</b>:尺子确实错了,下限平反——但只是<b>相对</b>改善</td></tr>
+            </tbody>
+            <tfoot><tr class="foot"><td>主结论(能否赚钱)</td><td colspan="2" class="neg">和 06-06 一字未改:还不能</td></tr></tfoot>
+          </table></div>
+        </div>
+        <figcaption class="cap">三份文档的主结论,今天没有一条被推翻;两份被强化,一份(尺子疑点)被兑现。</figcaption>
+      </figure>
+
+      <p>而且要说清最扎心的一点:<strong>07-07 那篇说 H6 还剩薄薄的 +1.5% 真实边际;今天用探针真实滑点一量,这 +1.5% 是负的。</strong>所以今天<em>不但没让项目更乐观,反而把"最后那点薄利"也收回了</em>。价格下限的绿灯,是"少亏"的绿灯,不是"能赚"的绿灯。</p>
+      <blockquote>今天唯一"新"的,是第一次有一个<em>子问题</em>得了绿灯;主问题的答案,和五周前完全一样。</blockquote>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">06</span><span>串联</span><span class="bar"></span></div>
+      <h2>把这几天的事串成一条线</h2>
+      <p>如果你只想记住一条脉络,是这样的:</p>
+      <aside class="note">
+        <span class="tag">故事线 · 一路走来</span>
+        <p><b>跟大户</b> → 发现光跟不赚钱 → 加各种限制想救活它。</p>
+        <p>其中<b>"价格下限"</b>这条:上一篇用固定尺子测,<b>误判为没用</b>;这一篇用探针的真实尺子重审,<b>平反了它确实有用</b>。</p>
+        <p>但它只是<b>安全带</b>,救不活整个策略——最根本的瓶颈没破:到今天,我们还是<b>没找到一个真能赚钱的策略</b>。</p>
+      </aside>
+      <p>所以价格下限的正确定位,不是"一个能上场的策略",而是<strong>一道给将来某个真有正收益的策略预备的执行护栏</strong>——先把它验证好、放在那里。今天的活儿,是把这道护栏从"疑似没用"确认成了"确实管用"。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">07</span><span>尾声</span><span class="bar"></span></div>
+      <h2>下一步,和为什么这样做值得</h2>
+      <p>到大约 <strong>7 月 20 号</strong>,探针满两周、跟大户的数据也多攒一周,我会把今天这个复审原样重跑一遍,出正式结论。在那之前,一切照旧——<strong>绝不拿真钱去试。</strong></p>
+      <p>回头看这半天:我们没能把策略调成赚钱的,但我们做成了另一件同样值钱的事——<strong>纠正了一次自己的误判</strong>。上一篇诚实地证伪了一个漂亮点子;这一篇同样诚实地发现,当初那把尺子量错了,于是把它平反回来。</p>
+      <blockquote>把误判纠正回来,和当初诚实地证伪它,是同一种纪律的两面。</blockquote>
+      <p>方向对不对,不看它今天好不好看,看它在没见过的新数据上还站不站得住。7 月 20 号,我们用满窗的尺子,再看一眼。</p>
+    </section>
+
+    <hr class="end">
+    <p class="endnote">
+      <b>方法说明。</b>"抗单点"指剔除对加权贡献最大的单笔交易后的资金加权净收益,用于排除少数彩票式赢家撑起的假边际。滑点曲线由滑点探针 2216 笔 $200 真实盘口试算标定(2026-07-06~07-14,9 天),按价格离边距离分 0.05 桶取中位数,预先钉死不择优;均值曲线并列作敏感性。跟大户信号样本为 2026-06-13~07-14,cutoff 早于 06-13 者全捕获同一 test 集,故 4 个时间窗互异但嵌套、非独立月份。所有百分比为资金加权、每笔封顶 $200、最终结算口径。<br>
+      <b>本文为初判,非官方判决;须待探针满窗复跑。Polymarket H6 研究 · 2026-07-14 · 只读监控,不构成投资建议。</b>
+    </p>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      els.forEach(function (e) { e.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>

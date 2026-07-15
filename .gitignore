@@ -72,3 +72,12 @@ dashboard/build/
 08-backtests/results/
 .coverage
 .hypothesis/
+
+# SQLite WAL/SHM 临时文件(*.db 匹配不到,会以未跟踪目录形式冒出来)
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Claude Code 本地设置与 harness 临时文件(带随机后缀,曾误入 8d47c4f)
+.claude/settings.local.json
+.claude/settings.local.json.tmp.*

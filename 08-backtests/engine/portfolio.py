@@ -72,10 +72,35 @@ def _entry(
 
 
 def _mark(
-    sig: Signal, ps: PriceSeries, entry_date: _date, horizon: str
+    sig: Signal,
+    ps: PriceSeries,
+    entry_date: _date,
+    horizon: str,
+    truth: dict[str, float] | None = None,
 ) -> tuple[_date, float, bool] | None:
-    """返回 (mark_date, mark_price_for_outcome, resolved)。无法标记返回 None。"""
+    """返回 (mark_date, mark_price_for_outcome, resolved)。无法标记返回 None。
+
+    truth: {market_slug: 官方结算(1.0=库内'Yes'侧赢 / 0.0=输)}。
+      仅作用于 horizon==RESOLUTION。**传 None 时行为与历史完全一致**(默认)。
+
+    为什么需要它(2026-07-15):RESOLUTION 原本用 `ps.terminal()`(我们最后一次拍到的
+    快照价)当了结价。对已收敛的市场≈真实结算,无害;但实测 **80% 的已结算市场终值
+    未收敛**,对它们这等于**假设自己能在中间价、无成本地平仓**——而真正持有到期是
+    没有卖出动作的(直接赔付),这个"免费中间价出场"是凭空多出来的。
+    见 docs/PREREG_H6_TRUTH_EXIT_2026-07-15.md(测试 C1)。
+    """
     if horizon == RESOLUTION:
+        if truth is not None:
+            settled = truth.get(sig.market)
+            if settled is None:
+                return None  # 无权威真值 -> 不猜(由调用方限定市场范围保证两臂可比)
+            mp = outcome_price(settled, sig.outcome)  # 我方赢=1.0 / 输=0.0
+            if mp is None:
+                return None
+            md = ps.end_date or ps.dates[-1]
+            if md < entry_date:
+                return None  # 与 terminal 分支同样的守卫,保持两臂对称(否则 armB 会多收交易)
+            return (md, mp, True)
         term = ps.terminal()
         if term is None:
             return None
@@ -97,9 +122,18 @@ def _mark(
 
 
 def simulate_one(
-    sig: Signal, ps: PriceSeries, cost: CostModel, mode: str, horizon: str
+    sig: Signal,
+    ps: PriceSeries,
+    cost: CostModel,
+    mode: str,
+    horizon: str,
+    truth: dict[str, float] | None = None,
+    exit_cost: bool = False,
 ) -> TradeResult | None:
-    """模拟单信号在单一持有期下的结果。不可入场/不可标记 → None。"""
+    """模拟单信号在单一持有期下的结果。不可入场/不可标记 → None。
+
+    truth / exit_cost 均为**可选修正**,默认关闭时行为与历史完全一致(见 _mark 与下方注释)。
+    """
     ent = _entry(sig, ps, cost, mode)
     if ent is None:
         return None
@@ -107,10 +141,17 @@ def simulate_one(
     if entry_price <= 0:
         return None
 
-    mk = _mark(sig, ps, entry_date, horizon)
+    mk = _mark(sig, ps, entry_date, horizon, truth)
     if mk is None:
         return None
     mark_date, mark_price, resolved = mk
+
+    # exit_cost(2026-07-15,测试 C2):原本 entry_price 已扣入场成本,mark_price 却是
+    # **裸中间价**——卖出滑点为零。对 RESOLUTION(到期直接赔付,没有卖出动作)这是对的;
+    # 但对 '+Nd' 是错的:一天后要真卖,必须吃进盘口。探针实测卖出滑点 120bps(均衡盘)
+    # ~770bps(贴边盘)。见 docs/PREREG_H6_TRUTH_EXIT_2026-07-15.md。
+    if exit_cost and horizon != RESOLUTION:
+        mark_price = cost.entry_fill(mark_price, "SELL")  # 卖出成交价(低于中间价)
 
     gross = (mark_price - entry_price) / entry_price
 
@@ -135,15 +176,20 @@ def run_backtest(
     cost: CostModel,
     mode: str,
     horizons: list[str],
+    truth: dict[str, float] | None = None,
+    exit_cost: bool = False,
 ) -> dict[str, list[TradeResult]]:
-    """对每个持有期跑全量信号,返回 {horizon: [TradeResult,...]}。"""
+    """对每个持有期跑全量信号,返回 {horizon: [TradeResult,...]}。
+
+    truth / exit_cost 默认关闭 → 与历史行为逐字节一致,不影响任何既有结果。
+    """
     out: dict[str, list[TradeResult]] = {h: [] for h in horizons}
     for sig in signals:
         ps = prices.get(sig.market)
         if ps is None:
             continue
         for h in horizons:
-            r = simulate_one(sig, ps, cost, mode, h)
+            r = simulate_one(sig, ps, cost, mode, h, truth, exit_cost)
             if r is not None:
                 out[h].append(r)
     return out

@@ -1,0 +1,459 @@
+<style>
+  :root {
+    --bg: #ECEFF3;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --ink: #16202B;
+    --ink-soft: #4A5763;
+    --ink-faint: #78848F;
+    --line: #D4DBE2;
+    --accent: #B0740F;
+    --accent-tint: #F3E9D6;
+    --good: #2E7A57;
+    --good-tint: #E1EFE7;
+    --bad: #B24C2C;
+    --bad-tint: #F3E3DC;
+    --serif: "Charter", "Bitstream Charter", "Iowan Old Style", Georgia, "Songti SC", "Noto Serif CJK SC", STSong, serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --measure: 66ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F141A;
+      --surface: #161E27;
+      --surface-2: #1B242E;
+      --ink: #DCE3EB;
+      --ink-soft: #98A5B2;
+      --ink-faint: #6C7883;
+      --line: #28323C;
+      --accent: #E2A64C;
+      --accent-tint: #2A2418;
+      --good: #5DBB8E;
+      --good-tint: #16271F;
+      --bad: #DA7A55;
+      --bad-tint: #2A1B14;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ECEFF3; --surface: #FFFFFF; --surface-2: #F4F6F8;
+    --ink: #16202B; --ink-soft: #4A5763; --ink-faint: #78848F; --line: #D4DBE2;
+    --accent: #B0740F; --accent-tint: #F3E9D6;
+    --good: #2E7A57; --good-tint: #E1EFE7; --bad: #B24C2C; --bad-tint: #F3E3DC;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F141A; --surface: #161E27; --surface-2: #1B242E;
+    --ink: #DCE3EB; --ink-soft: #98A5B2; --ink-faint: #6C7883; --line: #28323C;
+    --accent: #E2A64C; --accent-tint: #2A2418;
+    --good: #5DBB8E; --good-tint: #16271F; --bad: #DA7A55; --bad-tint: #2A1B14;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.125rem;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(1.5rem, 5vw, 5rem) 1.25rem 6rem;
+  }
+  .col { max-width: var(--measure); margin: 0 auto; }
+
+  .col > * + * { margin-top: 1.15rem; }
+  p { margin: 0; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  header.hero { margin-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5.4vw, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0.9rem 0 0;
+  }
+  .standfirst {
+    font-size: clamp(1.2rem, 2.4vw, 1.45rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-top: 1.4rem;
+    text-wrap: pretty;
+  }
+  .byline {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-top: 1.8rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+  }
+  .byline b { color: var(--ink-soft); font-weight: 500; }
+
+  section { margin-top: clamp(3rem, 7vw, 4.5rem); }
+  .sec-mark {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex; align-items: center; gap: 0.7rem;
+    margin-bottom: 1.1rem;
+  }
+  .sec-mark .n { color: var(--accent); font-weight: 600; }
+  .sec-mark .bar { flex: 1; height: 1px; background: var(--line); }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(1.55rem, 3.4vw, 2.15rem);
+    line-height: 1.16;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin: 1.8rem 0 0.4rem;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+
+  blockquote {
+    margin: 2rem 0;
+    padding: 0.2rem 0 0.2rem 1.5rem;
+    border-left: 3px solid var(--accent);
+    font-size: clamp(1.3rem, 2.8vw, 1.6rem);
+    line-height: 1.4;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  aside.note {
+    margin: 2rem 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.5rem 1.6rem;
+  }
+  aside.note .tag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.7rem;
+  }
+  aside.note p { font-size: 1.02rem; line-height: 1.62; color: var(--ink-soft); }
+  aside.note p + p { margin-top: 0.7rem; }
+  aside.note b { color: var(--ink); }
+
+  figure { margin: 2rem 0; }
+  figure .cap {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    margin-top: 0.7rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .card .card-hd {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .tbl-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th, td {
+    padding: 0.6rem 1.1rem;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.hl td { background: var(--accent-tint); }
+  td.pos { color: var(--good); }
+  td.neg { color: var(--bad); }
+  .foot td {
+    font-weight: 700;
+    border-top: 2px solid var(--line);
+    color: var(--ink);
+  }
+
+  .bars { display: flex; flex-direction: column; gap: 0.55rem; padding: 1.1rem; }
+  .bar-row { display: grid; grid-template-columns: 8.5rem 1fr auto; align-items: center; gap: 0.8rem; }
+  .bar-row .lbl { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-soft); }
+  .bar-track { height: 0.7rem; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; }
+  .bar-row .val { font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--ink); min-width: 5.5rem; text-align: right; }
+
+  .verdict {
+    display: inline-flex; align-items: baseline; gap: 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0.9rem;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .verdict.fail { color: var(--bad); background: var(--bad-tint); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .verdict.pass { color: var(--good); background: var(--good-tint); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
+  .verdict.warn { color: var(--accent); background: var(--accent-tint); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; margin: 2rem 0; }
+  .kv > div { background: var(--surface); padding: 1rem 1.1rem; }
+  .kv .k { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+  .kv .v { font-family: var(--serif); font-size: 1.5rem; font-weight: 700; margin-top: 0.3rem; font-variant-numeric: tabular-nums; }
+  .kv .v.pos { color: var(--good); }
+  .kv .v.neg { color: var(--bad); }
+
+  hr.end { border: none; border-top: 1px solid var(--line); margin: 3.5rem 0 1.5rem; }
+  .endnote { font-family: var(--mono); font-size: 0.76rem; line-height: 1.7; color: var(--ink-faint); }
+  .endnote b { color: var(--ink-soft); font-weight: 500; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(12px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="col">
+
+    <header class="hero">
+      <p class="eyebrow">量化研究手记 · Field Notes · 三部曲 之二</p>
+      <h1>去官方要数据的路上，我撞见了更要紧的事</h1>
+      <p class="standfirst">本来只是个补数据的苦力活：我们只有两个月历史，去官方接口多拉一点。结果历史拉到了十四个月——顺手却发现，我们的回测一直在<em>自己给自己批卷子</em>。<em>这篇讲工程，也讲三次被自己拦下的经过。</em></p>
+      <p class="byline">
+        <span><b>主题</b> Polymarket · 官方 API 回填 · 数据口径</span>
+        <span><b>日期</b> 2026-07-15</span>
+        <span><b>系列</b> 三部曲之二(共三篇)</span>
+      </p>
+    </header>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">00</span><span>前情</span><span class="bar"></span></div>
+      <h2>一个薄薄的希望，和一个明确的瓶颈</h2>
+      <p>上一篇的结局：我们找到了项目第一个通过全部红线的净正候选——利用"长热偏差"买热门那一侧，净收益 +0.46%，胜率 92%。</p>
+      <p>但它有个说不过去的软肋：<strong>只有两个月数据</strong>。而且半凯利仓位那次模拟甩出 90% 以上的回撤，把"需要更多历史"从可选项顶成了前提。</p>
+      <p>所以今天的任务清单本来很朴素，就两条：</p>
+      <ul style="margin:0;padding-left:1.3rem;color:var(--ink-soft)">
+        <li>③ 精炼甜区——把"最肥的那段价格区间"单独拎出来测（干净、快）；</li>
+        <li>并行：从 Polymarket 官方接口重拉历史价，彻底解决数据浅的问题。</li>
+      </ul>
+      <p>我把顺序调了一下：<strong>先探 API。</strong>理由是——精炼甜区跑在同样那两个月数据上，只会让数字更好看，不会让我们更有把握；而 API 探测是决定性的，如果能拉到更长的历史，甜区就该直接在长历史上测一次，而不是先在浅数据上测一遍、回头再测一遍。探不通，也只损失二十分钟。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">01</span><span>三个坑</span><span class="bar"></span></div>
+      <h2>探路：二十分钟，踩了三个坑</h2>
+      <h3>坑一：机器的 IPv6 是坏的</h3>
+      <p>第一个请求就报错：<code>Name or service not known</code>——查无此域名。但奇怪的是 <code>getent</code> 明明解析出了地址。</p>
+      <p>真相是：这台机器的 DNS 只返回 IPv6 地址，而<strong>它的 IPv6 根本连不出去</strong>。Python 默认优先走 IPv6，于是撞墙；<code>curl -4</code>（强制 IPv4）却一切正常。所有拉数脚本必须强制 IPv4。</p>
+      <h3>坑二：已结算的市场，默认查不到</h3>
+      <p>更隐蔽。我按 slug（市场的唯一名字）去查，一半查不到。一开始以为是官方没有这些市场的记录。</p>
+      <p>其实是查询姿势不对：<strong>Gamma 接口默认只返回"还在交易"的市场</strong>，已经结算归档的，必须显式加 <code>&closed=true</code> 才给。而我们要的恰恰是已结算的——不然没有正确答案。</p>
+      <h3>坑三：我抄了截断的输出</h3>
+      <p>这个纯属自己蠢，但值得记：调试时我从终端输出里手抄 slug 去验证，抄的却是<strong>被截断到 46 个字符</strong>的版本，于是"查不到"。这个坑我一天内踩了两次，第二次还差点误判成"代码改坏了"。</p>
+      <aside class="note">
+        <span class="tag">教训 · 调试时的自我怀疑</span>
+        <p>第二次踩坑时，症状是"我刚改完代码，功能就坏了"——几乎所有直觉都指向"改错了"。<b>但真凶是测试数据本身是假的。</b></p>
+        <p>值得记住：当"我刚动过的地方"和"出问题的地方"重合时，那种因果关系的诱惑力极强，强到让人不去检查更蠢、更基础的可能性。</p>
+      </aside>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">02</span><span>好消息</span><span class="bar"></span></div>
+      <h2>坑填完，收获比预期大得多</h2>
+      <p>接口通了之后，结果远超预期。原计划是"回填到三月"，实际拿到的是：</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">同一个市场 · 我们的库 vs 官方接口</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th></th><th>我们的库</th><th>官方接口</th></tr></thead>
+            <tbody>
+              <tr><td>日价点数</td><td>49</td><td class="pos">347</td></tr>
+              <tr><td>历史起点</td><td>2026-05-09</td><td class="pos">2025-07-19</td></tr>
+              <tr><td>日覆盖率</td><td>—</td><td class="pos">96%</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">抽样 40 个市场：官方能查到 95%，日价点数是我们的 7.1 倍。不是"多一点"，是多一个数量级。</figcaption>
+      </figure>
+
+      <p>而且官方直接给<strong>权威的结算结果</strong>——这个市场最终是"是"还是"否"，白纸黑字，不用猜。</p>
+      <p>这句话当时听着只是个附带好处。它其实是整个故事的转折点。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">03</span><span>转折</span><span class="bar"></span></div>
+      <h2>等一下——我们原来是怎么知道"谁赢了"的？</h2>
+      <p>拿到权威答案之后，一个我从来没问过的问题自然浮了上来：<strong>在没有权威答案的这几个月里，回测是怎么判断"这个市场结束了没有、谁赢了"的？</strong></p>
+      <p>翻开代码（<code>engine/data.py:81</code>），答案让我坐直了。它<strong>自己猜</strong>，靠一条土规则：</p>
+      <blockquote>看最后一张价格快照。如果价格接近 0 或接近 1，就认为这市场已经结束了。</blockquote>
+      <p>这条规则的道理<em>听起来</em>是对的：市场真结束时，答案要么发生要么没发生，价格必然砸向 0 或 1，不可能停在中间。这叫"收敛"。</p>
+      <p>我拿官方答案对了一下这条土规则。结果是两句话：</p>
+      <ul style="margin:0;padding-left:1.3rem;color:var(--ink-soft)">
+        <li><strong>好消息：它判胜负从不出错。</strong>只要它说某个市场结束了、某边赢了，官方都印证是对的。</li>
+        <li><strong>坏消息：它静默丢掉了大量已结算的市场。</strong>丢掉的，正是那些<em>终值价没收敛</em>的盘。</li>
+      </ul>
+      <p>为什么会漏？想象一场网球赛，我们唯一那张价格快照拍在<strong>比赛打到一半</strong>的时候，价格 0.62。比赛后来打完了，官方早就结算了。但对回测来说，"最后一张快照"就是这张 0.62——不接近 0 也不接近 1，<strong>不收敛</strong>，于是判定："这市场还没结束"，丢掉不用。</p>
+      <p>可它明明早就结束了。<strong>我们只是没拍到结束那一刻而已。</strong></p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">04</span><span>为什么这要命</span><span class="bar"></span></div>
+      <h2>丢掉的，恰好是我们该亏钱的那些</h2>
+      <p>如果丢的是随机一批，那只是浪费数据，不致命。但它丢的不是随机的：</p>
+      <blockquote>它专门丢掉"价格停在中间就结束了"的盘。</blockquote>
+      <p>而"价格停在 0.62 却最终输了"的盘是什么？<strong>正是我们这个"买热门那一侧"的策略该亏钱的案例。</strong></p>
+      <aside class="note">
+        <span class="tag">比喻 · 自己批自己的卷子</span>
+        <p>一个学生自己批自己的卷子，规则是"看不清答案的题就跳过不算分"。<b>结果他跳过的全是自己不会做的题</b>，最后算出个 92 分。</p>
+        <p>那 92 分不是他的水平，是规则送的。</p>
+      </aside>
+      <p>我们那个 +0.46% 的净利、92% 的胜率，此刻高度可疑：<strong>它可能是靠自动跳过自己的败绩考出来的。</strong></p>
+      <p>于是当天的计划整个翻了。原定"先精炼甜区"——<strong>推迟</strong>。理由很简单：</p>
+      <blockquote>在一个有选择偏差的样本上精炼甜区，只会把偏差磨得更锋利。</blockquote>
+      <p>而验证这个怀疑，<em>根本不需要更多数据</em>，只需要把"自己猜"换成"问官方要答案"。这比补数据更便宜，也更致命。</p>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">05</span><span>三次自我拦截</span><span class="bar"></span></div>
+      <h2>写回填工具的路上，我被自己拦下三次</h2>
+      <p>接下来是苦力活：把所有相关市场从官方接口拉一遍。但这个"苦力活"里，有三次差点酿成假结论。</p>
+
+      <h3>第一次：代码审查拦下一个会毒化数据的缺陷</h3>
+      <p>按项目规矩，网络代码写完必须过一遍审查。审查揪出一个我完全没意识到的问题：我的代码把<strong>"官方确认没有这个市场"</strong>和<strong>"网络抖了一下没拿到"</strong>返回了同样的结果。</p>
+      <p>后果是：一次网络波动，会让一个真实市场被永久记成"不存在"，而断点续跑时又会跳过它——<strong>再也不会重试</strong>。跑上万个市场、几十分钟、对着一个已知偶发故障的接口，这必然会静默污染数据。</p>
+      <p>（另一个：某类网络异常不属于我捕获的类型，读到一半断线会直接打死整批任务。）</p>
+
+      <h3>第二次：我选错了市场范围，覆盖率只有 8%</h3>
+      <p>这次是我自己发现的，也最惊险。我按"快照数 ≥ 8"筛选要抓的市场，抓了 2436 个，自我感觉良好。</p>
+      <p>直到我去数了一下<strong>真正需要的市场集</strong>有多大——<span class="verdict fail">9858 个，而我抓的 2436 个里只有 767 个在里面</span></p>
+      <p>覆盖率 <strong>8%</strong>。原因是那 9858 个候选里，有 4196 个在库里<em>只有一张快照</em>——监控只瞄到过一眼，但那一眼正好落在入场窗口里，所以它们是完全合法的样本。按快照数筛选，恰好把它们全部排除。</p>
+      <p>如果这样跑下去，测试会变成"真值口径"和"市场范围"两个变量一起动，<strong>测了等于没测</strong>。</p>
+
+      <h3>第三次：手写 SQL 和引擎规则差了 5 个市场</h3>
+      <p>我写了段 SQL 来筛市场，跟引擎的规则一对，差 5 个（9859 vs 9858）。数量上无关紧要，我知道原因（引擎会丢弃同日重复的快照，而且某些日期格式解析成空）。</p>
+      <p>但"数据管线上差不多就行"正是以后咬人的地方。与其去对齐两套规则，不如<strong>让回填直接调用引擎自己的规则</strong>——从构造上就不可能漂移。改完，差异归零。</p>
+
+      <aside class="note">
+        <span class="tag">规律 · 三次拦截的共同点</span>
+        <p>回头看，这三次拦下的都不是"代码跑不起来"的错误——三个版本都能跑，都能出数字，而且数字看起来都很正常。</p>
+        <p><b>它们全是"能跑通、但结论是假的"那一类。</b>这类错误没有报错信息、没有崩溃、没有红色警告，只有一个看起来挺合理的数字。这也正是这个项目为什么要预登记、要审查、要闸门——不是流程洁癖，是因为这类错误<b>只能靠制度挡，靠不了眼力和运气</b>。</p>
+      </aside>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">06</span><span>一个反直觉的判断</span><span class="bar"></span></div>
+      <h2>"Yes"这个词，其实是个误称</h2>
+      <p>还有一个坑值得单独讲，因为它的结论是反直觉的。</p>
+      <p>审查提醒我：代码假设官方返回的第一个选项永远是"Yes"。我去查了一下——<strong>已结算市场里只有 54% 是 <code>["Yes","No"]</code></strong>，其余是 <code>["Long","Short"]</code>、球队名、党派名。对它们取"第一个选项赢没赢"，含义完全不同。</p>
+      <p>更麻烦的是：我们库里 10 万行价格，<strong>一律标着 <code>outcome='Yes'</code></strong>，不管这市场到底是不是"是非题"。那么库里的"Yes 价"到底对应官方的哪一侧？没人知道。</p>
+      <p>这是可以实测的。拿库里的价和官方的价在同一天对表，就知道是不是同一侧。结果：</p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">库价 vs 官方价 · 按重叠天数分层的"反向率"</div>
+          <div class="bars">
+            <div class="bar-row"><span class="lbl">重叠 1 天</span><span class="bar-track"><span class="bar-fill" style="width:100%;background:var(--bad)"></span></span><span class="val">≈ 4%</span></div>
+            <div class="bar-row"><span class="lbl">重叠 2–3 天</span><span class="bar-track"><span class="bar-fill" style="width:25%;background:var(--accent)"></span></span><span class="val">≈ 1%</span></div>
+            <div class="bar-row"><span class="lbl">重叠 ≥ 4 天</span><span class="bar-track"><span class="bar-fill" style="width:5%;background:var(--good)"></span></span><span class="val">≈ 0.2%</span></div>
+          </div>
+        </div>
+        <figcaption class="cap">反向率随数据变多单调趋近于零——这是噪声的特征，不是系统性错误的特征。</figcaption>
+      </figure>
+
+      <p>看懂这张图就明白了：如果下标真的反了，<strong>数据越多应该越确信是反的</strong>，而不是越接近零。所谓"反向"的那些，全部集中在只有一天重叠的盘上——尤以当天开打、当天结束、盘中价格剧烈波动的网球赛为甚。拿一个盘中快照去比日收盘价，本来就不可靠。</p>
+      <p>而重叠 ≥3 天的 346 个市场，<strong>100% 对齐，偏差中位数 0.0000（逐位精确相等）</strong>。</p>
+      <p>这里有个反直觉的结论，我想强调：<strong>正确做法是"不剔除"。</strong>如果我按"反向"去剔掉那 45 个市场，我剔掉的其实是<em>波动最大</em>的市场——那才是真给结果引入偏差。我最后只保留了一个全局闸门：重叠≥4 天的市场对齐率必须 ≥95%，否则脚本直接中止、不出结论。</p>
+      <aside class="note">
+        <span class="tag">洞察 · 标签不重要</span>
+        <p>更深一层：<b>这个策略本来就跟标签无关。</b>它做的是"买标价高的那一侧"——那一侧叫 Yes 还是 Long 还是 Canadiens，根本不重要。重要的只有一件事：<b>价格和结算，指的必须是同一侧。</b>这一点已经验证成立。</p>
+      </aside>
+    </section>
+
+    <section class="reveal">
+      <div class="sec-mark"><span class="n">07</span><span>收工</span><span class="bar"></span></div>
+      <h2>十四个月，二十三万个数据点</h2>
+      <p>回填跑完（顺带一提：串行 13 个/分钟要三小时，改成 10 线程并发后 156 个/分钟，而且结果和串行版逐字节相同）：</p>
+
+      <div class="kv">
+        <div><div class="k">市场数</div><div class="v">10147</div></div>
+        <div><div class="k">日价点数</div><div class="v">232810</div></div>
+        <div><div class="k">历史深度</div><div class="v">14 个月</div></div>
+        <div><div class="k">权威真值</div><div class="v pos">9161</div></div>
+      </div>
+
+      <p>历史从 2025-05-03 起——原来只有两个月，现在十四个月。全程写入独立的新库文件，<strong>生产数据库只读，一个字节没动</strong>。</p>
+      <p>现在，我们手上同时有了两样东西：<strong>一个薄薄的、可疑的正候选</strong>，和<strong>一套能验证它的权威答案</strong>。</p>
+      <p>下一篇：把"自己猜"换成"问官方要答案"，其他一切不变。判决。</p>
+    </section>
+
+    <hr class="end">
+    <p class="endnote">
+      <b>系列</b> 三部曲之二 · 上一篇《我们以为，终于找到了第一个能赚钱的策略》· 下一篇《判决》<br>
+      <b>技术档案</b> 回填工具 <code>08-backtests/backfill_price_history_api.py</code> · 产物库 <code>08-backtests/data/price_history_api.db</code><br>
+      <b>三个 API 要点</b> 必须 <code>&closed=true</code> 才拿得到已结算市场 · 必须强制 IPv4 · 逐日历史用 <code>interval=max&fidelity=1440</code>（<code>startTs/endTs</code> 与 fidelity 同用会 400）<br>
+      <b>声明</b> 本文所有数字均为回测与数据统计结果，未投入任何真实资金。
+    </p>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      els.forEach(function (e) { e.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>
