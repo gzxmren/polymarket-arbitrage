@@ -1,0 +1,574 @@
+<style>
+  :root {
+    --bg: #ECEFF3;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --ink: #16202B;
+    --ink-soft: #4A5763;
+    --ink-faint: #78848F;
+    --line: #D4DBE2;
+    --accent: #B0740F;
+    --accent-tint: #F3E9D6;
+    --good: #2E7A57;
+    --good-tint: #E1EFE7;
+    --bad: #B24C2C;
+    --bad-tint: #F3E3DC;
+    --serif: "Charter", "Bitstream Charter", "Iowan Old Style", Georgia, "Songti SC", "Noto Serif CJK SC", STSong, serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --measure: 66ch;
+  }
+
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.125rem;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+    padding: clamp(1.5rem, 5vw, 5rem) 1.25rem 6rem;
+  }
+  .col { max-width: var(--measure); margin: 0 auto; }
+
+  .col > * + * { margin-top: 1.15rem; }
+  p { margin: 0; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  header.hero { margin-bottom: clamp(2.5rem, 6vw, 4.5rem); }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(2.1rem, 5.4vw, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0.9rem 0 0;
+  }
+  .standfirst {
+    font-size: clamp(1.2rem, 2.4vw, 1.45rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-top: 1.4rem;
+    text-wrap: pretty;
+  }
+  .byline {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    margin-top: 1.8rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+  }
+  .byline b { color: var(--ink-soft); font-weight: 500; }
+
+  section { margin-top: clamp(3rem, 7vw, 4.5rem); }
+  .sec-mark {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: flex; align-items: center; gap: 0.7rem;
+    margin-bottom: 1.1rem;
+  }
+  .sec-mark .n { color: var(--accent); font-weight: 600; }
+  .sec-mark .bar { flex: 1; height: 1px; background: var(--line); }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(1.55rem, 3.4vw, 2.15rem);
+    line-height: 1.16;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin: 1.8rem 0 0.4rem;
+  }
+  a { color: var(--accent); text-underline-offset: 3px; }
+
+  blockquote {
+    margin: 2rem 0;
+    padding: 0.2rem 0 0.2rem 1.5rem;
+    border-left: 3px solid var(--accent);
+    font-size: clamp(1.3rem, 2.8vw, 1.6rem);
+    line-height: 1.4;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  aside.note {
+    margin: 2rem 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.5rem 1.6rem;
+  }
+  aside.note .tag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.7rem;
+  }
+  aside.note p { font-size: 1.02rem; line-height: 1.62; color: var(--ink-soft); }
+  aside.note p + p { margin-top: 0.7rem; }
+  aside.note b { color: var(--ink); }
+
+  figure { margin: 2rem 0; }
+  figure .cap {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    margin-top: 0.7rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .card .card-hd {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .tbl-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th, td {
+    padding: 0.6rem 1.1rem;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.hl td { background: var(--accent-tint); }
+  td.pos { color: var(--good); }
+  td.neg { color: var(--bad); }
+  .foot td {
+    font-weight: 700;
+    border-top: 2px solid var(--line);
+    color: var(--ink);
+  }
+
+  .bars { display: flex; flex-direction: column; gap: 0.55rem; padding: 1.1rem; }
+  .bar-row { display: grid; grid-template-columns: 8.5rem 1fr auto; align-items: center; gap: 0.8rem; }
+  .bar-row .lbl { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-soft); }
+  .bar-track { height: 0.7rem; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; }
+  .bar-row .val { font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--ink); min-width: 5.5rem; text-align: right; }
+
+  .verdict {
+    display: inline-flex; align-items: baseline; gap: 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0.9rem;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .verdict.fail { color: var(--bad); background: var(--bad-tint); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .verdict.pass { color: var(--good); background: var(--good-tint); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
+  .verdict.warn { color: var(--accent); background: var(--accent-tint); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; margin: 2rem 0; }
+  .kv > div { background: var(--surface); padding: 1rem 1.1rem; }
+  .kv .k { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+  .kv .v { font-family: var(--serif); font-size: 1.5rem; font-weight: 700; margin-top: 0.3rem; font-variant-numeric: tabular-nums; }
+  .kv .v.pos { color: var(--good); }
+  .kv .v.neg { color: var(--bad); }
+
+  hr.end { border: none; border-top: 1px solid var(--line); margin: 3.5rem 0 1.5rem; }
+  .endnote { font-family: var(--mono); font-size: 0.76rem; line-height: 1.7; color: var(--ink-faint); }
+  .endnote b { color: var(--ink-soft); font-weight: 500; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { opacity: 0; transform: translateY(12px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+  }
+</style>
+<style>
+  /* 盘点页专用:目录 + 状态徽章 + 时间线 */
+  .toc { background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 1.3rem 1.5rem; margin: 2.5rem 0; }
+  .toc .k { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.8rem; }
+  .toc ol { margin: 0; padding-left: 1.2rem; color: var(--ink-soft); font-size: 1rem; line-height: 1.9; }
+  .toc a { color: var(--ink-soft); text-decoration: none; border-bottom: 1px solid var(--line); }
+  .toc a:hover { color: var(--accent); border-color: var(--accent); }
+
+  .pill { display: inline-block; font-family: var(--mono); font-size: 0.7rem; padding: 0.14rem 0.5rem; border-radius: 3px; border: 1px solid; white-space: nowrap; }
+  .pill.dead { color: var(--bad); background: var(--bad-tint); border-color: color-mix(in srgb, var(--bad) 32%, transparent); }
+  .pill.live { color: var(--good); background: var(--good-tint); border-color: color-mix(in srgb, var(--good) 32%, transparent); }
+  .pill.off  { color: var(--ink-faint); background: var(--surface-2); border-color: var(--line); }
+
+  .tl { border-left: 2px solid var(--line); margin: 2rem 0 2rem 0.6rem; padding-left: 1.6rem; }
+  .tl .item { position: relative; padding-bottom: 2.1rem; }
+  .tl .item::before { content: ""; position: absolute; left: calc(-1.6rem - 6px); top: 0.5rem; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+  .tl .item.bad::before { background: var(--bad); }
+  .tl .item.good::before { background: var(--good); }
+  .tl .hd { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; color: var(--ink-faint); }
+  .tl h3 { margin: 0.25rem 0 0.5rem; font-size: 1.16rem; }
+  .tl .row { font-size: 1rem; line-height: 1.68; color: var(--ink-soft); margin: 0.3rem 0; }
+  .tl .row b.lbl { display: inline-block; min-width: 4.4rem; color: var(--ink-faint); font-family: var(--mono); font-size: 0.72rem; font-weight: 500; letter-spacing: 0.06em; vertical-align: top; }
+  .tl .row span.txt { display: inline-block; width: calc(100% - 5rem); vertical-align: top; }
+</style>
+
+<div class="wrap">
+  <div class="col">
+
+    <header class="hero">
+      <p class="eyebrow">Polymarket 项目 · 阶段性全盘点</p>
+      <h1>十三次迭代，零个能赚钱的策略，和一条被反复验证的纪律</h1>
+      <p class="standfirst">这是一份完整的账。从接手至今做过的每一次改动、每一个判决、每一样还在运行的东西，全部列出来——包括我自己犯的错。<em>所有数字都是当场实测的，不是凭记忆写的。</em></p>
+      <p class="byline">
+        <span><b>盘点日期</b> 2026-07-15</span>
+        <span><b>接手时点</b> 2026-06-02</span>
+        <span><b>核实方式</b> git 记录 / 定时任务 / 活库查询 / 预登记单原件</span>
+      </p>
+    </header>
+
+    <aside class="note">
+      <span class="tag">先说结论</span>
+      <p><b>目前没有任何一个被证明能赚钱的策略。</b>十三次迭代，关掉了每一扇门——而且没有一扇是被外界证明关上的，全是我们自己亲手关的。</p>
+      <p><b>但代价始终是算力，不是本金。</b>这个项目至今没投过一分钱，也从来没有过下单的功能。每一次"发现能赚钱"的兴奋，最后都在碰真钱之前被自己拆穿了。</p>
+    </aside>
+
+    <div class="toc">
+      <div class="k">目录</div>
+      <ol>
+        <li><a href="#g">先约定几个词</a>——后面反复出现，一次讲清</li>
+        <li><a href="#t">十三次迭代的完整经过</a>——每次的出发点、做法、结果</li>
+        <li><a href="#dead">已经关掉的：证伪清单</a></li>
+        <li><a href="#live">还在跑的：为什么留着</a></li>
+        <li><a href="#lesson">真正的产出：一套纪律</a></li>
+        <li><a href="#next">下一步</a></li>
+      </ol>
+    </div>
+
+    <section class="reveal" id="g">
+      <div class="sec-mark"><span class="n">01</span><span>词汇表</span><span class="bar"></span></div>
+      <h2>先约定几个词</h2>
+      <p>下面这几个词会反复出现。它们不难，但意思必须精确，否则整份账都会读歪。</p>
+
+      <aside class="note">
+        <span class="tag">edge = p − m</span>
+        <p>这是整个项目唯一的公式。<b>m</b> 是市场的标价（市场认为这事有多大可能发生），<b>p</b> 是真实概率（你认为的，而且你得是对的）。两者之差就是你的优势。</p>
+        <p>市场标 0.62、真实概率其实 0.70，你每买一股就占了 8 分钱便宜。反过来，你的 p 估错了，你就是被占便宜的那个。<b>几个月来，整个项目本质上只在找一样东西：一个靠得住的 p。</b></p>
+      </aside>
+
+      <aside class="note">
+        <span class="tag">资金加权</span>
+        <p>按<b>实际投进去多少钱</b>算收益，而不是每笔交易不论大小都算一票。</p>
+        <p>这个区别是致命的。99 笔小单各赚 1%、1 笔大单亏 50%——按"每笔一票"算你 99% 胜率风光得很，按真金白银算你在亏钱。<b>只有资金加权的数字，才是你银行账户里真实发生的事。</b>这个项目里很多看起来漂亮的结论，一换成资金加权就原形毕露。</p>
+      </aside>
+
+      <aside class="note">
+        <span class="tag">抗单点</span>
+        <p>把赚最多的那一笔剔掉，剩下的还赚不赚钱。</p>
+        <p>用来防"全靠一次撞大运"。一个策略如果剔掉最大一笔就塌了，那它不是策略，是彩票。</p>
+      </aside>
+
+      <aside class="note">
+        <span class="tag">预登记</span>
+        <p>在跑数据<b>之前</b>，先把"什么算通过"白纸黑字写死，跑完只能照着它宣判。</p>
+        <p>为什么必须这样？因为结果出来之后再定标准，人<b>必然</b>会不自觉地挑一个刚好能通过的标准——那是自欺，而且事后没法自证清白。红线先写，是"我没放水"这句话唯一能被验证的办法。</p>
+      </aside>
+
+      <aside class="note">
+        <span class="tag">滑点</span>
+        <p>你看到的价，和实际成交的价，中间的那个差。可以想成买菜时摊主临时加价的那部分。</p>
+        <p>在冷清的市场里，这个差可以大到吃掉全部利润——本项目最后一个候选就死在这上面。</p>
+      </aside>
+    </section>
+
+    <section class="reveal" id="t">
+      <div class="sec-mark"><span class="n">02</span><span>迭代全史</span><span class="bar"></span></div>
+      <h2>十三次迭代，一次一次讲</h2>
+      <p>说明：2026 年 3 月那批提交是原作者的搭建期，不在这份账里。<strong>我接手的起点是 2026-06-02。</strong></p>
+
+      <div class="tl">
+
+        <div class="item">
+          <div class="hd">迭代 0 · 2026-06-02/03</div>
+          <h3>接手体检</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">接手一个陌生项目，先搞清楚它到底是什么状态。</span></p>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">不照抄设计文档，而是从代码和真实数据库反推它<em>实际上</em>长什么样，产出三份档案。</span></p>
+          <p class="row"><b class="lbl">结论</b><span class="txt">一个半死的原型。三个部分都在（后台引擎 / 网页看板 / 数据层），但<b>没有下单功能</b>。评审报告说：鲸鱼表里 98% 是垃圾数据。</span></p>
+          <p class="row"><b class="lbl">后来</b><span class="txt">⚠️ 这个结论被我自己推翻了——见下一条。</span></p>
+        </div>
+
+        <div class="item bad">
+          <div class="hd">迭代 1 · 2026-06-03</div>
+          <h3>数据止血——结果发现"病"是误诊</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">评审说数据烂，那就先止血。</span></p>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">清洗脚本、健康巡检、修好一个"标记只能置上不能取下"的 bug、把 Telegram 密钥从代码里挪进配置、清掉 22 个文件里 32 处写死的路径、接上自动测试。</span></p>
+          <p class="row"><b class="lbl">结果</b><span class="txt"><b>"98% 垃圾"这个判断本身就是错的。</b>原来的判据会把<em>成交流鲸鱼</em>——那些有真实交易记录、只是当前没持仓的大户——当成垃圾。而它们恰恰是跟单信号的来源。实测垃圾率是 <b>0.0%</b>：3035 行里只有 1 行是真的空。</span></p>
+          <p class="row"><b class="lbl">真问题</b><span class="txt">只有一个：数据库有 47% 的空洞。整理后从 138MB 缩到 51MB。</span></p>
+          <p class="row"><b class="lbl">📌 教训</b><span class="txt"><b>判据错了，结论就是反的。</b>这句话会在六周后以最贵的形式重演。</span></p>
+        </div>
+
+        <div class="item bad">
+          <div class="hd">迭代 2 · 2026-06-04/05</div>
+          <h3>造回测机器，第一次宣判</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">光修数据，根本不知道能不能赚钱。定下总方针：<b>先验证，再投入。</b></span></p>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">从零搭一台通用的"历史重演机"，把过去的行情倒回去，检验策略当时会赚还是会亏。第一个受审的是"跟着大户下注"。</span></p>
+          <p class="row"><b class="lbl">结果</b><span class="txt">🔴 <b>不赚钱。</b>净 −2.29%，胜率 19.5%。</span></p>
+          <p class="row"><b class="lbl">插曲</b><span class="txt">过程中发现容量计算有 bug，还把口径换成了更诚实的资金加权。修完之后结论<b>更难看了</b>——这是好事：修 bug 让结论变坏，说明修对了。</span></p>
+        </div>
+
+        <div class="item bad">
+          <div class="hd">迭代 3 · 2026-06-05</div>
+          <h3>跨市场套利：先验前提，别急着建系统</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">跟单不行，那同一件事在两个市场标价不同呢？两边同时下注锁死差价。</span></p>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">没有直接建系统，而是先花很小的代价验证前提是否成立。</span></p>
+          <p class="row"><b class="lbl">结论</b><span class="txt">🔴 <b>砍掉。</b>真正等价的市场对，价差早被人套到<b>不足一分钱</b>；剩下看起来一样的，其实规格根本不同（比如结算条件差一天）。</span></p>
+        </div>
+
+        <div class="item bad">
+          <div class="hd">迭代 4 · 2026-06-06</div>
+          <h3>第一次用上"预登记"</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">能不能找到<em>任何一个</em>赚钱的子集？</span></p>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">先注册 6 个"经济上讲得通"的筛选条件，再去跑——而不是从结果里挑好看的。这是纪律的开端。</span></p>
+          <p class="row"><b class="lbl">结论</b><span class="txt">🔴 36 次组合<b>全负</b>。</span></p>
+        </div>
+
+        <div class="item bad">
+          <div class="hd">迭代 5 · 2026-06-08</div>
+          <h3>把大户信号榨干</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">整体是负的，但里面会不会藏着一小块正的？</span></p>
+          <p class="row"><b class="lbl">结论</b><span class="txt">🔴 <b>证伪。</b>资金加权 −4% 到 −5%。那些看起来"正"的格子，<b>全是分母造成的幻觉</b>——换成按真钱计算就消失了。至此历史回测这条路走到头，剩下的是战略选择，不是继续挖数据。</span></p>
+        </div>
+
+        <div class="item">
+          <div class="hd">迭代 6 · 2026-06-07 ~ 06-11</div>
+          <h3>系统活着，但不产信号</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">信号表是空的——等于线路断了。</span></p>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">修掉重复调用、假的新闻数据、缺失的进程锁；打通信号追踪闭环；加上每日自动巡检和会话启动提醒。</span></p>
+          <p class="row"><b class="lbl">结论</b><span class="txt">信号链<b>真正开始工作</b>。</span></p>
+        </div>
+
+        <div class="item bad">
+          <div class="hd">迭代 7 · 2026-06-08 ~ 06-26</div>
+          <h3>套利没法回测，只好真枪实弹守 19 天</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">套利要看瞬间的买卖盘口，而<b>历史盘口没人存</b>——回测根本无从谈起。只能架个摄像头，往前实录。</span></p>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">记录器 + 看门狗 + 防空转保护，连续观测 <b>782 轮 / 19 天</b>。</span></p>
+          <p class="row"><b class="lbl">结论</b><span class="txt">🔴 <b>关闭。</b>市场效率把配对成本死死钉在 1.001 美元；19 天里 5 次"机会"<b>全部</b>是无效挂单或噪音。定时任务已删，数据留档。</span></p>
+        </div>
+
+        <div class="item">
+          <div class="hd">迭代 8 · 2026-06-16 / 06-21</div>
+          <h3>代码审查与数据复查</h3>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">信号去重、异常处理全面过一遍、过期数据清理；发现快照分页缺陷、鲸鱼结算判定问题。</span></p>
+          <p class="row"><b class="lbl">值得一提</b><span class="txt">发现了"74% 鲸鱼零成交 / 60% 鲸鱼交易的市场没有价格快照"这个大缺口——<b>但故意没修</b>。因为这些数据服务的策略（跟单）已经被证伪了。<b>修数据之前，先确认它服务的策略还活着</b>，否则是给死人整容。</span></p>
+        </div>
+
+        <div class="item">
+          <div class="hd">迭代 9 · 2026-06-26</div>
+          <h3>运维瘦身</h3>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">关掉 5 条定时任务，包括那个写报告文件的后台监控引擎。</span></p>
+          <p class="row"><b class="lbl">澄清</b><span class="txt">此后那些报告文件停更——<b>这是主动退役，不是故障</b>。回测早就改成直接读数据库了，没有任何东西依赖那些文件。（盘点时我一度把它当异常报出来，是我信息不全。）</span></p>
+        </div>
+
+        <div class="item">
+          <div class="hd">迭代 10 · 2026-07-06/07</div>
+          <h3>怀疑尺子：我们的成本算得太乐观了吧？</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">回测一直用一个"到处都一样"的固定滑点。对冷清的小市场，这显然太美好了。</span></p>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">架了个探针，每 4 小时真的去盘口上试一次，实测"我到底能以什么价成交"。</span></p>
+          <p class="row"><b class="lbl">实测</b><span class="txt">价格居中的市场约 <b>120</b>（基点，1 基点=万分之一）；贴边的约 <b>770</b>；最极端的能到 <b>15695</b>——差一百多倍。</span></p>
+          <p class="row"><b class="lbl">结论</b><span class="txt">当时判 H7（加价格下限躲开黑洞）没通过。<b>但留了个疑点：用"到处不下雨"的尺子去测一件雨衣，当然测不出价值。</b></span></p>
+        </div>
+
+        <div class="item good">
+          <div class="hd">迭代 11 · 2026-07-14</div>
+          <h3>换上真尺子——然后以为找到了金矿</h3>
+          <p class="row"><b class="lbl">做了什么</b><span class="txt">把探针实测的滑点曲线接进成本模型（做成可选开关，不影响旧结果）。随后换了个思路找 p：不去打听内幕，而是问"<b>市场自己会不会有稳定的犯错方式</b>"。</span></p>
+          <p class="row"><b class="lbl">发现</b><span class="txt">赌博研究里有个有名的老现象——<b>冷门总被高估，热门总被低估</b>（因为人愿意为"万一中了呢"多付钱）。实测我们的数据，形状教科书得让人心动。那就买热门那一侧。</span></p>
+          <p class="row"><b class="lbl">结果</b><span class="txt">🟢 净 <b>+0.46%</b>、胜率 92%、剔掉最大一笔仍为正、三个时间窗一致为正——<b>通过全部红线，宣布为项目首个净正候选</b>。</span></p>
+          <p class="row"><b class="lbl">警讯</b><span class="txt">试着按优势大小调仓位时，模拟显示<b>回撤 91–95%</b>。说明我们的 p 只用两个月数据拟合，太糙了。<b>这把"需要更多历史"从可选项顶成了前提。</b></span></p>
+        </div>
+
+        <div class="item bad">
+          <div class="hd">迭代 12 · 2026-07-15（本轮）</div>
+          <h3>去官方要真相——一天关掉两扇门</h3>
+          <p class="row"><b class="lbl">出发点</b><span class="txt">解决"只有两个月数据"。本打算先精炼策略，临时改成<b>先探接口</b>（决定性，20 分钟）。</span></p>
+          <p class="row"><b class="lbl">拿到了</b><span class="txt">官方历史价 + 权威结算结果：<b>10147 个市场、23 万个日价点、历史回溯 14 个月</b>（原来只有 2 个月）、<b>9161 个官方真值</b>。全程只读生产库。</span></p>
+          <p class="row"><b class="lbl">判决一</b><span class="txt">🔴 <b>校准策略作废。</b>回测判断"市场结束没、谁赢了"用的是自己猜的土规则（看终值价收没收敛到 0 或 1），它<b>静默丢掉了 80% 的已结算市场</b>——丢的正是"市场到最后还看走眼"的盘，而那恰恰是"买热门"该亏钱的案例。换上官方真值：12 个格子<b>全负</b>。</span></p>
+          <p class="row"><b class="lbl">最狠</b><span class="txt">连"偏差存在"本身都大半是幻觉：毛偏差从 +5.66% 塌到 <b>+0.74%</b>，而过路费要 4.8%。<b>它连门票都买不起</b>，根本轮不到讨论优化。</span></p>
+          <p class="row"><b class="lbl">判决二</b><span class="txt">🔴 <b>H6/H7 也作废。</b>回测算收益时，买入付了成本，<b>卖出却一分钱滑点都没付</b>。付上我们自己探针实测的数字后，四个时间窗全负。这是算术不是模型极端：<b>H7 的优势 +4.69%，而它的出场票价是 7.7%。</b></span></p>
+          <p class="row"><b class="lbl">意外</b><span class="txt">另一个口径上 H6 反而变好了（+2.81% → +34.06%）。<b>没有采信</b>——它推翻了既往结论，又跑在受限的样本上，已单独立项，改天重新预登记再查。</span></p>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="reveal" id="dead">
+      <div class="sec-mark"><span class="n">03</span><span>证伪清单</span><span class="bar"></span></div>
+      <h2>已经关掉的东西</h2>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">全部已关闭的功能与策略</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>功能 / 策略</th><th>为什么关</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>跟大户下注（基线）</td><td>净 −2.29%；按真钱算 −4~−5%</td><td><span class="pill dead">已关</span></td></tr>
+              <tr><td>大户信号的子集</td><td>"正"的格子全是分母幻觉</td><td><span class="pill dead">已关</span></td></tr>
+              <tr><td>跨市场套利</td><td>真等价的对早被套到不足一分钱</td><td><span class="pill dead">已关</span></td></tr>
+              <tr><td>配对成本套利</td><td>19 天实录：成本钉死 1.001，5 次机会全是噪音</td><td><span class="pill dead">任务已删</span></td></tr>
+              <tr><td>假设网格 H0–H5</td><td>预登记 36 次全负</td><td><span class="pill dead">已关</span></td></tr>
+              <tr><td>反着跟大户（C0）</td><td>表头 +0.13%，但剔掉最大一笔就是 −0.09%</td><td><span class="pill dead">从未通过</span></td></tr>
+              <tr class="hl"><td><b>校准偏差（长热偏差）</b></td><td><b>剔除偏差的产物；真实毛利 +0.74% &lt; 成本 4.8%</b></td><td><span class="pill dead">07-15 作废</span></td></tr>
+              <tr class="hl"><td><b>H6 微仓 / H7 价格下限</b></td><td><b>优势 4.69% &lt; 出场票价 7.7%</b></td><td><span class="pill dead">07-15 作废</span></td></tr>
+              <tr><td>后台监控引擎（报告文件）</td><td>非证伪——回测改读数据库，没人依赖它</td><td><span class="pill off">主动退役</span></td></tr>
+              <tr><td>新闻子系统</td><td>归档下线</td><td><span class="pill off">已关</span></td></tr>
+              <tr><td>质量自动化表</td><td>代码写了但调度没接——未完成功能，不是数据腐化</td><td><span class="pill off">未启用</span></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">前八项是被证据判死的，后三项是主动退役或从未完工——性质不同，不该混为一谈。</figcaption>
+      </figure>
+
+      <aside class="note">
+        <span class="tag">一个反直觉的好消息</span>
+        <p>07-15 发现的那个偏差，被 8 个回测脚本共用。第一反应是"完了，几个月的结论全要推翻"。</p>
+        <p><b>但不用。</b>关键在于这个偏差是<b>单向的——它只会把收益往高了吹</b>。而上面那些结论都是"不赚钱"。也就是说，<b>它们是在被人为放水的情况下，依然亏的</b>。放水后仍不及格，真实水平只会更差。</p>
+        <p><b>偏差吹不倒本来就趴着的，只可能吹起本来站不住的。</b>所以危险的从来不是那些红色结论，而是唯一那个绿色的——也正是它被拆穿了。</p>
+      </aside>
+    </section>
+
+    <section class="reveal" id="live">
+      <div class="sec-mark"><span class="n">04</span><span>仍在运行</span><span class="bar"></span></div>
+      <h2>既然策略全死了，为什么还在收数据？</h2>
+      <p>诚实回答：<strong>数据是原料，策略是成品。成品全废了，不代表原料该扔。</strong></p>
+
+      <figure>
+        <div class="card">
+          <div class="card-hd">当前仍在运行的任务（2026-07-15 实测）</div>
+          <div class="tbl-scroll"><table>
+            <thead><tr><th>频率</th><th>做什么</th><th>为什么留着</th><th>实测</th></tr></thead>
+            <tbody>
+              <tr class="hl"><td>每天 16:00</td><td>抓全市场价格快照</td><td><b>公式里的 m</b>。断一天就<b>永久</b>缺一天——历史无法事后补拍</td><td><span class="pill live">最新 07-15</span></td></tr>
+              <tr class="hl"><td>每 90 分钟</td><td>抓大户成交流</td><td>跟单虽死，但"谁在什么价位下了多大注"是原始事实</td><td><span class="pill live">近 24h 1256 行</span></td></tr>
+              <tr class="hl"><td>每 4 小时</td><td>滑点探针</td><td><b>唯一</b>能回答"我们真能以什么价成交"的东西</td><td><span class="pill live">2479 行 / 10 天</span></td></tr>
+              <tr><td>每周一 03:00</td><td>官方排行榜同步</td><td>大户身份的数据源</td><td><span class="pill live">在跑</span></td></tr>
+              <tr><td>每天 01:00</td><td>健康巡检</td><td>看门狗：别让上面几样悄悄烂掉</td><td><span class="pill live">在跑</span></td></tr>
+              <tr><td>每天 08:10 / 08:30</td><td>清理 / 数据质量</td><td>磁盘与完整性卫生</td><td><span class="pill live">在跑</span></td></tr>
+              <tr><td><s>每周一 09:30</s></td><td><s>H6 周复验</s></td><td><b>H6 已证伪，再跑是为死人烧算力</b></td><td><span class="pill off">07-15 已停用</span></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <figcaption class="cap">这条线划得很清楚：停掉的全是"为某个具体死策略服务"的；留下的全是"与策略无关的原料层"。</figcaption>
+      </figure>
+
+      <h3>滑点探针值得单独说一句</h3>
+      <p>它是这些天里<strong>唯一一个用结果证明了自己价值的东西</strong>——杀死 H6/H7 的正是它。任何未来的策略，都得先过它这一关：<em>你以为的价，和你真能成交的价，差多少。</em></p>
+
+      <h3>还有一份一次性资产</h3>
+      <p>07-15 回填来的官方数据库：<strong>10147 个市场、23 万个日价点、14 个月历史、9161 个权威结算结果</strong>。这是目前手上<strong>最有价值的东西</strong>——但用之前，必须先修好回测引擎的真值来源，否则新数据会被老偏差污染。</p>
+    </section>
+
+    <section class="reveal" id="lesson">
+      <div class="sec-mark"><span class="n">05</span><span>真正的产出</span><span class="bar"></span></div>
+      <h2>十三次迭代，零个策略，一套纪律</h2>
+      <p>这套东西已经写进项目的强制规范，对以后任何人（包括我）都生效：</p>
+
+      <blockquote>先写判据，再写代码。</blockquote>
+      <p>研究性的结论，先写预登记单；功能性的代码，先写测试。<strong>这是前置项，不是收尾项。</strong>而且红线要直接沿用被检验对象自己的标准——因为我唯一能放水的地方就是改红线，而红线是抄来的、可以逐字比对的。</p>
+
+      <blockquote>绝不用与"结果"相关的东西去筛样本。</blockquote>
+      <p>这条是本项目最贵的一课。<strong>"数据不完整"从来不是根因</strong>——数据缺得随机只是噪声，让你不确定而已；<strong>缺得跟答案有关，才会让你确信一件假的事。</strong></p>
+
+      <p>其余四条：一次只动一个变量；任何丢弃都必须出声计数（<strong>静默才是真凶</strong>——曾经丢掉 80% 样本一声不吭）；改共用引擎必须默认关闭并证明零影响；<strong>绿色结论才是风险区</strong>，要用比红色更严的眼光看。</p>
+
+      <aside class="note">
+        <span class="tag">贯穿全程的母题</span>
+        <p><b>迭代 1：</b>"98% 是垃圾"——判据错了（把有交易记录的大户当垃圾），结论是反的。</p>
+        <p><b>迭代 12：</b>"+0.46% 净正"——判据错了（用价格收敛推定结算），结论是反的。</p>
+        <p><b>同一个错误，隔了六周，以最贵的形式重演了一次。</b>第一次只是虚惊；第二次差点把一个真实赔率 −4%、却带着 92% 胜率漂亮简历的策略，送进实盘。</p>
+        <p>这就是为什么第二条被写成<b>铁律</b>，而不是"注意事项"。</p>
+      </aside>
+
+      <h3>顺带一提：我自己今天犯的错</h3>
+      <p>这份账要完整，就得包括这个。仅 07-15 一天，我就犯了 7 个工程错误：同时改两个变量导致差分无法归因；把被告圈在别人的地盘上审判；选错样本范围只覆盖了 8%；回归测试拿今天的数据比两天前的结果，被数据漂移骗过；两次把截断的输出当成真数据；差点把只代表子集的漂亮数字写进要发布的文章……</p>
+      <p><strong>这些错没有一个会报错、崩溃或亮红灯。</strong>每一个都能跑通、能出数字、数字看着还挺合理。它们全属于"能跑通、但结论是假的"那一类——<strong>只能靠制度挡，挡不住靠眼力和运气。</strong>回头统计：4 个是我自己发现的，2 个靠代码审查，1 个靠用户追问，<strong>没有一个是靠"跑一下看看"发现的。</strong></p>
+    </section>
+
+    <section class="reveal" id="next">
+      <div class="sec-mark"><span class="n">06</span><span>下一步</span><span class="bar"></span></div>
+      <h2>三件事，已定，未做</h2>
+      <p><strong>一、修回测引擎的真值来源。</strong>让它优先读官方结果、读不到才退回猜测，<strong>而且每退回一次都必须打印计数</strong>。这不是洁癖：那 9161 个权威结果现在是资产，但只要老规则还在，未来<em>任何</em>新假设都会被同一个偏差污染，我们会一次次得到假的好消息。</p>
+      <p><strong>二、查那个意外的绿色结论。</strong>必须先把回填扩到它的原生样本范围，重新预登记，再动手。</p>
+      <p><strong>三、容量数据缺口。</strong>官方接口<strong>不提供逐日成交量</strong>，而回测的成本模型依赖它。加深历史之前必须先解决——打算用"总量÷存续天数"做代理，然后在两个月的重叠窗口上跟真实数据对表验证，<strong>对不上就不用</strong>。</p>
+
+      <aside class="note">
+        <span class="tag">最后</span>
+        <p>这个项目至今没有一条被证明能赚钱的路。这是实话，不粉饰。</p>
+        <p>但有一样东西是真的：<b>每一条死路，都是被自己亲手、诚实地关上的。</b>而且每一次关门，花的都是算力，不是本金。</p>
+      </aside>
+    </section>
+
+    <hr class="end">
+    <p class="endnote">
+      <b>核实方式</b> 本文所有数字均于 2026-07-15 当场实测：<code>git log</code> / <code>crontab -l</code> / <code>systemctl --user list-timers</code> / 活库 SQL 查询 / 预登记单原件，未依赖记忆。<br>
+      <b>技术档案</b> 完整版 <code>docs/PROJECT_INVENTORY_2026-07-15.md</code> · 判决原件 <code>08-backtests/results/truth_check_20260715.txt</code>、<code>h6_truth_exit_20260715.txt</code><br>
+      <b>相关阅读</b> 07-15 三部曲：《我们以为，终于找到了第一个能赚钱的策略》→《去官方要数据的路上，我撞见了更要紧的事》→《判决：那个 92 分，是自己批卷子批出来的》<br>
+      <b>声明</b> 本文所有收益数字均为回测结果。本项目从未投入真实资金，也不存在下单功能。不构成投资建议。
+    </p>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      els.forEach(function (e) { e.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+</script>
