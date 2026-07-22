@@ -1,0 +1,12 @@
+[Unit]
+Description=Polymarket 重生采集器看门狗 · 查存活(timer active / 心跳新鲜 / firehose)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+Environment=PYTHONPATH=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+TimeoutStartSec=60
+ExecStart=/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/11-collector/collector_watchdog.py
+StandardOutput=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/watchdog.log
+StandardError=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/watchdog.log

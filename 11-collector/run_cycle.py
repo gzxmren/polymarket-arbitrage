@@ -23,9 +23,11 @@ import settlement_watcher
 import storage_engine as se
 
 STATE_FILE = se.DATA_ROOT / ".cycle_state.json"
-# 每轮最多注册的新市场数:防冷启动单轮 ~570 次 Gamma 查询撑爆 service 超时。
-# 冷启动会摊到几轮跑满全宇宙;稳态每轮新市场很少,远低于此。
-DEFAULT_MAX_NEW = 120
+# 每轮工作量必须能在 10 分钟间隔内跑完(否则被 8 分钟超时杀、永远跑不到写心跳=空转打转)。
+# 实测冷启动 register 112 + poll 270(含大量 8000 笔全回填)单轮 >10 分钟。故双封顶:
+DEFAULT_MAX_NEW = 40      # 每轮最多注册 N 个新市场(~1.3s/个 Gamma)
+DEFAULT_POLL_LIMIT = 50   # 每轮最多轮询 N 个市场(冷启动全回填 ~11s/个)
+# 冷启动:全宇宙(~600)摊到 ~12 轮(~2 小时)跑满;之后 watermark 令轮询转增量、极快。
 
 
 def _daily_compaction_if_due() -> str | None:
@@ -45,11 +47,12 @@ def _daily_compaction_if_due() -> str | None:
     return str(merged) if merged else None
 
 
-def main(sample: int = 5000, max_new: int | None = DEFAULT_MAX_NEW) -> int:
+def main(sample: int = 5000, max_new: int | None = DEFAULT_MAX_NEW,
+         poll_limit: int | None = DEFAULT_POLL_LIMIT) -> int:
     t0 = dt.datetime.now(dt.UTC)
     print(f"=== 采集周期 {t0:%Y-%m-%d %H:%M:%S}Z ===", flush=True)
 
-    counts = collector_core.run_once(sample=sample, max_new=max_new)
+    counts = collector_core.run_once(limit=poll_limit, sample=sample, max_new=max_new)
     settle = settlement_watcher.watch_settlements()
     print(f"结算守望: {settle}", flush=True)
 
