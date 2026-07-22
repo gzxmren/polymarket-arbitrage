@@ -1,0 +1,11 @@
+[Unit]
+Description=Polymarket 重生采集器 · 每 10 分钟一个采集周期(Persistent 防 suspend 漏跑)
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+# 开机后 2 分钟先跑一次(避免与整点抢网络)
+OnBootSec=2min
+
+[Install]
+WantedBy=timers.target

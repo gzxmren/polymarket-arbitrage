@@ -1,0 +1,14 @@
+[Unit]
+Description=Polymarket 重生采集器 · 一个采集周期(发现+轮询+结算守望+告警+每日compaction)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+Environment=PYTHONPATH=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+# 幂等(watermark 驱动),超时保护:单周期最长 8 分钟(留 2 分钟给 10 分钟间隔)
+TimeoutStartSec=480
+ExecStart=/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/11-collector/run_cycle.py
+StandardOutput=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/collector.log
+StandardError=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/collector.log

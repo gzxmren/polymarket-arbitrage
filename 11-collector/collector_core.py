@@ -131,6 +131,8 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
             se.write_trades(rows)
             total_written += len(rows)
         time.sleep(0.1)  # 礼貌节流(全局无 429,仍留余量)
+    counters["new_trades"] = total_written
+    counters["register_fail"] = disc.get("register_fail", 0)
     se.write_audit_heartbeat(counters)
     print(f"本轮: 市场 {counters['total_markets_polled']} | 新成交 {total_written} | "
           f"4xx {counters['http_4xx_count']} | 限流 {counters['rate_limit_hits']} | "
