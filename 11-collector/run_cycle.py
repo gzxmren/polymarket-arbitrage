@@ -23,6 +23,9 @@ import settlement_watcher
 import storage_engine as se
 
 STATE_FILE = se.DATA_ROOT / ".cycle_state.json"
+# 每轮最多注册的新市场数:防冷启动单轮 ~570 次 Gamma 查询撑爆 service 超时。
+# 冷启动会摊到几轮跑满全宇宙;稳态每轮新市场很少,远低于此。
+DEFAULT_MAX_NEW = 120
 
 
 def _daily_compaction_if_due() -> str | None:
@@ -42,7 +45,7 @@ def _daily_compaction_if_due() -> str | None:
     return str(merged) if merged else None
 
 
-def main(sample: int = 5000, max_new: int | None = None) -> int:
+def main(sample: int = 5000, max_new: int | None = DEFAULT_MAX_NEW) -> int:
     t0 = dt.datetime.now(dt.UTC)
     print(f"=== 采集周期 {t0:%Y-%m-%d %H:%M:%S}Z ===", flush=True)
 
@@ -68,6 +71,6 @@ def main(sample: int = 5000, max_new: int | None = None) -> int:
 
 
 if __name__ == "__main__":
-    # 首轮冷启动可能注册大量新市场,--max-new 限一下;稳态后无参即可。
-    max_new = int(sys.argv[1]) if len(sys.argv) > 1 else None
+    # 默认每轮注册上限 DEFAULT_MAX_NEW(防冷启动撑爆超时);可传参覆盖(0=不注册新市场)。
+    max_new = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_MAX_NEW
     sys.exit(main(max_new=max_new))
