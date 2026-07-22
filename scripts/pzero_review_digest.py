@@ -131,10 +131,17 @@ def main():
     lines = ["", "📊 [pzero H6 复盘速览]"]
     lines.append("① 探针滑点分层（越贴边滑点越黑洞→验证价格下限的价值）:")
     lines += slippage_strata()
-    lines.append("② cutoff 连贯曲线（要的是跨 cutoff 持续为正且'稳'，非单点表头）:")
-    lines += cutoff_coherence()
-    if not full:
-        lines.append(f"  （本速览 {SUNSET} 后自动退役；完整版: python3 scripts/pzero_review_digest.py --full）")
+    # ②cutoff 曲线已于 2026-07-21 从会话默认输出退役：它展示的是 `+1d` horizon 的
+    # test_cw，而 `+1d` 已被 C2(docs/PREREG_H6_TRUTH_EXIT_2026-07-15.md)证伪——那些正数
+    # 建立在 base flat 成本 + 免费平仓(卖出滑点=0)之上；付真实出场滑点后 4/4 cutoff 全翻负
+    # (edge 4.69% < 出场票价 7.7%)。留在开机输出里=每次复活一个死结论。完整表仅 --full 存档。
+    if full:
+        lines.append("② cutoff 连贯曲线【⛔ 已证伪存档 · 见 docs/PREREG_H6_TRUTH_EXIT_2026-07-15.md】:")
+        lines += cutoff_coherence()
+    else:
+        lines.append("② cutoff 连贯曲线 ⛔ 已于 2026-07-21 退役：`+1d` 口径被 C2 证伪(免费平仓假设)，")
+        lines.append("   付真实出场滑点后 4/4 cutoff 全负。存档表见 --full。pzero 滚动验证已停。")
+        lines.append(f"  （本速览 {SUNSET} 后整体自动退役）")
     print("\n".join(lines))
 
 

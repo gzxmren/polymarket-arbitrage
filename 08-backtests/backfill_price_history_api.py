@@ -162,10 +162,40 @@ def _candidate_slugs() -> list[str]:
     return out
 
 
+def _whale_slugs() -> list[str]:
+    """H6 原生宇宙 = 全量跟鲸鱼(H0 未过滤)信号触及的全部 distinct 市场 slug 之并集。
+
+    为 C1 重测(PREREG_C1_WHALE_RESOLUTION_2026-07-21)准备权威真值。与 candidates 的关键区别:
+    **不加任何价格/dte/cap 过滤** —— 直接取 generate_signals 在全库价格序列上产生的所有 BUY
+    信号所触及的市场。任何结果相关的过滤(如 candidates 的 0.02<px<0.98 排除"已近定局"盘)
+    都会重蹈静默筛样本覆辙(见 truth-source-bias-2026-07-15),故此处一律不加。
+
+    宇宙必须是 **H0 全量并集**(H6 的超集),而非仅"H6 触及" —— 否则 H0/H1 等宽假设的分母不全。
+    generate_signals 默认只跟 BUY、且未做 H5 精选,恰是 H0 口径,正确。
+
+    **直接复用引擎的信号生成**,不另写等价 SQL(手写 SQL 会口径漂移,理由同 _candidate_slugs)。
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from engine.data import connect, load_price_series  # 延迟导入:仅此模式需要
+    from strategies.follow_whale import generate_signals
+
+    conn = connect(None)  # 与 SRC_DB 同为 live DB(config.DASHBOARD_DB_FILE)
+    try:
+        prices_all = load_price_series(conn)
+        signals = generate_signals(conn, prices_all)  # H0:仅 BUY,未精选,未过滤
+    finally:
+        conn.close()
+    # distinct 市场并集;排序令断点续跑的 todo 顺序稳定
+    return sorted({sig.market for sig in signals})
+
+
 def load_universe(limit: int | None, min_snapshots: int, mode: str) -> list[str]:
-    """待抓市场全集。candidates=校准全集(默认);snapshots=按库内快照数筛(看长序列用)。"""
+    """待抓市场全集。candidates=校准全集(默认);snapshots=按库内快照数筛(看长序列用);
+    whales=H6 原生宇宙(全量跟鲸鱼信号触及的市场并集,为 C1 重测准备真值)。"""
     if mode == "candidates":
         slugs = _candidate_slugs()
+    elif mode == "whales":
+        slugs = _whale_slugs()
     else:
         conn = sqlite3.connect(f"file:{SRC_DB}?mode=ro", uri=True)
         try:
@@ -265,8 +295,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=None, help="只跑前 N 个市场")
     ap.add_argument(
-        "--universe", choices=["candidates", "snapshots"], default="candidates",
-        help="candidates=能产生校准入场点的市场(默认,正确全集); snapshots=按快照数筛",
+        "--universe", choices=["candidates", "snapshots", "whales"], default="candidates",
+        help="candidates=能产生校准入场点的市场(默认,正确全集); snapshots=按快照数筛; "
+             "whales=H6 原生宇宙(全量跟鲸鱼信号触及的市场并集,C1 重测真值)",
     )
     ap.add_argument("--min-snapshots", type=int, default=8, help="仅 --universe snapshots 用")
     ap.add_argument("--sleep", type=float, default=0.25, help="每次请求间隔秒(每线程内)")

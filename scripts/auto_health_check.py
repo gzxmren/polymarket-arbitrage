@@ -229,7 +229,8 @@ def check_cron_staleness() -> Check:
         ("cleanup(日)",          Path("/tmp/polymarket_cleanup.log"),                           25 * H),
         ("backup_configs(日)",   Path("/tmp/backup_configs.log"),                               25 * H),
         ("cleanup_tmp(日)",      Path("/tmp/cleanup_temp_files.log"),                           25 * H),
-        ("pzero_weekly(周)",     Path("/home/xmren/.openclaw/workspace/polymarket-project/07-data/logs/weekly_pzero.log"), 8 * 24 * H),
+        # pzero_weekly 已于 2026-07-21 随 pzero 滚动验证整体退役（+1d 免费平仓口径被 C2 证伪），
+        # systemd timer/service 单元已删除，故此处不再巡检。
         ("learning_review(周)",  Path("/home/xmren/.openclaw/workspace/logs/weekly_learning_review.log"), 8 * 24 * H),
         ("leaderboard(周)",      LEADERBOARD_LOG,                                               8 * 24 * H),
     ]
