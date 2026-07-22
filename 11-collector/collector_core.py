@@ -133,6 +133,9 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
         time.sleep(0.1)  # 礼貌节流(全局无 429,仍留余量)
     counters["new_trades"] = total_written
     counters["register_fail"] = disc.get("register_fail", 0)
+    # firehose 抽风检测:Polymarket 永远有成交,采样 0 笔 = 我们抓取失败,非"真没成交"。
+    # 不能静默空转(§7)——计为异常供告警;数据不丢(下轮自愈:per-market 轮询会回填这段)。
+    counters["firehose_fail"] = 1 if disc.get("firehose_trades", 0) == 0 else 0
     se.write_audit_heartbeat(counters)
     print(f"本轮: 市场 {counters['total_markets_polled']} | 新成交 {total_written} | "
           f"4xx {counters['http_4xx_count']} | 限流 {counters['rate_limit_hits']} | "

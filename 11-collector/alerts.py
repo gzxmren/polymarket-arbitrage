@@ -36,6 +36,9 @@ def maybe_alert(counts: dict) -> bool:
     triggers = []
     ov = counts.get("offset_overflow_count", 0)
     rf = counts.get("register_fail", 0) + counts.get("settlement_lookup_fail", 0)
+    if counts.get("firehose_fail", 0) > 0:
+        triggers.append("🔴 firehose 抽风:采样 0 笔成交(Polymarket 恒有成交=抓取失败),本轮空转;"
+                        "数据不丢(下轮自愈回填),但接口若持续失败须查 IP/限流")
     if ov > 0:
         triggers.append(f"⚠️ offset 截断 {ov} 个市场(历史回填触 1 万上限,近端已保留,更早不可得)")
     if rf > REGISTER_FAIL_THRESHOLD:

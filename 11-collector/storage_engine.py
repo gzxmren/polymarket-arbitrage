@@ -165,7 +165,8 @@ def write_audit_heartbeat(counts: dict) -> Path:
     now = int(dt.datetime.now(dt.UTC).timestamp())
     row = {"ts": now, **{k: int(counts.get(k, 0)) for k in
            ("total_markets_polled", "http_4xx_count", "rate_limit_hits",
-            "offset_overflow_count", "dedup_collapse_count", "parse_reject_count")}}
+            "offset_overflow_count", "dedup_collapse_count", "parse_reject_count",
+            "firehose_fail", "new_trades", "register_fail")}}
     day = dt.datetime.fromtimestamp(now, dt.UTC).strftime("%Y-%m-%d")
     dest = AUDIT_DIR / f"dt={day}" / f"{uuid.uuid4().hex}.parquet"
     _atomic_write_parquet(pa.Table.from_pylist([row]), dest)
