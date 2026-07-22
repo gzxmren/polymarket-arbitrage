@@ -103,20 +103,42 @@ def compact_day(day: str, keep_originals: bool = False) -> Path | None:
 
 # ---------- DuckDB 查询层(零 ETL 直查 Parquet 湖) ----------
 
+def has_data() -> bool:
+    """数据湖里是否已有任何 Parquet(空湖时 read_parquet 会对空 glob 报错,须先判)。"""
+    return any(RAW_DIR.glob("**/*.parquet"))
+
+
 def duckdb_conn():
-    """返回 DuckDB 连接;注册 trades / trades_deduped 视图,全部 read_parquet 直查。"""
+    """返回 DuckDB 连接;注册 trades / trades_deduped 视图,全部 read_parquet 直查。
+
+    空湖(尚无任何 Parquet)时建**空的同构视图**(WHERE false),让下游查询照常返回 0 行
+    而非崩溃 —— 这是第一次冷启动的必经路径。
+    """
     import duckdb  # 延迟导入:仅查询需要
     con = duckdb.connect()
-    raw_glob = str(RAW_DIR / "**" / "*.parquet")
-    con.execute(f"""
-        CREATE VIEW trades AS
-          SELECT * FROM read_parquet('{raw_glob}', hive_partitioning=1, union_by_name=1);
-        CREATE VIEW trades_deduped AS
-          SELECT * FROM trades
-          QUALIFY row_number() OVER (
-            PARTITION BY {','.join(NATURAL_KEY)} ORDER BY ingested_at
-          ) = 1;
-    """)
+    if has_data():
+        raw_glob = str(RAW_DIR / "**" / "*.parquet")
+        con.execute(f"""
+            CREATE VIEW trades AS
+              SELECT * FROM read_parquet('{raw_glob}', hive_partitioning=1, union_by_name=1);
+            CREATE VIEW trades_deduped AS
+              SELECT * FROM trades
+              QUALIFY row_number() OVER (
+                PARTITION BY {','.join(NATURAL_KEY)} ORDER BY ingested_at
+              ) = 1;
+        """)
+    else:
+        # 空湖:用 schema 造 0 行视图,列与真实一致(dt 分区列也补上)
+        cols = ", ".join(
+            f"CAST(NULL AS {t}) AS {n}" for n, t in (
+                ("transaction_hash", "VARCHAR"), ("proxy_wallet", "VARCHAR"),
+                ("condition_id", "VARCHAR"), ("asset", "VARCHAR"),
+                ("outcome_index", "INTEGER"), ("outcome_label", "VARCHAR"),
+                ("side", "VARCHAR"), ("size", "DOUBLE"), ("price", "DOUBLE"),
+                ("timestamp", "BIGINT"), ("ingested_at", "BIGINT"), ("dt", "VARCHAR"),
+            ))
+        con.execute(f"CREATE VIEW trades AS SELECT {cols} WHERE false;")
+        con.execute("CREATE VIEW trades_deduped AS SELECT * FROM trades;")
     return con
 
 
@@ -126,6 +148,14 @@ def watermark(con, condition_id: str) -> int | None:
         "SELECT max(timestamp) FROM trades WHERE condition_id = ?", [condition_id]
     ).fetchone()
     return row[0] if row and row[0] is not None else None
+
+
+def all_watermarks(con) -> dict[str, int]:
+    """一次取回所有市场的 watermark(避免每市场开连接/查询)。空湖返回 {}。"""
+    rows = con.execute(
+        "SELECT condition_id, max(timestamp) FROM trades GROUP BY condition_id"
+    ).fetchall()
+    return {cid: ts for cid, ts in rows if ts is not None}
 
 
 # ---------- 审计心跳(§7:大声报数) ----------

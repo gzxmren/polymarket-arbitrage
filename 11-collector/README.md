@@ -12,7 +12,7 @@
 | 文件 | 职责 | 契约条款 |
 |---|---|---|
 | `probe_engine.py` | 开工仪式探针:接口/限流/翻页上限/token映射/宇宙量级(可复现) | §3/§9/§10 |
-| `universe_fetcher.py` | Gamma 全量枚举 + HFT 分类打标 + token/结算解析 + 每日点位快照 | §2.2/§4.2/§7 |
+| `discovery_service.py` | **Firehose 发现驱动**(v1.2):采样全局成交发现活跃市场 + HFT 剔除 + 按需 Gamma 注册 + token/结算解析 | §3/§4.2/§7 |
 | `storage_engine.py` | append-only 按日 Parquet 原子写 + compaction + DuckDB 直查/去重视图/审计心跳 | §4.4/§5/§7 |
 | `collector_core.py` | 按市场轮询主循环:分页/重试/解析(拒绝+计数)/增量去重/offset溢出兜底 | §3/§4.1/§7 |
 
@@ -20,11 +20,14 @@
 ```bash
 pip install duckdb            # pyarrow 已装
 python3 11-collector/probe_engine.py                 # 开工仪式(全读公开接口)
-python3 11-collector/universe_fetcher.py --once      # 枚举一次宇宙
+python3 11-collector/discovery_service.py --once     # 发现+注册一轮
 python3 11-collector/collector_core.py --once        # 轮询一轮(骨架)
 ```
 
 ## 状态
-- 判据 v1.1 已冻结。3 模块为**核心逻辑骨架**:采集/解析/存储/审计的关键路径已实现;
-  常驻守护(systemd timer 包装)、告警通道、compaction 调度为 TODO(见各文件末)。
+- 判据 **v1.2** 已审定(Firehose 发现驱动)。核心路径已**真实端到端验证**(2026-07-22 试跑):
+  发现 3000 笔 → 416 活跃市场 → 注册 29 → 轮询落库 **11777 笔真实成交**;
+  **parse_reject=0**(asset 定位铁律零失败)、offset 溢出保留近端+计数(诚实截断)、
+  append-only Parquet + DuckDB 直查 + 去重视图全通。
+- 常驻守护(systemd timer 包装)、告警通道、compaction 调度、自适应升频为 TODO(见各文件末)。
 - 数据落 `11-collector/data/`(git 忽略)。

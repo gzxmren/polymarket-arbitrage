@@ -22,7 +22,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import storage_engine as se
-from universe_fetcher import active_event_markets, resolve_asset_index
+from discovery_service import refresh_and_registry, resolve_asset_index
 
 _ORIG_GAI = socket.getaddrinfo
 socket.getaddrinfo = lambda h, p, f=0, t=0, pr=0, fl=0: _ORIG_GAI(h, p, socket.AF_INET, t, pr, fl)
@@ -32,10 +32,6 @@ UA = {"User-Agent": "polymarket-rebirth-collector/1.1"}
 OFFSET_CAP = 10000       # 实测单市场硬顶;offset 逼近即"该市场增量可能溢出"
 PAGE = 500               # 每页
 OFFSET_WARN = 8000       # 逼近上限的告警线(留余量,提示需压频)
-
-
-class OffsetOverflow(Exception):
-    """某市场未入库成交量已超接口可回溯窗口 → 有永久丢数风险,须暂停 + 告警(不静默)。"""
 
 
 def _get(url: str, counters: dict, tries: int = 5):
@@ -58,19 +54,14 @@ def _get(url: str, counters: dict, tries: int = 5):
     return None
 
 
-def poll_market(market: dict, counters: dict) -> list[dict]:
+def poll_market(market: dict, counters: dict, wm: int | None) -> list[dict]:
     """轮询单个市场,返回比 watermark 更新的、已解析的 trades 行。
 
-    分页从 offset=0(最新)往回,直到 timestamp <= watermark 或到接口上限。
+    分页从 offset=0(最新)往回,直到 timestamp <= watermark(增量)或到接口上限。
+    wm 由调用方一次性预取(见 run_once),避免每市场开 DuckDB 连接。
     """
     cid = market["condition_id"]
     token_ids = [market["token_id_0"], market["token_id_1"]]
-    con = se.duckdb_conn()
-    try:
-        wm = se.watermark(con, cid)
-    finally:
-        con.close()
-
     new_rows, offset = [], 0
     now = int(dt.datetime.now(dt.UTC).timestamp())
     while offset <= OFFSET_CAP:
@@ -104,29 +95,38 @@ def poll_market(market: dict, counters: dict) -> list[dict]:
             break
         offset += PAGE
         if offset >= OFFSET_WARN and (wm is None or (new_rows and new_rows[-1]["timestamp"] > wm)):
-            # 仍未追到 watermark 却已逼近上限 → 该市场增量可能溢出接口窗口
+            # 逼近 offset 上限仍未追到 watermark → 更早历史够不着(诚实截断)。
+            # ★保留已抓的近端成交(有效数据,不丢),计数供守护层压频/告警,只停止再往回翻。
             counters["offset_overflow_count"] += 1
-            raise OffsetOverflow(f"{cid} 增量逼近 offset 上限 {OFFSET_CAP},需压频(<5分钟)或已丢数")
+            print(f"    ⚠️ offset 截断: {cid[:14]}.. 保留近端 {len(new_rows)} 笔,更早历史待压频回填",
+                  flush=True)
+            break
     counters["total_markets_polled"] += 1
     return new_rows
 
 
-def run_once(limit: int | None = None) -> dict:
-    """轮询一轮所有可采事件市场,落库并写审计心跳。返回本轮计数。"""
-    markets = active_event_markets()
+def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None = None) -> dict:
+    """发现一轮活跃市场 → 逐市场增量轮询落库 → 写审计心跳。返回本轮计数。
+
+    v1.2:市场来自 Firehose 发现(refresh_and_registry),不再全量枚举。
+    """
+    markets, disc = refresh_and_registry(sample_limit=sample, max_new=max_new)
+    print(f"发现层: {disc}")
     if limit:
         markets = markets[:limit]
     counters = {k: 0 for k in (
         "total_markets_polled", "http_4xx_count", "rate_limit_hits",
         "offset_overflow_count", "dedup_collapse_count", "parse_reject_count")}
+    # 一次性预取所有市场 watermark(空湖返回 {})
+    con = se.duckdb_conn()
+    try:
+        wms = se.all_watermarks(con)
+    finally:
+        con.close()
     total_written = 0
     for m in markets:
-        try:
-            rows = poll_market(m, counters)
-        except OffsetOverflow as e:
-            # 不静默:计数已+1,记录并继续(守护层据心跳暂停+告警);该市场下轮压频
-            print(f"  ⚠️ OffsetOverflow: {e}", flush=True)
-            continue
+        # 溢出时 poll_market 已保留近端并计数(不再抛异常丢批);守护层据心跳 offset_overflow 压频/告警
+        rows = poll_market(m, counters, wms.get(m["condition_id"]))
         if rows:
             se.write_trades(rows)
             total_written += len(rows)
@@ -145,10 +145,12 @@ def run_once(limit: int | None = None) -> dict:
 #  - 已结算市场移冷存、不再轮询。
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--once", action="store_true", help="轮询一轮")
+    ap.add_argument("--once", action="store_true", help="发现+轮询一轮")
     ap.add_argument("--limit", type=int, default=None, help="只轮前 N 个市场(试跑)")
+    ap.add_argument("--sample", type=int, default=5000, help="firehose 发现采样条数")
+    ap.add_argument("--max-new", type=int, default=None, help="本轮最多注册 N 个新市场(试跑)")
     args = ap.parse_args()
     if args.once:
-        run_once(limit=args.limit)
+        run_once(limit=args.limit, sample=args.sample, max_new=args.max_new)
     else:
         ap.print_help()
