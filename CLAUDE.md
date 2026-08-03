@@ -89,6 +89,26 @@ Explicitly verify every `except` clause:
 
 When reviewing **existing code** (not just new additions), apply the same checklist to any `except` block you read.
 
+## 静默失败检查清单(每次改采集/数据接口/告警必过)
+
+**背景(2026-08-03 血的教训)**:结算真值采集静默死了 11 天 —— 进程正常、日志照打、看板全绿,
+唯一异常是 `newly_resolved` 恒为 0,而没人规定过"它不该是 0"。同期告警推了 1340 条,
+**没有一条是关于它的**。完整分析:`docs/PITFALLS_SILENT_FAILURE_2026-08-03.md`
+
+1. **批量/过滤类接口:先做「请求数 vs 返回数」对账。** 数量对不上必须抽样核对**丢的是哪一类**,
+   不许用"大概是脏数据"糊过去。实例:Gamma `condition_ids=` 默认只返回未关闭市场,
+   请求 100 返回 72,丢的 28 个**全是已结算的** —— 即接口默认参数本身就是个**与结果相关的筛选器**。
+   丢样本不致命,**丢得与结果相关才致命**。
+2. **排序键里的缺失值必须显式决定排哪里。** `key=lambda r: r["x"] or ""` 不是"防崩溃",
+   而是把所有缺失值钉死在优先级最高处。
+3. **"每轮取前 N 个"必须能回答"第 N+1 个何时轮到"。** 答不上来就是饿死;正解是游标轮转 + 回卷。
+4. **恒定不变的计数 = 强可疑信号。** 真实系统的计数会抖动;每轮精确相同通常意味着**每轮处理同一批**。
+5. **阈值必须有实测分布支撑,并把分位数写进判据断言。** 独立链路分开判定,不许相加;
+   分母会变的指标用比率而非绝对值。
+6. **每条关键产出配一条"连续 N 轮为 0"守护**,且区分「有活没干成」(异常)与「没活可干」(正常)。
+7. **新增告警必须自带防洪判据。** 稳态完全静默 + 真异常必推,两头都要焊死 ——
+   降噪不是体验优化,是可靠性工作(噪音会让真信号无处可显)。
+
 ## Conventions
 - **Test isolation is enforced**: test code must run with a `--test` flag and write to `/tmp/`; production data dirs (`07-data/`) must never receive test fixtures. Honor this when adding scripts.
 - Database schema changes are done via hand-written `dashboard/backend/migrate_db*.py` scripts (no migration framework). There is no CI.
