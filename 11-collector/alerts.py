@@ -25,6 +25,13 @@ REGISTER_FAIL_THRESHOLD = 25
 # 下限用于挡住小样本比率抖动(2/2=100% 不该告警)。
 SETTLEMENT_FAIL_RATIO = 0.5
 SETTLEMENT_FAIL_MIN = 20
+# 真值断供守护:连续 N 轮"有市场可查却一个都没结算"就报警。
+# 补的是 2026-08-03 暴露的监控盲点 —— 结算真值静默死了 11 天,同期推了 1340 条告警,
+# 却没有一条是关于它的:监控只覆盖"接口报错",对"一切正常但产出为 0"完全是瞎的。
+# 依据(实测):近 14 天每天自然结算 ~2904 个市场(中位)→ 每轮(10 分钟)期望 ~20 个,
+# 故连续 18 轮(3 小时)一个都没有是强异常。⚠️ 修复后仅 6 轮观测且全是清存量轮次,
+# 尚无稳态分布 → 此值为保守初值,zero_streak 已逐轮入日志,攒够一周应回来校准。
+TRUTH_SUPPLY_ZERO_CYCLES = 18
 # offset 截断是巨盘历史回填触上限的**稳态自愈事件**(近端已保留 + 下轮压频回填)。
 # 实测心跳分布(首日 82 条):中位 1 / p90 3 / 最大 8。原逻辑 ov>0 就推 = 每轮洪水告警。
 # 降级:截断只进汇总日志(collector_core 每轮打印 + 心跳 parquet 留痕),**只有尖峰
@@ -61,6 +68,13 @@ def maybe_alert(counts: dict) -> bool:
     sf, sc = counts.get("settlement_lookup_fail", 0), counts.get("settlement_checked", 0)
     if sf > SETTLEMENT_FAIL_MIN and sc > 0 and sf / sc > SETTLEMENT_FAIL_RATIO:
         triggers.append(f"⚠️ 结算守望查询失败 {sf}/{sc}(整条链路恐已挂,地面真值会断供)")
+    # 真值断供:静默失败(一切正常但产出为 0),靠连零轮数发现。
+    # 防洪:只在恰好跨过阈值的整数倍时推 → 断供期间每 3 小时复述一次,而非每轮。
+    zs = counts.get("truth_supply_zero_streak", 0)
+    if zs > 0 and zs % TRUTH_SUPPLY_ZERO_CYCLES == 0:
+        triggers.append(
+            f"🔴 结算真值断供:连续 {zs} 轮(约 {zs * 10 // 60} 小时)有市场可查却一个都没结算。"
+            f"正常每轮期望 ~20 个。须查结算守望链路(Gamma 接口/轮转游标/注册表)")
     if not triggers:
         return False
     body = "🔴 <b>Polymarket 采集器守护告警</b>\n" + "\n".join(triggers)

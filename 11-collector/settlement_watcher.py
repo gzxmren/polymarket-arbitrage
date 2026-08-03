@@ -44,6 +44,8 @@ SETTLEMENT_BATCH = 100
 DEFAULT_MAX_CHECK = 800
 
 CURSOR_FILE = DATA_ROOT / "state" / "settlement_cursor.json"
+# 真值断供守护:连续多少轮"有市场可查却一个都没结算"。每轮是独立进程,故须落盘累积。
+STREAK_FILE = DATA_ROOT / "state" / "truth_supply_streak.json"
 
 
 def _end_passed(end_date: str | None) -> bool:
@@ -88,21 +90,54 @@ def select_batch(pending: list[dict], cursor: str, max_check: int) -> tuple[list
     return picked, _sort_key(picked[-1])
 
 
-def _load_cursor() -> str:
+def _read_state(path, key, default):
+    """读小状态文件。任何损坏/缺失都降级为默认值 —— 状态丢失只影响节奏,不丢数据。"""
     try:
-        return json.loads(CURSOR_FILE.read_text()).get("cursor", "")
-    except (OSError, json.JSONDecodeError, AttributeError):
-        return ""  # 游标丢失只是从头轮一圈,无数据损失
+        return json.loads(path.read_text())[key]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return default
+
+
+def _write_state(path, key, value, what: str) -> None:
+    """原子落位(临时文件 + os.replace),避免被下一轮读到半截文件。"""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+        tmp.write_text(json.dumps({key: value}))
+        os.replace(tmp, path)
+    except OSError as e:
+        print(f"[{what}保存失败] {e}(仅影响下轮节奏,不丢数据)", flush=True)
+
+
+def _load_cursor() -> str:
+    return _read_state(CURSOR_FILE, "cursor", "")
 
 
 def _save_cursor(cursor: str) -> None:
-    try:
-        CURSOR_FILE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = CURSOR_FILE.with_suffix(f".{uuid.uuid4().hex}.tmp")
-        tmp.write_text(json.dumps({"cursor": cursor}))
-        os.replace(tmp, CURSOR_FILE)  # 原子落位,避免半截文件
-    except OSError as e:
-        print(f"[结算游标保存失败] {e}(下轮将从头轮转,不丢数据)", flush=True)
+    _write_state(CURSOR_FILE, "cursor", cursor, "结算游标")
+
+
+# ---------- 真值断供守护 ----------
+
+def next_zero_streak(prev: int, newly_resolved: int, checked: int) -> int:
+    """连零计数的推进规则(纯函数,判据见 test_truth_supply_guard.py)。
+
+    - 有市场可查却一个都没结算 → 进位(正是 2026-08-03 那次静默故障的形态)
+    - 拿到任何真值 → 归零(链路通)
+    - 没市场可查(pending 空)→ **保持不变**:那是成功不是失败,既不该误报也不该掩盖
+    """
+    if checked <= 0:
+        return prev
+    return 0 if newly_resolved > 0 else prev + 1
+
+
+def _load_streak() -> int:
+    v = _read_state(STREAK_FILE, "zero_streak", 0)
+    return v if isinstance(v, int) and v >= 0 else 0
+
+
+def _save_streak(n: int) -> None:
+    _write_state(STREAK_FILE, "zero_streak", n, "真值连零计数")
 
 
 # ---------- 批量查询(必须两遍) ----------
@@ -155,8 +190,10 @@ def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK) -> dict:
         dest = REGISTRY_DIR / f"settle-{uuid.uuid4().hex}.parquet"
         _atomic_write_parquet(pa.Table.from_pylist(rows, schema=MARKETS_SCHEMA), dest)
     _save_cursor(new_cursor)
+    streak = next_zero_streak(_load_streak(), len(rows), len(picked))
+    _save_streak(streak)
     return {"pending_settlement": len(pending), "newly_resolved": len(rows),
-            "lookup_fail": fail, "checked": len(picked)}
+            "lookup_fail": fail, "checked": len(picked), "zero_streak": streak}
 
 
 if __name__ == "__main__":

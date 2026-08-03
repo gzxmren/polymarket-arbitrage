@@ -53,6 +53,7 @@ def main(sample: int = 5000, max_new: int | None = DEFAULT_MAX_NEW,
         "newly_resolved": settle["newly_resolved"],
         "settlement_lookup_fail": settle["lookup_fail"],
         "settlement_checked": settle["checked"],  # 失败按比率判定,须带上分母
+        "truth_supply_zero_streak": settle["zero_streak"],  # 真值断供守护(静默失败)
     }
     if alerts.maybe_alert(merged):
         print("已推送告警", flush=True)
