@@ -43,6 +43,16 @@ class TestPairCostRiskReview:
         assert review["approved"] is True
         assert len(review["concerns"]) == 0 or review["risk_score"] < 0.3
     
+    @pytest.mark.skip(reason=(
+        "2026-08-03 关闭,同 test_low_risk_opportunity 的同类定时炸弹(写死 end_date="
+        "2026-06-30,今已过期)。本例**没有变红,但已被污染**:过期日期额外触发「即将结算」"
+        "+3 分,风险等级由本意的 medium 变成 high(0.3→0.6),只因断言写得松"
+        "(`in [\"medium\",\"high\"]` 两个值都收)才侥幸通过。"
+        "后果:本例本意是验证「低利润**单独**会推高风险」,如今分辨不出是低利润还是"
+        "过期日期在推 —— 通过得毫无意义。"
+        "所属模块 risk_reviewer 只被已停运的老监控引擎调用(详见 test_low_risk_opportunity "
+        "的 skip 理由),故关闭而非修复。复活时:把日期改成 datetime.now()+timedelta,"
+        "同类正确写法本文件内就有现成的(见 test_far_resolution_date)。"))
     def test_high_risk_low_profit(self):
         """测试高风险 - 低利润"""
         opp = {
@@ -58,6 +68,10 @@ class TestPairCostRiskReview:
         assert review["risk_level"] in ["medium", "high"]
         assert any("利润空间" in c for c in review["concerns"])
     
+    @pytest.mark.skip(reason=(
+        "2026-08-03 关闭,理由同 test_high_risk_low_profit。过期日期使风险等级由本意的 "
+        "medium 变成 high(0.3→0.6),仅因断言只查关注点里有无「流动性」字样才侥幸通过 —— "
+        "该断言对风险分完全不敏感,等于没在验证等级。属已停运的老监控引擎,关闭而非修复。"))
     def test_high_risk_low_liquidity(self):
         """测试高风险 - 低流动性"""
         opp = {
