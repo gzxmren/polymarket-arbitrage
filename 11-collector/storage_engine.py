@@ -101,6 +101,25 @@ def compact_day(day: str, keep_originals: bool = False) -> Path | None:
     return merged
 
 
+def compact_due_partitions(min_files: int = 50, keep_originals: bool = False) -> list[str]:
+    """扫全部 dt= 分区,把文件数 > min_files 的都合并(不只"昨天")。
+
+    盲区修复:分区按成交事件日期分,巨盘历史回填会把成交写进旧日期分区;旧逻辑每天只合并
+    "昨天"一次 → 被回填污染的旧分区小文件永久累积。改为按文件数阈值全湖扫,自然把被追写的
+    旧分区也收进来;文件数 ≤ 阈值的分区不动(避免无谓重写)。返回被合并的分区日期列表。
+    """
+    if not RAW_DIR.exists():
+        return []
+    compacted = []
+    for part in sorted(RAW_DIR.glob("dt=*")):
+        if not part.is_dir():
+            continue
+        if len(list(part.glob("*.parquet"))) > min_files:
+            compact_day(part.name[len("dt="):], keep_originals=keep_originals)
+            compacted.append(part.name[len("dt="):])
+    return compacted
+
+
 # ---------- DuckDB 查询层(零 ETL 直查 Parquet 湖) ----------
 
 def has_data() -> bool:
