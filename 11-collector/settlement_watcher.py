@@ -24,9 +24,9 @@ from __future__ import annotations
 import argparse
 import bisect
 import datetime as dt
-import json
-import os
 import uuid
+
+import cycle_state
 
 from discovery_service import (
     GAMMA, MARKETS_SCHEMA, REGISTRY_DIR, _atomic_write_parquet, _get,
@@ -90,54 +90,32 @@ def select_batch(pending: list[dict], cursor: str, max_check: int) -> tuple[list
     return picked, _sort_key(picked[-1])
 
 
-def _read_state(path, key, default):
-    """读小状态文件。任何损坏/缺失都降级为默认值 —— 状态丢失只影响节奏,不丢数据。"""
-    try:
-        return json.loads(path.read_text())[key]
-    except (OSError, json.JSONDecodeError, KeyError, TypeError):
-        return default
-
-
-def _write_state(path, key, value, what: str) -> None:
-    """原子落位(临时文件 + os.replace),避免被下一轮读到半截文件。"""
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
-        tmp.write_text(json.dumps({key: value}))
-        os.replace(tmp, path)
-    except OSError as e:
-        print(f"[{what}保存失败] {e}(仅影响下轮节奏,不丢数据)", flush=True)
-
-
 def _load_cursor() -> str:
-    return _read_state(CURSOR_FILE, "cursor", "")
+    return cycle_state.read_state(CURSOR_FILE, "cursor", "")
 
 
 def _save_cursor(cursor: str) -> None:
-    _write_state(CURSOR_FILE, "cursor", cursor, "结算游标")
+    cycle_state.write_state(CURSOR_FILE, "cursor", cursor, "结算游标")
 
 
-# ---------- 真值断供守护 ----------
+# ---------- 真值断供守护(底座在 cycle_state,两处守护共用一套实现) ----------
 
 def next_zero_streak(prev: int, newly_resolved: int, checked: int) -> int:
-    """连零计数的推进规则(纯函数,判据见 test_truth_supply_guard.py)。
+    """连零计数推进规则。判据见 test_truth_supply_guard.py。
 
     - 有市场可查却一个都没结算 → 进位(正是 2026-08-03 那次静默故障的形态)
     - 拿到任何真值 → 归零(链路通)
-    - 没市场可查(pending 空)→ **保持不变**:那是成功不是失败,既不该误报也不该掩盖
+    - 没市场可查(pending 空)→ 保持不变:那是成功不是失败,既不误报也不掩盖
     """
-    if checked <= 0:
-        return prev
-    return 0 if newly_resolved > 0 else prev + 1
+    return cycle_state.next_zero_streak(prev, newly=newly_resolved, attempted=checked)
 
 
 def _load_streak() -> int:
-    v = _read_state(STREAK_FILE, "zero_streak", 0)
-    return v if isinstance(v, int) and v >= 0 else 0
+    return cycle_state.read_streak(STREAK_FILE)
 
 
 def _save_streak(n: int) -> None:
-    _write_state(STREAK_FILE, "zero_streak", n, "真值连零计数")
+    cycle_state.write_streak(STREAK_FILE, n)
 
 
 # ---------- 批量查询(必须两遍) ----------

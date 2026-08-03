@@ -46,9 +46,16 @@ def capture_push(monkeypatch):
 OBSERVED_REGISTER_FAIL_P99 = 22
 
 
-def test_register_threshold_above_observed_p99():
-    """阈值必须高于实测 p99=22,否则正常背景仍会 ~1% 概率误报;定在 3 时是 76%。"""
-    assert alerts.REGISTER_FAIL_THRESHOLD > OBSERVED_REGISTER_FAIL_P99
+def test_register_fail_count_no_longer_alerts_at_all():
+    """⚠️ 2026-08-03 改写:原断言是"阈值必须高于实测 p99=22"。
+
+    后来认识到"数失败个数"这个**形状本身就是错的** —— 单次注册失败会自愈(市场还在
+    交易,下轮会被重新登记),失败个数多寡不构成事故。抬高阈值只是让它闭嘴,没换成对的问法。
+    现已整条退役,改用断供守护(见 test_register_supply_guard.py)。
+    这里断言:实测值域内(含 max=40)任何失败个数都不再单独触发告警。"""
+    assert not hasattr(alerts, "REGISTER_FAIL_THRESHOLD"), "旧常量应删除而非留着不用"
+    for rf in (0, 6, OBSERVED_REGISTER_FAIL_P99, 40, 100):
+        assert alerts.maybe_alert({"register_fail": rf}) is False
 
 
 @pytest.mark.parametrize("rf", [0, 3, 6, 9, 13, 15, 22])  # 实测 p50→p99 的背景值域
@@ -60,9 +67,10 @@ def test_steady_state_register_fail_does_not_push(capture_push, rf):
 
 
 def test_systemic_register_failure_still_pushes(capture_push):
-    """注册链路系统性失败(超阈值)仍须推送 —— 降噪不等于变聋。"""
+    """注册链路系统性失败仍须推送 —— 降噪不等于变聋。
+    判定方式已从"失败个数超阈值"换成"连续多轮零登记"(2026-08-03)。"""
     pushed = alerts.maybe_alert(
-        {"register_fail": alerts.REGISTER_FAIL_THRESHOLD + 1, "total_markets_polled": 50})
+        {"register_zero_streak": alerts.REGISTER_ZERO_CYCLES, "total_markets_polled": 50})
     assert pushed is True
     assert "注册" in capture_push["body"]
 

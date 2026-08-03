@@ -67,12 +67,17 @@ def test_firehose_fail_still_pushes(capture_push):
     assert "firehose" in capture_push["body"]
 
 
-def test_gamma_fail_still_pushes(capture_push):
-    """Gamma 注册/结算查询失败超阈值,真异常,照旧推送。"""
+def test_register_outage_still_pushes(capture_push):
+    """注册链路真异常仍照旧推送(与截断降级无关)。
+
+    ⚠️ 本用例 2026-08-03 改写:原断言是"register_fail 个数超阈值就推"。该判定已**退役** ——
+    单次注册失败会自愈(市场还在交易,下轮重登),数个数是错的形状。现改为断供守护
+    (连续多轮零登记),理由与实测依据见 test_register_supply_guard.py。
+    保留本用例是为了守住"真异常必须推"这一头,不让降噪变成变聋。"""
     pushed = alerts.maybe_alert(
-        {"register_fail": alerts.REGISTER_FAIL_THRESHOLD + 1, "offset_overflow_count": 1})
+        {"register_zero_streak": alerts.REGISTER_ZERO_CYCLES, "offset_overflow_count": 1})
     assert pushed is True
-    assert "Gamma" in capture_push["body"]
+    assert "注册" in capture_push["body"]
 
 
 def test_steady_truncation_does_not_ride_along_on_real_alert(capture_push):

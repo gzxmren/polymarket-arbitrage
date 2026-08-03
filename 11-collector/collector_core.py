@@ -21,8 +21,12 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import cycle_state
 import storage_engine as se
 from discovery_service import refresh_and_registry, resolve_asset_index
+
+# 注册链路连零计数(跨周期落盘;每轮是独立进程)
+REGISTER_STREAK_FILE = se.DATA_ROOT / "state" / "register_streak.json"
 
 _ORIG_GAI = socket.getaddrinfo
 socket.getaddrinfo = lambda h, p, f=0, t=0, pr=0, fl=0: _ORIG_GAI(h, p, socket.AF_INET, t, pr, fl)
@@ -133,6 +137,15 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
         time.sleep(0.1)  # 礼貌节流(全局无 429,仍留余量)
     counters["new_trades"] = total_written
     counters["register_fail"] = disc.get("register_fail", 0)
+    # 注册链路断供守护(静默失败):关心的是"成功登记了几个",不是"报了几个错"。
+    # 单次注册失败会自愈(市场还在交易,下轮会被重新登记);真事故是接口挂掉 → 全部失败
+    # → 新市场再也进不来、宇宙悄悄停止增长。尝试数 = 成功 + 失败;为 0 表示本轮没新市场
+    # 可登记(正常,保持中立)。判据:10-tests/unit/test_register_supply_guard.py
+    n_reg = disc.get("new_registered", 0)
+    counters["register_zero_streak"] = cycle_state.next_zero_streak(
+        cycle_state.read_streak(REGISTER_STREAK_FILE),
+        newly=n_reg, attempted=n_reg + counters["register_fail"])
+    cycle_state.write_streak(REGISTER_STREAK_FILE, counters["register_zero_streak"])
     # firehose 抽风检测:Polymarket 永远有成交,采样 0 笔 = 我们抓取失败,非"真没成交"。
     # 不能静默空转(§7)——计为异常供告警;数据不丢(下轮自愈:per-market 轮询会回填这段)。
     counters["firehose_fail"] = 1 if disc.get("firehose_trades", 0) == 0 else 0

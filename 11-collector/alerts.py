@@ -17,10 +17,13 @@ try:
 except Exception:  # 缺依赖/配置 → 关掉该功能而非崩(项目 graceful-degradation 惯例)
     TELEGRAM_ENABLED = False
 
-# Gamma 注册查询失败:实测 1530 轮稳态 p50=6 / p90=13 / p99=22 / max=40(每轮上限 40 个)。
-# 旧阈值 3 → **76% 的轮次必然触发**,且与结算失败**相加**判定 → 日志里 1340 条洪水推送。
-# 定在 p99 之上:正常背景静默,而 >25/40 = 六成以上注册失败才当系统性异常。(2026-08-03)
-REGISTER_FAIL_THRESHOLD = 25
+# 注册链路断供守护:连续 N 轮"有市场可登记却一个都没成功"。
+# 为什么不再数失败个数:单次注册失败**会自愈**(市场还在交易,下轮会被重新登记),稳态每轮
+# 失败 ~6 个纯属正常损耗 —— 数个数是**错的形状**(旧阈值 3 → 76% 轮次必推,共 1340 条;
+# 定高了又抓不住真事故)。真事故是接口挂掉 → 全部失败 → 新市场再也进不来、宇宙悄悄停止增长。
+# 依据(实测 1541 轮):new_registered 中位 34/轮,为 0 占 3.8%,**最长自然连零 10 轮**。
+# 取 18 轮(3 小时)≈ 2 倍余量;且只在"确实有市场可登记"时进位,实际更难自然达成。
+REGISTER_ZERO_CYCLES = 18
 # 结算守望失败改**比率**判定:批量化后每轮检查数百个(原 80),绝对值阈值失去意义。
 # 下限用于挡住小样本比率抖动(2/2=100% 不该告警)。
 SETTLEMENT_FAIL_RATIO = 0.5
@@ -61,10 +64,13 @@ def maybe_alert(counts: dict) -> bool:
     # 只有尖峰(≥阈值)才异常——意味轮询系统性追不上,值得人工看一眼。
     if ov >= OFFSET_OVERFLOW_ALERT_THRESHOLD:
         triggers.append(f"⚠️ offset 截断尖峰 {ov} 个市场(远超稳态,轮询恐系统性追不上,须查压频/间隔)")
-    # 注册链路与结算链路**分开判定**:相加既掩盖单边真异常,又制造噪音(2026-08-03)。
-    rf = counts.get("register_fail", 0)
-    if rf > REGISTER_FAIL_THRESHOLD:
-        triggers.append(f"⚠️ Gamma 注册查询失败 {rf} 次(远超稳态,须查接口是否变更)")
+    # 注册链路断供(静默失败)。register_fail 个数本身不再告警 —— 单次失败会自愈,
+    # 数个数是错的形状;失败仍逐轮进日志/心跳留痕,只是不再打扰人。
+    rzs = counts.get("register_zero_streak", 0)
+    if rzs > 0 and rzs % REGISTER_ZERO_CYCLES == 0:
+        triggers.append(
+            f"🔴 注册链路断供:连续 {rzs} 轮(约 {rzs * 10 // 60} 小时)有市场可登记却一个"
+            f"**新市场**都没登记成功。正常每轮 ~34 个。新市场进不来=宇宙停止增长,须查 Gamma 接口")
     sf, sc = counts.get("settlement_lookup_fail", 0), counts.get("settlement_checked", 0)
     if sf > SETTLEMENT_FAIL_MIN and sc > 0 and sf / sc > SETTLEMENT_FAIL_RATIO:
         triggers.append(f"⚠️ 结算守望查询失败 {sf}/{sc}(整条链路恐已挂,地面真值会断供)")
