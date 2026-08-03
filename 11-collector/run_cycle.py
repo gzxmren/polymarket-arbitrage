@@ -13,16 +13,13 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 import sys
-from pathlib import Path
 
 import alerts
 import collector_core
 import settlement_watcher
 import storage_engine as se
 
-STATE_FILE = se.DATA_ROOT / ".cycle_state.json"
 # 每轮工作量必须能在 10 分钟间隔内跑完(否则被 8 分钟超时杀、永远跑不到写心跳=空转打转)。
 # 实测冷启动 register 112 + poll 270(含大量 8000 笔全回填)单轮 >10 分钟。故双封顶:
 DEFAULT_MAX_NEW = 40      # 每轮最多注册 N 个新市场(~1.3s/个 Gamma)
@@ -30,21 +27,16 @@ DEFAULT_POLL_LIMIT = 50   # 每轮最多轮询 N 个市场(冷启动全回填 ~1
 # 冷启动:全宇宙(~600)摊到 ~12 轮(~2 小时)跑满;之后 watermark 令轮询转增量、极快。
 
 
-def _daily_compaction_if_due() -> str | None:
-    """每日对昨日分区跑一次 compaction(幂等:同一天只跑一次)。"""
-    today = dt.date.today().isoformat()
-    try:
-        state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
-    except (json.JSONDecodeError, OSError):
-        state = {}
-    if state.get("compacted_date") == today:
-        return None
-    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
-    merged = se.compact_day(yesterday)
-    state["compacted_date"] = today
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state))
-    return str(merged) if merged else None
+COMPACT_MIN_FILES = 50   # 分区文件数超此值即合并(含被回填污染的旧分区)
+
+
+def _compaction_sweep() -> list[str]:
+    """扫全部分区,合并文件数超阈值的(不只"昨天")。
+
+    自限:合并后分区落到 1 个大文件,须再累积 >阈值 才会被下轮重新合并 → 天然幂等、不空转。
+    修掉旧"每天只合并昨天一次"的盲区(回填写进旧日期分区 → 小文件永久累积)。
+    """
+    return se.compact_due_partitions(min_files=COMPACT_MIN_FILES)
 
 
 def main(sample: int = 5000, max_new: int | None = DEFAULT_MAX_NEW,
@@ -60,13 +52,14 @@ def main(sample: int = 5000, max_new: int | None = DEFAULT_MAX_NEW,
         **counts,
         "newly_resolved": settle["newly_resolved"],
         "settlement_lookup_fail": settle["lookup_fail"],
+        "settlement_checked": settle["checked"],  # 失败按比率判定,须带上分母
     }
     if alerts.maybe_alert(merged):
         print("已推送告警", flush=True)
 
-    comp = _daily_compaction_if_due()
+    comp = _compaction_sweep()
     if comp:
-        print(f"compaction: {comp}", flush=True)
+        print(f"compaction: 合并 {len(comp)} 个分区 {comp}", flush=True)
 
     dur = (dt.datetime.now(dt.UTC) - t0).total_seconds()
     print(f"=== 周期结束 {dur:.0f}s ===", flush=True)
