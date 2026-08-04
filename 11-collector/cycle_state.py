@@ -52,6 +52,17 @@ def next_zero_streak(prev: int, newly: int, attempted: int) -> int:
     return 0 if newly > 0 else prev + 1
 
 
+def next_hit_streak(prev: int, hit: bool) -> int:
+    """「连续多少轮命中同一个坏状态」的推进规则(纯函数)。
+
+    与 next_zero_streak 的区别:那个管「有活干却零产出」(三态:进位/归零/保持中立),
+    这个管**二态**的持续性异常(慢周期这类:要么这轮慢、要么这轮不慢,没有"没活可干")。
+
+    用途是防洪:单发是自愈噪声(网络抖一下),**持续**才是真退化。
+    """
+    return prev + 1 if hit else 0
+
+
 def read_streak(path: Path) -> int:
     v = read_state(path, "zero_streak", 0)
     return v if isinstance(v, int) and v >= 0 else 0

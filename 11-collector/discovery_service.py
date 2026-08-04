@@ -58,27 +58,77 @@ def resolve_asset_index(asset: str, clob_token_ids: list[str]) -> int | None:
     return toks.index(a) if a in toks else None
 
 
-def _get(url: str, tries: int = 5):
+RETRY_EXHAUSTED = "retry_exhausted"
+NET_COUNTER_KEYS = ("net_attempt_count", "net_retry_count", "net_give_up_count",
+                    "net_server_error_count", "firehose_truncated_count")
+
+
+def _is_retry_exhausted(d) -> bool:
+    """区分「重试耗尽」与「确认空」/「4xx 明确答复」—— 分不清就会静默截断(§静默失败)。"""
+    return isinstance(d, dict) and d.get("__http__") == RETRY_EXHAUSTED
+
+
+def new_net_stats() -> dict:
+    """一轮的网络健康计数。三个都要:比率的分子分母缺一不可。
+
+    为什么发现/轮询/结算三条链路**共用同一份**(而非 CLAUDE.md「独立链路分开判定」):
+    它们不是独立子系统,而是**同一根管子的三个出口** —— 同一条代理隧道、同一个出口 IP。
+    隧道烂掉时三条一起烂,分开计数只会把同一个信号劈成三份、每份都不够触发。
+    """
+    return dict.fromkeys(NET_COUNTER_KEYS, 0)
+
+
+def _bump(net: dict | None, key: str) -> None:
+    """计数是可选的(net=None 时静默跳过),但**一旦传了就必须计满** —— 半计数比不计更坏。"""
+    if net is not None:
+        net[key] = net.get(key, 0) + 1
+
+
+def _get(url: str, tries: int = 5, net: dict | None = None):
+    """GET;重试耗尽返回 {"__http__": "retry_exhausted"}(区别于确认空)。
+
+    ⚠️ 网络异常分支必须计数:`ssl.SSLError`/`socket.timeout` 都是 `OSError` 子类,
+    全落在下面那个 except 里。2026-08-04 实测 23% 的请求走这条路被静默吞掉,
+    而心跳里 `4xx 0 | 限流 0` 看着一切正常 —— 判据 test_net_failure_counting.py。
+    """
     for _ in range(tries):
+        _bump(net, "net_attempt_count")
         try:
             with urlopen(Request(url, headers=UA), timeout=25) as r:
                 return json.loads(r.read().decode())
         except HTTPError as e:
-            return {"__http__": e.code}
-        except (URLError, TimeoutError, OSError, http.client.HTTPException, json.JSONDecodeError):
+            if e.code >= 500:
+                # 5xx 是对方**暂时**挂了,重试有意义(且必须计数:代理隧道抽风时
+                # Gamma 侧 5xx 风暴正是要暴露的形态之一)。旧代码 4xx/5xx 一律单发返回,
+                # 于是服务端错误风暴在 net_* 里完全不留痕。
+                _bump(net, "net_server_error_count")
+                _bump(net, "net_retry_count")
+                time.sleep(1.2)
+                continue
+            return {"__http__": e.code}   # 4xx = 对方明确答复,不是网络断 → 不重试、不计 net_*
+        except (URLError, TimeoutError, OSError, http.client.HTTPException,
+                json.JSONDecodeError, UnicodeDecodeError):
+            _bump(net, "net_retry_count")
             time.sleep(1.2)
-    return {"__http__": "retry_exhausted"}
+    _bump(net, "net_give_up_count")
+    return {"__http__": RETRY_EXHAUSTED}
 
 
 # ---------- 发现层 ----------
 
-def sample_firehose(limit: int = 5000) -> list[dict]:
+def sample_firehose(limit: int = 5000, net: dict | None = None) -> list[dict]:
     """取最新 ~limit 条全局成交(每页 1000)。offset 只够 ~4 分钟,故仅作'发现',不作采集。"""
     out = []
     for off in range(0, limit, 1000):
-        d = _get(f"{TRADES}?limit=1000&offset={off}")
-        if not isinstance(d, list) or not d:
+        d = _get(f"{TRADES}?limit=1000&offset={off}", net=net)
+        if _is_retry_exhausted(d):
+            # 与 poll_market 同病同治:重试耗尽 ≠ 翻到底。这里悄悄 break 会**缩小本轮发现的
+            # 活跃市场集合**(少发现 = 少轮询 = 少收数据),而 firehose_fail 只抓"总数为 0",
+            # 抓不住这种部分截断。必须出声。
+            _bump(net, "firehose_truncated_count")
             break
+        if not isinstance(d, list) or not d:
+            break                      # 确认空 = 正常翻到底
         out.extend(d)
         time.sleep(0.2)
     return out
@@ -151,15 +201,16 @@ def load_registry() -> dict[str, dict]:
     return reg
 
 
-def _lookup_gamma(slug: str) -> dict | None:
+def _lookup_gamma(slug: str, net: dict | None = None) -> dict | None:
     for suf in ("", "&closed=true"):
-        m = _get(f"{GAMMA}?slug={slug}{suf}")
+        m = _get(f"{GAMMA}?slug={slug}{suf}", net=net)
         if isinstance(m, list) and m:
             return m[0]
     return None
 
 
-def register_new_markets(stubs: dict[str, dict], max_new: int | None = None) -> tuple[int, int]:
+def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
+                         net: dict | None = None) -> tuple[int, int]:
     """对新市场按需查 Gamma 注册。返回 (注册成功数, 查询失败数)。失败计数不静默丢。"""
     now = int(dt.datetime.now(dt.UTC).timestamp())
     rows, fail = [], 0
@@ -167,7 +218,7 @@ def register_new_markets(stubs: dict[str, dict], max_new: int | None = None) -> 
         if max_new and i >= max_new:
             break
         slug = stub.get("slug")
-        m = _lookup_gamma(slug) if slug else None
+        m = _lookup_gamma(slug, net=net) if slug else None
         if not m:
             fail += 1
             continue
@@ -184,16 +235,17 @@ def register_new_markets(stubs: dict[str, dict], max_new: int | None = None) -> 
     return len(rows), fail
 
 
-def refresh_and_registry(sample_limit: int = 5000, max_new: int | None = None) -> tuple[list[dict], dict]:
+def refresh_and_registry(sample_limit: int = 5000, max_new: int | None = None,
+                         net: dict | None = None) -> tuple[list[dict], dict]:
     """发现 → 注册新市场 → 返回 (可轮询市场行列表, 计数)。
 
     可轮询 = 当前活跃(firehose 出现)且已注册、market_class=event、未关闭。
     """
-    trades = sample_firehose(sample_limit)
+    trades = sample_firehose(sample_limit, net=net)
     active = extract_active(trades)
     registry = load_registry()
     new = {cid: s for cid, s in active.items() if cid not in registry}
-    n_reg, n_fail = register_new_markets(new, max_new=max_new)
+    n_reg, n_fail = register_new_markets(new, max_new=max_new, net=net)
     if n_reg:
         registry = load_registry()
     pollable = [registry[cid] for cid in active

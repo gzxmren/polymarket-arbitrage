@@ -120,7 +120,7 @@ def _save_streak(n: int) -> None:
 
 # ---------- 批量查询(必须两遍) ----------
 
-def _batch_lookup_gamma(cids: list[str]) -> dict[str, dict]:
+def _batch_lookup_gamma(cids: list[str], net: dict | None = None) -> dict[str, dict]:
     """批量查 Gamma,返回 {condition_id: market}。查不到的**不出现在返回里**(调用方计数)。
 
     🔴 必须两遍:`condition_ids=` 默认只返回未关闭市场,已结算的只有加 &closed=true 才拿得到。
@@ -131,7 +131,7 @@ def _batch_lookup_gamma(cids: list[str]) -> dict[str, dict]:
         return out
     q = "&".join(f"condition_ids={c}" for c in cids)
     for suf in ("", "&closed=true"):
-        d = _get(f"{GAMMA}?{q}{suf}&limit=500")
+        d = _get(f"{GAMMA}?{q}{suf}&limit=500", net=net)
         if not isinstance(d, list):
             continue  # 该遍失败(_get 返回 {"__http__": ...});缺的市场由调用方计入 lookup_fail
         for m in d:
@@ -141,7 +141,8 @@ def _batch_lookup_gamma(cids: list[str]) -> dict[str, dict]:
     return out
 
 
-def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK) -> dict:
+def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK,
+                      net: dict | None = None) -> dict:
     """扫注册表里 resolved_outcome 仍为空、且 end_date 已过的市场,重查 Gamma;
     新拿到干净 0/1 的,append 新注册表行。返回计数(不静默:失败计数)。"""
     reg = load_registry()
@@ -154,7 +155,7 @@ def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK) -> dict:
     rows, fail = [], 0
     for i in range(0, len(picked), SETTLEMENT_BATCH):
         chunk = picked[i:i + SETTLEMENT_BATCH]
-        found = _batch_lookup_gamma([r["condition_id"] for r in chunk])
+        found = _batch_lookup_gamma([r["condition_id"] for r in chunk], net=net)
         for r in chunk:
             m = found.get(r["condition_id"])
             if not m:

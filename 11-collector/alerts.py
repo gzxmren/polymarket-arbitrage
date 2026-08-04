@@ -41,6 +41,55 @@ TRUTH_SUPPLY_ZERO_CYCLES = 18
 # (≥阈值,远超稳态峰值 8)才当"轮询系统性追不上"的真异常推 Telegram**。(2026-07-23 用户明令)
 OFFSET_OVERFLOW_ALERT_THRESHOLD = 20
 
+# ---------- 慢周期守护(2026-08-04)----------
+# 由来:当天 12 轮撞 systemd 超时被 SIGTERM 杀,吞吐可见下滑,而**所有既有告警一条没响**
+# —— 心跳里根本没有"耗时"这个量,故"如果它现在就是坏的,我看到的会有什么不同?"答案是没有。
+#
+# 为什么监控"耗时"而不是"网络失败率":实测 60 次 _get 调用 0 次重试耗尽(单次失败率 4.8%
+# 时),重试把瞬时失败全吸收了 → give-up 告警**抓不住这场事故**;而单次失败率今天现测
+# 4.8%~23% 剧烈抖动、无稳态基线,此刻定阈值等于拍脑袋(计数已入心跳,攒一周再校准)。
+# 耗时则不同:它变坏 = 周期被杀、吞吐下滑确实发生,且红线是**结构性**的(超过 systemd
+# 上限就是真被杀),不是调出来的参数。
+CYCLE_BUDGET_S = 900          # ⚠️ 必须 == .service 的 TimeoutStartSec == .timer 间隔
+SLOW_CYCLE_RATIO = 0.6        # 告警线 = 540s
+# 依据(journalctl 实测 148 个成功周期,剔除本次事故污染后健康子集 n=134):
+#   p50=115s  p90=167s  p95=182s  p99=221s  max=228s
+# 540s 对实测健康 max 有 2.4 倍余量(稳态静默),距被杀仍留 360s(是预警不是讣告)。
+SLOW_CYCLE_ALERT_CYCLES = 4   # 防洪:单发不推(自愈噪声),连续 4 轮(1 小时)才推、之后按整数倍复述
+
+
+def cycle_minutes() -> int:
+    """一轮实际间隔(分钟)。**必须从预算派生**,不许在文案里写死。
+
+    2026-08-04 教训:间隔从 10 分钟改成 15 分钟时,两条告警文案里的 `轮数 * 10 // 60`
+    没人改 —— 于是"连续 18 轮"实际已过 4.5 小时,文案却说"约 3 小时",在最需要准确传达
+    严重性的时刻低报三分之一。写死的常量必然与它描述的对象分叉。
+    """
+    return CYCLE_BUDGET_S // 60
+
+
+def slow_cycle_threshold_s() -> float:
+    """慢周期告警线。由预算派生而非独立写死 —— 改预算时告警线自动跟着走,不会漂移。"""
+    return CYCLE_BUDGET_S * SLOW_CYCLE_RATIO
+
+
+def is_slow_cycle(seconds: float) -> bool:
+    return seconds >= slow_cycle_threshold_s()
+
+
+def _slow_cycle_hint(counts: dict) -> str:
+    """按**实际观测到的失败形态**给排查方向,而不是无论如何都喊"查代理隧道"。
+
+    指错方向的告警比不告警更贵:它会让人在错的地方找半天,并在下次学会忽略这条告警。
+    """
+    if counts.get("rate_limit_give_up_count", 0) > 0:
+        return "→ 主因像**限流**(429 打满):该压频/拉长间隔,不是查隧道"
+    if counts.get("net_server_error_count", 0) > 0:
+        return "→ 主因像**对端 5xx**:Polymarket 侧暂时挂了,通常自愈,先观察"
+    if counts.get("net_retry_count", 0) > 0:
+        return "→ 主因像**网络/代理**:查代理隧道(v2rayN/sing-box)、出口 IP、DNS"
+    return "→ 网络计数干净:慢在本地(看各阶段耗时,尤其 compaction/registry 是否变大)"
+
 
 def _send(msg: str) -> bool:
     if not TELEGRAM_ENABLED:
@@ -69,7 +118,7 @@ def maybe_alert(counts: dict) -> bool:
     rzs = counts.get("register_zero_streak", 0)
     if rzs > 0 and rzs % REGISTER_ZERO_CYCLES == 0:
         triggers.append(
-            f"🔴 注册链路断供:连续 {rzs} 轮(约 {rzs * 10 // 60} 小时)有市场可登记却一个"
+            f"🔴 注册链路断供:连续 {rzs} 轮(约 {rzs * cycle_minutes() / 60:.1f} 小时)有市场可登记却一个"
             f"**新市场**都没登记成功。正常每轮 ~34 个。新市场进不来=宇宙停止增长,须查 Gamma 接口")
     sf, sc = counts.get("settlement_lookup_fail", 0), counts.get("settlement_checked", 0)
     if sf > SETTLEMENT_FAIL_MIN and sc > 0 and sf / sc > SETTLEMENT_FAIL_RATIO:
@@ -79,8 +128,22 @@ def maybe_alert(counts: dict) -> bool:
     zs = counts.get("truth_supply_zero_streak", 0)
     if zs > 0 and zs % TRUTH_SUPPLY_ZERO_CYCLES == 0:
         triggers.append(
-            f"🔴 结算真值断供:连续 {zs} 轮(约 {zs * 10 // 60} 小时)有市场可查却一个都没结算。"
+            f"🔴 结算真值断供:连续 {zs} 轮(约 {zs * cycle_minutes() / 60:.1f} 小时)有市场可查却一个都没结算。"
             f"正常每轮期望 ~20 个。须查结算守望链路(Gamma 接口/轮转游标/注册表)")
+    # 慢周期:单发是自愈噪声(网络抖一下),**持续**才是真退化 → 只在连续 N 轮的整数倍推。
+    scs = counts.get("slow_cycle_streak", 0)
+    if scs > 0 and scs % SLOW_CYCLE_ALERT_CYCLES == 0:
+        triggers.append(
+            f"⚠️ 周期耗时持续偏高:连续 {scs} 轮 ≥{slow_cycle_threshold_s():.0f}s"
+            f"(本轮 {counts.get('cycle_seconds', 0):.0f}s,预算 {CYCLE_BUDGET_S}s)。"
+            f"实测健康区间 p99≈221s;再涨就会撞 systemd 超时被杀。"
+            f"网络重试 {counts.get('net_retry_count', 0)}/{counts.get('net_attempt_count', 0)}"
+            f",重试耗尽 {counts.get('net_give_up_count', 0)}"
+            f",服务端 5xx {counts.get('net_server_error_count', 0)}"
+            f",限流放弃 {counts.get('rate_limit_give_up_count', 0)}"
+            f",分页截断 {counts.get('poll_truncated_count', 0)}"
+            f"/{counts.get('firehose_truncated_count', 0)}\n"
+            + _slow_cycle_hint(counts))
     if not triggers:
         return False
     body = "🔴 <b>Polymarket 采集器守护告警</b>\n" + "\n".join(triggers)

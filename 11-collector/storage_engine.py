@@ -179,13 +179,33 @@ def all_watermarks(con) -> dict[str, int]:
 
 # ---------- 审计心跳(§7:大声报数) ----------
 
+# 心跳字段白名单。**只加 counter 不进这里 = 进程一退就蒸发,事后无从归因,等于没计。**
+# (2026-08-04 判据:test_net_failure_counting.py::test_new_counters_reach_the_heartbeat_schema)
+AUDIT_FIELDS = (
+    "total_markets_polled", "http_4xx_count", "rate_limit_hits",
+    "offset_overflow_count", "dedup_collapse_count", "parse_reject_count",
+    "firehose_fail", "new_trades", "register_fail",
+    # --- 2026-08-04 新增:网络健康 + 耗时。补的是"23% 请求失败而心跳全绿"的盲区 ---
+    "net_attempt_count",      # 分母:比率必须有分母,绝对值会随工作量漂移
+    "net_retry_count",        # 瞬时失败(自愈,但每次要付 sleep 1.5s —— 慢周期的真因)
+    "net_give_up_count",      # 重试耗尽(网络/5xx)= 真丢了这一页
+    "net_server_error_count",   # 5xx:对方暂时挂了,与"隧道坏了"是两回事
+    "rate_limit_give_up_count",  # 被 429 打满而放弃(处置是压频,不是查隧道)
+    "poll_truncated_count",     # 网络断掉导致分页提前结束(≠ 翻到底)
+    "firehose_truncated_count",  # 同上,发生在发现层(会缩小本轮活跃市场集合)
+    "cycle_seconds",          # 整轮耗时:慢周期守护的判据量
+    "discovery_seconds", "poll_seconds", "settlement_seconds", "compaction_seconds",
+    # 三条「连零/连坏」守护的当前计数。不持久化 = 一周后校准阈值时只能去 grep 日志文本,
+    # 而 alerts.py 里那几条 TODO 明写了要靠心跳历史校准 —— 故必须落到 parquet。
+    "register_zero_streak", "truth_supply_zero_streak", "slow_cycle_streak",
+    "new_registered",         # 成功登记数:注册断供守护关心的是"成功了几个",不是"失败几个"
+)
+
+
 def write_audit_heartbeat(counts: dict) -> Path:
-    """每小时一条:total_markets_polled / http_4xx / rate_limit / offset_overflow / dedup_collapse。"""
+    """每轮一条(写在整轮末尾 = "真跑完了"的凭证)。字段见 AUDIT_FIELDS。"""
     now = int(dt.datetime.now(dt.UTC).timestamp())
-    row = {"ts": now, **{k: int(counts.get(k, 0)) for k in
-           ("total_markets_polled", "http_4xx_count", "rate_limit_hits",
-            "offset_overflow_count", "dedup_collapse_count", "parse_reject_count",
-            "firehose_fail", "new_trades", "register_fail")}}
+    row = {"ts": now, **{k: int(counts.get(k, 0)) for k in AUDIT_FIELDS}}
     day = dt.datetime.fromtimestamp(now, dt.UTC).strftime("%Y-%m-%d")
     dest = AUDIT_DIR / f"dt={day}" / f"{uuid.uuid4().hex}.parquet"
     _atomic_write_parquet(pa.Table.from_pylist([row]), dest)

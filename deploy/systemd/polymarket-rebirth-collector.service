@@ -7,8 +7,12 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
 Environment=PYTHONPATH=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
-# 幂等(watermark 驱动),超时保护:单周期最长 8 分钟(留 2 分钟给 10 分钟间隔)
-TimeoutStartSec=480
+# 幂等(watermark 驱动),超时保护:单周期最长 15 分钟(= timer 间隔,不排队重叠)。
+# 2026-08-04 从 480s 上调:当天 12 轮撞 480s 被 SIGTERM 杀,而被杀的是**已干完大半活**
+# 的周期(块缓冲未 flush → 日志只剩一行空周期头,诊断信息全丢),纯亏。
+# ⚠️ 此值是 alerts.CYCLE_BUDGET_S 的红线,两边必须一致 —— 由
+#    10-tests/unit/test_cycle_budget.py::test_service_timeout_matches_python_budget 焊死。
+TimeoutStartSec=900
 ExecStart=/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/11-collector/run_cycle.py
 StandardOutput=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/collector.log
 StandardError=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/collector.log

@@ -116,7 +116,7 @@ def fake_gamma(monkeypatch):
                 "outcomePrices": '["1","0"]'}
     calls = []
 
-    def fake_get(url):
+    def fake_get(url, net=None):   # net=:2026-08-04 起 _get 接受网络计数(见 test_net_failure_counting)
         calls.append(url)
         return [closed_m] if "closed=true" in url else [open_m]
 
@@ -134,7 +134,7 @@ def test_batch_lookup_must_do_both_passes(fake_gamma):
 
 def test_batch_lookup_reports_missing_loudly(monkeypatch):
     """查不到的必须计数返回给调用方,不得静默吞掉(铁律 §3:任何剔除都要出声)。"""
-    monkeypatch.setattr(sw, "_get", lambda url: [])
+    monkeypatch.setattr(sw, "_get", lambda url, net=None: [])
     got = sw._batch_lookup_gamma(["a", "b", "c"])
     assert got == {}, "查不到就是查不到,不得伪造"
 
@@ -154,7 +154,7 @@ def test_watch_returns_full_counts(monkeypatch, tmp_path):
     monkeypatch.setattr(sw, "load_registry", lambda: {
         "c1": _row("c1", "2025-01-01T00:00:00Z"),
     })
-    monkeypatch.setattr(sw, "_batch_lookup_gamma", lambda cids: {})
+    monkeypatch.setattr(sw, "_batch_lookup_gamma", lambda cids, net=None: {})
     out = sw.watch_settlements(max_check=10)
     for k in ("pending_settlement", "newly_resolved", "lookup_fail", "checked"):
         assert k in out, f"计数缺 {k}"

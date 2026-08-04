@@ -23,7 +23,13 @@ import pyarrow.parquet as pq
 import alerts
 import storage_engine as se
 
-HEARTBEAT_STALE_MIN = 25          # 采集器每 10 分钟一轮,>25 分钟无心跳 = 停摆
+# 采集器每 15 分钟一轮(2026-08-04 从 10 分钟放宽,见 .timer)。
+# 阈值必须容得下**一轮被杀**:一轮被 SIGTERM → 下一条心跳要等到 ~30 分钟后。
+# 取 40 分钟 = 容 1 轮失手、抓 2 轮连续失手。旧值 25 分钟配 15 分钟间隔会对单轮失手误报。
+# ⚠️ 本守护只查"完全停摆";"跑得动但越来越慢"由 alerts 的慢周期守护负责。
+#    心跳已于 2026-08-04 移到整轮末尾(原先在结算守望之前 → 结算阶段被杀仍留新鲜心跳,
+#    本守护对那一段是瞎的)。现在"心跳新鲜"= 整轮真的跑完了,新鲜度才真有分辨力。
+HEARTBEAT_STALE_MIN = 40
 COOLDOWN_S = 4 * 3600             # 同一问题 4h 内不重复告警
 STATE_FILE = se.DATA_ROOT / ".watchdog_state.json"
 TIMER_UNIT = "polymarket-rebirth-collector.timer"
@@ -60,7 +66,8 @@ def check() -> list[str]:
     else:
         age_min = (time.time() - hb["ts"]) / 60
         if age_min > HEARTBEAT_STALE_MIN:
-            problems.append(f"🔴 采集器 {age_min:.0f} 分钟无心跳（应每 10 分钟一轮=停摆）")
+            problems.append(f"🔴 采集器 {age_min:.0f} 分钟无心跳"
+                            f"（应每 {alerts.cycle_minutes()} 分钟一轮=停摆）")
         if hb.get("firehose_fail", 0) > 0:
             problems.append("🟡 最近一轮 firehose 抽风（采样 0 笔），若持续须查接口/IP")
     return problems
