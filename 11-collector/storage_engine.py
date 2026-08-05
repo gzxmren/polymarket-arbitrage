@@ -215,6 +215,11 @@ AUDIT_FIELDS = (
     "pending_registration_count",          # 积压规模。恒定不变 = 强可疑(每轮处理同一批)
     "pending_registration_dropped_count",  # 丢弃数。静默丢 = 用新的静默失败换掉旧的
     "pending_registration_oldest_age_s",   # 最老年龄:队头卡住时条数可能纹丝不动
+    # --- 2026-08-06 新增:限流可见性。发现/注册/结算三条链路此前对 429 完全不计数,
+    #     "发现层被限流过几次"这个问题事后无从回答(而 alerts 的限流归因也因此失明)---
+    "firehose_rate_limited_count",   # 被限流打断分页(≠ 翻到底,≠ 隧道坏了)
+    "firehose_http_error_count",     # 未知形态的 HTTP 错误;稳态恒 0,非零即"出了没想到的事"
+    "register_inconclusive_count",   # 查 Gamma 没查成(≠ 查不到)—— 不许被积压当死号沉底
 )
 
 

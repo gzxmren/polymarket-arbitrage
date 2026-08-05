@@ -71,7 +71,7 @@ def _fake_api(pages, monkeypatch, net_key=None):
     """按 offset 顺序发页;发完返回空(= 确认翻到底)。"""
     calls = []
 
-    def fake_get(url, tries=5, net=None):
+    def fake_get(url, tries=5, net=None, **kw):
         off = int(url.split("offset=")[1].split("&")[0])
         calls.append(off)
         idx = off // 1000
@@ -138,7 +138,7 @@ def test_truncation_and_gap_are_different_counters(monkeypatch):
     """
     now = 1_000_000
 
-    def fake_get(url, tries=5, net=None):
+    def fake_get(url, tries=5, net=None, **kw):
         return {"__http__": ds.RETRY_EXHAUSTED}
 
     monkeypatch.setattr(ds, "_get", fake_get)
@@ -163,7 +163,7 @@ def test_time_budget_stops_paging(monkeypatch):
     monkeypatch.setattr(ds.time, "monotonic", clock)
     now = 1_000_000
 
-    def slow_get(url, tries=5, net=None):
+    def slow_get(url, tries=5, net=None, **kw):
         clock.t += 10.0
         off = int(url.split("offset=")[1].split("&")[0])
         return _page(now - off // 10, n=1000, step=1)
@@ -224,7 +224,7 @@ def test_api_ceiling_is_not_mistaken_for_end_of_data(monkeypatch):
     """
     now = 1_000_000
 
-    def ceiling_get(url, tries=5, net=None):
+    def ceiling_get(url, tries=5, net=None, **kw):
         off = int(url.split("offset=")[1].split("&")[0])
         if off > 10000:
             return {"__http__": 400}

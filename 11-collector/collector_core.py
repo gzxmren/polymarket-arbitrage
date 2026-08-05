@@ -61,6 +61,28 @@ def new_counters() -> dict:
     return dict.fromkeys(COUNTER_KEYS, 0)
 
 
+# 稀有停法:落 parquet 已满足"出声"的字面要求,但**日志才是人每天真会看的地方**。
+# 处置方向各不相同,故必须报出是哪一种,而不是笼统说"有异常"。
+ABNORMAL_STOPS = {
+    "rate_limit_give_up_count":    "被限流打满 → 压频/拉长间隔,别去查隧道",
+    "firehose_rate_limited_count": "采样被限流打断 → 本轮活跃市场集合被缩小",
+    "firehose_http_error_count":   "采样撞到**没见过的** HTTP 错误 → 查接口变更",
+    "register_inconclusive_count": "查 Gamma 没查成(≠ 查不到)→ 这些市场留在积压、不沉底",
+}
+
+
+def abnormal_stop_note(counters: dict) -> str | None:
+    """非零才出声;全零返回 None。
+
+    ⭐两头都要焊死(CLAUDE.md 防洪判据):稳态**完全静默**,否则天天一行 = 没信号;
+    真异常**必推**,否则等于没修。判据 test_discovery_rate_limit_and_deadline.py。
+    """
+    hit = [(k, counters.get(k, 0)) for k in ABNORMAL_STOPS if counters.get(k, 0)]
+    if not hit:
+        return None
+    return "⚠️ 稀有停法: " + " | ".join(f"{ABNORMAL_STOPS[k]}(×{v})" for k, v in hit)
+
+
 class _GiveUp:
     """「重试耗尽」的哨兵 —— 必须与「确认空」「4xx」三者互相区分。
 
@@ -264,6 +286,9 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
     #      天然是瞎的。移到末尾后,心跳 = "整轮真的跑完了",新鲜度才真的有分辨力。
     # 代价:被杀的周期不再留下部分计数 —— 这是**对的**语义(没跑完就是没跑完),
     # 由看门狗的心跳新鲜度(HEARTBEAT_STALE_MIN)负责发现。
+    note = abnormal_stop_note(counters)
+    if note:
+        print(note, flush=True)
     print(f"本轮: 市场 {counters['total_markets_polled']} | 新成交 {counters['new_trades']} | "
           f"4xx {counters['http_4xx_count']} | 限流 {counters['rate_limit_hits']} | "
           f"offset溢出 {counters['offset_overflow_count']} | 解析拒绝 {counters['parse_reject_count']} | "

@@ -76,7 +76,7 @@ def _fake_market(slug):
 
 def test_skipped_markets_are_counted(monkeypatch):
     """⭐核心:「每轮取前 N 个」必须能回答「第 N+1 个何时轮到」—— 起码得先说有几个没轮到。"""
-    monkeypatch.setattr(ds, "_lookup_gamma", lambda slug, net=None: _fake_market(slug))
+    monkeypatch.setattr(ds, "_lookup_gamma", lambda slug, **kw: _fake_market(slug))
     net = {}
     ds.register_new_markets(_stubs(90), max_new=40, net=net)
     assert net.get("register_budget_skipped_count") == 50
@@ -102,7 +102,7 @@ def test_zero_max_new_registers_nothing(monkeypatch):
     """⭐ 文档写「0=不注册新市场」,实现就必须是零 —— 而不是反过来取消上限。"""
     calls = []
     monkeypatch.setattr(ds, "_lookup_gamma",
-                        lambda slug, net=None: calls.append(slug) or _fake_market(slug))
+                        lambda slug, **kw: calls.append(slug) or _fake_market(slug))
     net = {}
     n_reg, n_fail = ds.register_new_markets(_stubs(20), max_new=0, net=net)
     assert calls == [], "max_new=0 仍然发起了 Gamma 查询 —— 急刹车变成了全油门"
@@ -112,7 +112,7 @@ def test_zero_max_new_registers_nothing(monkeypatch):
 
 def test_none_max_new_means_unlimited(monkeypatch):
     """`None` 才是「不设上限」。两个语义必须分开,否则没法表达"这轮别注册"。"""
-    monkeypatch.setattr(ds, "_lookup_gamma", lambda slug, net=None: _fake_market(slug))
+    monkeypatch.setattr(ds, "_lookup_gamma", lambda slug, **kw: _fake_market(slug))
     n_reg, _ = ds.register_new_markets(_stubs(7), max_new=None, net={})
     assert n_reg == 7
 
@@ -132,7 +132,7 @@ def test_time_budget_stops_the_loop(monkeypatch):
     clock = _Clock()
     monkeypatch.setattr(ds.time, "monotonic", clock)
 
-    def slow_lookup(slug, net=None):
+    def slow_lookup(slug, **kw):
         clock.t += 10.0          # 每个查询"耗时"10 秒
         return _fake_market(slug)
 
@@ -152,7 +152,7 @@ def test_time_budget_is_checked_before_the_lookup(monkeypatch):
     clock = _Clock()
     monkeypatch.setattr(ds.time, "monotonic", clock)
 
-    def slow_lookup(slug, net=None):
+    def slow_lookup(slug, **kw):
         clock.t += 30.0
         return _fake_market(slug)
 
@@ -166,7 +166,7 @@ def test_no_time_budget_means_no_time_gate(monkeypatch):
     clock = _Clock()
     monkeypatch.setattr(ds.time, "monotonic", clock)
 
-    def slow_lookup(slug, net=None):
+    def slow_lookup(slug, **kw):
         clock.t += 1000.0
         return _fake_market(slug)
 
@@ -180,7 +180,7 @@ def test_budget_counts_attempts_not_successes(monkeypatch):
 
     否则失败的市场不占额度 → 接口挂掉时会疯狂重试到超时,正是要防的那件事。
     """
-    monkeypatch.setattr(ds, "_lookup_gamma", lambda slug, net=None: None)  # 全失败
+    monkeypatch.setattr(ds, "_lookup_gamma", lambda slug, **kw: None)  # 全失败
     net = {}
     n_reg, n_fail = ds.register_new_markets(_stubs(50), max_new=10, net=net)
     assert (n_reg, n_fail) == (0, 10), "失败的市场没占额度 → 会一直查下去"
@@ -250,25 +250,33 @@ def test_declared_budgets_sum_under_the_alert_line():
 
 
 def test_known_unbounded_segments_are_pinned():
-    """⭐ 把「时间闸打不穿的那部分」钉住,让它不能悄悄变大(2026-08-05 补)。
+    """⭐ 把「时间闸打不穿的那部分」钉住,让它不能悄悄变大(2026-08-05 立,08-06 升级)。
 
     ## 为什么需要这条
 
-    三道时间闸都是在**工作单元之间**看钟(翻一页 / 注册一个 / 轮询一个市场之后),
+    三道时间闸原本都只在**工作单元之间**看钟(翻一页 / 注册一个 / 轮询一个市场之后),
     单个工作单元内部没有任何时钟检查。而一次 `_get` 在网络全程超时的情况下是
-    `tries × timeout + (tries-1) × sleep`,**远大于**最小的那道闸:
+    `tries × timeout + (tries-1) × sleep` ≈ 130s,**远大于**最小的那道闸(90s)
+    —— 即"三道闸保证周期有界"这句话在重试风暴下是假的。
 
-      - firehose 闸 90s,单次 `_get` 最坏 ~131s → **一次页面抓取就能打穿整段**
-      - 注册闸 180s,而 `_lookup_gamma` 每个 item 最多两次 `_get` → ~262s
-      - `poll_market` 的 `while offset <= OFFSET_CAP` 分页循环**一次钟都不看**,
-        只受 20 页限制 → 单个市场最坏 20 × 131s ≈ 44 分钟
+    ## 2026-08-06 的变化:两段已经真有界,一段仍然没有
 
-    所以「周期结构性有界」这句话目前是**假的**,真正的兜底是 systemd 的
-    `TimeoutStartSec=900` 硬杀。这条判据不假装那个洞不存在,而是把它**量出来钉住**:
-    谁调大 `tries`/`timeout`,这里就会红,逼他重新算一遍而不是默默让洞变大。
+    把 deadline 接进了 `discovery_service._get`(重试之间 + 单次 socket 超时都看钟),
+    并穿透到 `sample_firehose` / `register_new_markets` / `_lookup_gamma`。
+    故 **firehose 段与注册段现在是真有界的**,端到端判据见
+    `test_discovery_rate_limit_and_deadline.py::test_*_bounded_under_a_retry_storm`。
 
-    治本方案(未做,另立项):把 deadline 传进 `_get` 与 `poll_market`,
-    在重试之间和翻页之间也看钟。
+    **仍然无界的两处**(本判据钉的就是它们):
+
+    1. `collector_core.poll_market` 的 `while offset <= OFFSET_CAP` 分页循环
+       **一次钟都不看** → 单市场最坏 20 × 131s ≈ 44 分钟
+    2. **结算段**:`settlement_watcher` 共用 `discovery_service._get` 却**不传 deadline**,
+       且整段没有任何时间闸(它靠 `checked=800` 的配额约束,不是时间)。
+       ⚠️ 08-06 给 429 加重试后,这一段的最坏耗时**变大了**(限流从"立即返回"变成"重试 5 次")
+       —— 改动的副作用必须写下来,而不是留在无人知晓处。
+
+    所以「周期结构性有界」这句话**仍然是假的**,真正的兜底还是 systemd 的
+    `TimeoutStartSec=900` 硬杀。这条判据不假装那个洞不存在,而是把它量出来钉住。
 
     ## 本判据**不能**回答什么
 
@@ -282,24 +290,30 @@ def test_known_unbounded_segments_are_pinned():
     import inspect
     import re
 
-    def _worst_get_s(fn, sleep_s):
-        tries = inspect.signature(fn).parameters["tries"].default
-        timeout = int(re.search(r"timeout=(\d+)", inspect.getsource(fn)).group(1))
-        return tries * timeout + (tries - 1) * sleep_s
-
-    worst_disc_get = _worst_get_s(ds._get, 1.2)
-    worst_core_get = _worst_get_s(cc._get, 1.5)
+    # discovery 侧读模块常量(源码正则会在"把字面量改成变量"的那天悄悄失效 ——
+    # 08-06 就真的这样红了一次,那正是这种读法该被淘汰的证据)。
+    worst_disc_get = ds.TRIES * ds.TIMEOUT_S + (ds.TRIES - 1) * ds.RETRY_SLEEP_S
+    tries = inspect.signature(cc._get).parameters["tries"].default
+    timeout = int(re.search(r"timeout=(\d+)", inspect.getsource(cc._get)).group(1))
+    worst_core_get = tries * timeout + (tries - 1) * 1.5
     assert (worst_disc_get, worst_core_get) == (129.8, 131.0), (
         f"单次 _get 最坏耗时变了(discovery {worst_disc_get}s / core {worst_core_get}s)"
-        " —— 调 tries/timeout 会同步放大所有时间闸的溢出量,请重算下面几条并更新本判据")
+        " —— 调 tries/timeout 会同步放大所有无闸段的溢出量,请重算下面几条并更新本判据")
 
-    # 这三条**当前都是 False** —— 焊住的是"它们仍然是 False"这个事实本身。
-    # 哪天有人把 deadline 接进去、让某条变成 True,这里会红 → 那是好事,
-    # 提醒把这条判据升级成真正的有界断言(而不是让治本改动悄无声息)。
-    assert worst_disc_get > rc.FIREHOSE_TIME_BUDGET_S, "firehose 闸已能兜住单次 _get → 请改写本判据"
-    assert 2 * worst_disc_get > rc.REGISTER_TIME_BUDGET_S, "注册闸已能兜住单个 item → 请改写本判据"
+    # --- 已经有界的两段:焊住"deadline 真的被传下去了" ---
+    # 光有 `_get(deadline=...)` 这个参数不算数,得调用方真的传。
+    # 这是"零件合格 ≠ 装上车"的同一条教训(08-05 栽过一次)。
+    for fn in (ds.sample_firehose, ds.register_new_markets, ds._lookup_gamma):
+        assert "deadline" in inspect.getsource(fn), \
+            f"{fn.__name__} 没把 deadline 传进 _get → 该段又变回无界"
+
+    # --- 仍然无界的两段:钉住"它们仍然无界"这个事实本身 ---
+    # 哪天有人把这里也修了,这两条会红 → 那是好事,提醒把它们升级成真有界断言。
     assert "monotonic" not in inspect.getsource(cc.poll_market), (
         "poll_market 里出现了时钟检查 → 分页循环可能已有界,请改写本判据")
+    import settlement_watcher as sw
+    assert "deadline" not in inspect.getsource(sw._batch_lookup_gamma), (
+        "结算段开始传 deadline 了 → 请把它也升级成真有界断言并更新本判据叙述")
 
     # 真正的兜底只有 systemd 硬杀,不是这些闸。这条焊死三者的一致性。
     assert alerts.CYCLE_BUDGET_S >= alerts.slow_cycle_threshold_s(), "告警线反而高过硬杀线"

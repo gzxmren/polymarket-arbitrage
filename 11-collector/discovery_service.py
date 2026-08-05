@@ -60,8 +60,23 @@ def resolve_asset_index(asset: str, clob_token_ids: list[str]) -> int | None:
 
 
 RETRY_EXHAUSTED = "retry_exhausted"
+# 2026-08-06:429 曾与 400/404 同路(不重试、不计数)。但 429 不是"对方明确答复",
+# 是"对方让你等会儿再来" —— 400 是柜台说"查无此人",429 是"现在人太多,等五分钟"。
+RATE_LIMITED = "rate_limited"     # 被 429 打满:处置是压频,不是查隧道
+DEADLINE_HIT = "deadline"         # 预算用尽,主动停手:既不是限流也不是网络故障,不许污染归因
+
+# 重试参数集中定义(不再散在函数体里):判据 test_registration_budget 要按它们算溢出上界,
+# 而从源码里正则抠 `timeout=25` 会在改成变量的那天悄悄失效。
+TRIES = 5
+TIMEOUT_S = 25
+RETRY_SLEEP_S = 1.2
+RATE_LIMIT_SLEEP_S = 3.0   # 与 collector_core 一致:限流要退得比网络抖动更久
+
 NET_COUNTER_KEYS = ("net_attempt_count", "net_retry_count", "net_give_up_count",
-                    "net_server_error_count", "firehose_truncated_count")
+                    "net_server_error_count", "firehose_truncated_count",
+                    # 限流两项:发现/注册/结算三条链路此前**完全不计** ——
+                    # "发现层被限流过几次"这个问题以前无从回答(alerts 的限流归因也因此对这三条链路失明)。
+                    "rate_limit_hits", "rate_limit_give_up_count")
 
 # 发现层自己的计数(与网络健康分开:处置方向不同 —— 这几个是"预算/覆盖"问题,
 # 不是"隧道坏了"问题。混在一起报数,告警只会把人指向错的地方)。
@@ -78,6 +93,10 @@ DISCOVERY_COUNTER_KEYS = (
     "pending_registration_count",           # 积压规模(等着被登记的市场数)
     "pending_registration_dropped_count",   # 超尝试上限/超容量而丢弃 —— 丢必须出声
     "pending_registration_oldest_age_s",    # 最老条目年龄:「在涨」和「卡住了」是两种病
+    # --- 2026-08-06 新增:限流/未知错误。粒度按**处置方向**分,不是越细越好 ---
+    "firehose_rate_limited_count",   # 被限流打断分页(处置=压频)
+    "firehose_http_error_count",     # 未知形态的 HTTP 错误(兜底;稳态恒 0,非零即"出了没想到的事")
+    "register_inconclusive_count",   # 查 Gamma **没查成**(≠ 查不到)—— 不许让积压把它当死号沉底
 )
 
 # 正常市场的 condition_id = "0x" + 64 位 hex。
@@ -110,6 +129,31 @@ def _is_retry_exhausted(d) -> bool:
     return isinstance(d, dict) and d.get("__http__") == RETRY_EXHAUSTED
 
 
+def _count_page_stop(d, net: dict | None) -> None:
+    """分页因**非 list 返回**而停:按停法出声。调用方负责"绝不置 covered"。
+
+    计数器粒度按**处置方向**分,不是越细越好:
+      - 重试耗尽 → 查隧道
+      - 被限流   → 压频/拉长间隔
+      - offset 硬顶 → 只能降间隔或拆分发现层
+      - 未知错误 → 兜底(稳态恒 0;非零 = 出现了没想到的东西,那正是最该被看见的时刻)
+      - 预算用尽 → **不单独计数**:处置("加预算")与既有的时间闸完全相同,
+        分开计不会带来任何新动作,只会稀释信号。它照常体现为覆盖缺口。
+    """
+    code = d.get("__http__") if isinstance(d, dict) else None
+    if code == RETRY_EXHAUSTED:
+        # 重试耗尽 ≠ 翻到底。这里悄悄 break 会**缩小本轮发现的活跃市场集合**
+        # (少发现 = 少轮询 = 少收数据),而 firehose_fail 只抓"总数为 0",抓不住部分截断。
+        _bump(net, "firehose_truncated_count")
+    elif code == RATE_LIMITED:
+        _bump(net, "firehose_rate_limited_count")
+    elif code == 400:
+        # 撞 offset 硬顶。**不是**翻到底 —— 更早的成交确实存在,只是接口不给。
+        _bump(net, "firehose_offset_ceiling_count")
+    elif code != DEADLINE_HIT:
+        _bump(net, "firehose_http_error_count")
+
+
 def _bump_by(net: dict | None, key: str, n: int) -> None:
     """按量累加。**n=0 时也要写**(而不是跳过)—— 「本轮一个都没跳过」是要被看见的信息,
     键缺失会让下游 `.get(k, 0)` 与"真的是 0"长得一模一样,那正是要消灭的那种模糊。
@@ -134,34 +178,81 @@ def _bump(net: dict | None, key: str) -> None:
         net[key] = net.get(key, 0) + 1
 
 
-def _get(url: str, tries: int = 5, net: dict | None = None):
-    """GET;重试耗尽返回 {"__http__": "retry_exhausted"}(区别于确认空)。
+def _sleep_within(seconds: float, deadline: float | None) -> None:
+    """退避也要看钟 —— 否则"预算用尽"会被一次 sleep 拖到预算之外。"""
+    if deadline is not None:
+        seconds = min(seconds, max(0.0, deadline - time.monotonic()))
+    if seconds > 0:
+        time.sleep(seconds)
+
+
+def _get(url: str, tries: int = TRIES, net: dict | None = None,
+         deadline: float | None = None):
+    """GET。返回 list/dict(成功)或 `{"__http__": ...}`(四种失败,必须分得清)。
 
     ⚠️ 网络异常分支必须计数:`ssl.SSLError`/`socket.timeout` 都是 `OSError` 子类,
     全落在下面那个 except 里。2026-08-04 实测 23% 的请求走这条路被静默吞掉,
     而心跳里 `4xx 0 | 限流 0` 看着一切正常 —— 判据 test_net_failure_counting.py。
+
+    ## 429 单独一路(2026-08-06)
+
+    旧代码 `return {"__http__": e.code}` 把 429 和 400/404 归成一类:**不重试、不计数**。
+    而 `collector_core._get`(同一个项目里的另一份实现)一直是重试+计数的 ——
+    08-04 修限流归因时只改了那一份,这份并行实现没跟上,**且没有任何判据会因此变红**。
+    后果不止"少采一点":`sample_firehose` 会把 429 当成"翻到底"(缺口静默),
+    `_lookup_gamma` 会把 429 当成"这个市场查不到"(积压沉底 → 最终永久丢弃)。
+
+    ## deadline:重试之间也要看钟(2026-08-06,还的是"债 1")
+
+    时间闸原先只在**工作单元之间**看钟,`_get` 内部的重试循环对预算一无所知 →
+    单次调用最坏 `TRIES × TIMEOUT_S + …` ≈ 130s,**一次就能打穿 90s 的采样闸**。
+    传了 deadline 后:剩余时间既夹住"还发不发下一次",也夹住**单次 socket 超时本身**
+    (只夹前者不够 —— 剩 3 秒仍用 25 秒超时,一次请求就超预算 22 秒)。
+
+    判据:test_discovery_rate_limit_and_deadline.py
     """
+    n_429 = n_net = 0        # 记「因为什么而耗尽」——限流与隧道故障的处置完全相反
     for _ in range(tries):
+        timeout = TIMEOUT_S
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            timeout = min(TIMEOUT_S, remaining)
         _bump(net, "net_attempt_count")
         try:
-            with urlopen(Request(url, headers=UA), timeout=25) as r:
+            with urlopen(Request(url, headers=UA), timeout=timeout) as r:
                 return json.loads(r.read().decode())
         except HTTPError as e:
-            if e.code >= 500:
-                # 5xx 是对方**暂时**挂了,重试有意义(且必须计数:代理隧道抽风时
-                # Gamma 侧 5xx 风暴正是要暴露的形态之一)。旧代码 4xx/5xx 一律单发返回,
-                # 于是服务端错误风暴在 net_* 里完全不留痕。
-                _bump(net, "net_server_error_count")
-                _bump(net, "net_retry_count")
-                time.sleep(1.2)
+            if e.code == 429:
+                # 限流 = "等会儿再来",重试有意义。必须计数,否则这三条链路
+                # 到底有没有被限流过,事后永远无法回答。
+                _bump(net, "rate_limit_hits")
+                n_429 += 1
+                _sleep_within(RATE_LIMIT_SLEEP_S, deadline)
                 continue
-            return {"__http__": e.code}   # 4xx = 对方明确答复,不是网络断 → 不重试、不计 net_*
+            if 400 <= e.code < 500:
+                return {"__http__": e.code}   # 对方明确答复,不是网络断 → 不重试、不计 net_*
+            # 5xx 是对方**暂时**挂了,重试有意义(且必须计数:代理隧道抽风时
+            # Gamma 侧 5xx 风暴正是要暴露的形态之一)。
+            _bump(net, "net_server_error_count")
+            _bump(net, "net_retry_count")
+            n_net += 1
+            _sleep_within(RETRY_SLEEP_S, deadline)
         except (URLError, TimeoutError, OSError, http.client.HTTPException,
                 json.JSONDecodeError, UnicodeDecodeError):
             _bump(net, "net_retry_count")
-            time.sleep(1.2)
-    _bump(net, "net_give_up_count")
-    return {"__http__": RETRY_EXHAUSTED}
+            n_net += 1
+            _sleep_within(RETRY_SLEEP_S, deadline)
+    # 归因三选一。⚠️ 一次都没发出去时(预算在进门前就用尽)既不是限流也不是网络故障,
+    # 记进任何一个 give_up 都是往归因里掺假 —— 那正是"限流被说成隧道坏了"的同一个病。
+    if n_429 and not n_net:
+        _bump(net, "rate_limit_give_up_count")
+        return {"__http__": RATE_LIMITED}
+    if n_net:
+        _bump(net, "net_give_up_count")
+        return {"__http__": RETRY_EXHAUSTED}
+    return {"__http__": DEADLINE_HIT}
 
 
 # ---------- 发现层 ----------
@@ -190,31 +281,35 @@ def sample_firehose(limit: int = 5000, net: dict | None = None,
       - 撞 offset 硬顶(400)→ `firehose_offset_ceiling_count`(只能降间隔或拆分发现层)
       - 撞 limit / 时间闸    → `firehose_gap_uncovered_count`(加预算)
 
-    ⭐ 硬顶那条**绝不能**当成"翻到底":`_get` 对 4xx 返回 `{"__http__": 400}`,
-    若按 `not isinstance(d, list)` 归进"确认空",就会 `covered=True` → 缺口计数为 0
-    → **有洞而心跳全绿**。那正是 08-03 结算断供、08-04 网络零计数的同一个病。
+    ⭐⭐ **判断必须倒过来:只有确认拿到 list 才可能是"翻到底"**(2026-08-06 重写)。
+
+    旧写法是白名单式的 —— 先挑出 `RETRY_EXHAUSTED`、再挑出 `400`,
+    剩下的一律 `not isinstance(d, list) → covered = True`。于是 429/401/403/422
+    以及任何将来才出现的状态码,全都被当成"再没有更早的成交了"
+    → `covered=True` → 缺口计数写 0 → **有洞而心跳全绿**。
+
+    这是同一个病的**第四次**发作(08-03 结算断供 / 08-04 网络零计数 / 08-04 硬顶被当翻到底),
+    而前三次的修法都是"再补一个状态码"—— 所以第四次照样发生。
+    补白名单挡不住"还没见过的那一个",倒过来判才能。
 
     判据:10-tests/unit/test_firehose_coverage.py
+         10-tests/unit/test_discovery_rate_limit_and_deadline.py
     """
     out: list[dict] = []
     t0 = time.monotonic()
+    # deadline 传进 _get:时间闸只在页与页之间看钟的话,单次重试风暴(~130s)
+    # 就能打穿整段 90s 预算 —— "周期有界"那句话在重试风暴下是假的。
+    deadline = t0 + time_budget_s if time_budget_s is not None else None
     newest = oldest = None
     covered = since_ts is None      # 没给 watermark 就无所谓"接上"(冷启动/手工试跑)
     for off in range(0, limit, 1000):
-        if time_budget_s is not None and time.monotonic() - t0 >= time_budget_s:
+        if deadline is not None and time.monotonic() >= deadline:
             break                  # 时间闸:延迟退化时降级而不是把整轮拖到被杀
-        d = _get(f"{TRADES}?limit=1000&offset={off}", net=net)
-        if _is_retry_exhausted(d):
-            # 与 poll_market 同病同治:重试耗尽 ≠ 翻到底。这里悄悄 break 会**缩小本轮发现的
-            # 活跃市场集合**(少发现 = 少轮询 = 少收数据),而 firehose_fail 只抓"总数为 0",
-            # 抓不住这种部分截断。必须出声。
-            _bump(net, "firehose_truncated_count")
+        d = _get(f"{TRADES}?limit=1000&offset={off}", net=net, deadline=deadline)
+        if not isinstance(d, list):
+            _count_page_stop(d, net)   # 出声,且**绝不置 covered**
             break
-        if isinstance(d, dict) and d.get("__http__") == 400:
-            # 撞 offset 硬顶。**不是**翻到底 —— 更早的成交确实存在,只是接口不给。
-            _bump(net, "firehose_offset_ceiling_count")
-            break
-        if not isinstance(d, list) or not d:
+        if not d:
             covered = True         # 确认翻到底 = 再没有更早的了,缺口自然被盖住
             break
         out.extend(d)
@@ -325,12 +420,41 @@ def load_registry() -> dict[str, dict]:
     return reg
 
 
-def _lookup_gamma(slug: str, net: dict | None = None) -> dict | None:
+class _Inconclusive:
+    """「没查成」的哨兵 —— 必须与「确认查不到」(None)分开。
+
+    与 `collector_core.GIVE_UP` 同一个套路,理由也一样:调用方 `if not m:` 会把
+    **没问到答案**当成**答案是"没有"**。这里的后果特别重 —— 见 `register_new_markets`。
+    """
+    __slots__ = ()
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __repr__(self) -> str:
+        return "<INCONCLUSIVE: 没查成,≠ 查不到>"
+
+
+INCONCLUSIVE = _Inconclusive()
+
+
+def _lookup_gamma(slug: str, net: dict | None = None,
+                  deadline: float | None = None):
+    """查 Gamma。返回 市场 dict / None(确认查不到)/ INCONCLUSIVE(没查成)。
+
+    ⚠️ 两个后缀**共享同一个 deadline**:各自重新拿满预算的话,单个市场最坏
+    ≈ 2 × 130s = 260s > 注册闸 180s —— "闸保证有界"在这里就是假的。
+
+    ⚠️ 非 list 一律 INCONCLUSIVE(不只限流/重试耗尽,也包括没见过的 4xx):
+    "没问到答案"和"答案是没有"必须分开,而未知错误属于前者。
+    """
     for suf in ("", "&closed=true"):
-        m = _get(f"{GAMMA}?slug={slug}{suf}", net=net)
-        if isinstance(m, list) and m:
+        m = _get(f"{GAMMA}?slug={slug}{suf}", net=net, deadline=deadline)
+        if not isinstance(m, list):
+            return INCONCLUSIVE   # 网络/限流/预算/未知错误 —— 都没资格宣判"这市场不存在"
+        if m:
             return m[0]
-    return None
+    return None                   # 两个后缀都确认返回空 = 真的查不到
 
 
 def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
@@ -364,22 +488,31 @@ def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
     判据:10-tests/unit/test_registration_budget.py
     """
     now = int(dt.datetime.now(dt.UTC).timestamp())
-    rows, fail, attempted = [], 0, 0
+    rows, fail, attempted, inconclusive = [], 0, 0, 0
     tried_cids, ok_cids = [], []
     t0 = time.monotonic()
+    deadline = t0 + time_budget_s if time_budget_s is not None else None
     items = list(stubs.items())
     for cid, stub in items:
         # 两道闸都必须在**发起查询之前**判。查完再判必然超出预算一整个请求的时长,
         # 而代理退化时单次就是 6s+ —— "多做一个"正是被杀那 12 轮的构成方式。
         if max_new is not None and attempted >= max_new:
             break
-        if time_budget_s is not None and time.monotonic() - t0 >= time_budget_s:
+        if deadline is not None and time.monotonic() >= deadline:
             break
         attempted += 1     # 闸管的是**成本**(发出去的查询),不是成果 ——
                            # 否则失败的市场不占额度,接口挂掉时会一直查到超时
-        tried_cids.append(cid)
         slug = stub.get("slug")
-        m = _lookup_gamma(slug, net=net) if slug else None
+        m = _lookup_gamma(slug, net=net, deadline=deadline) if slug else None
+        if m is INCONCLUSIVE:
+            # ⭐**没查成 ≠ 查不到**,故不进 tried_cids → 积压里 attempts 不变。
+            # 混为一谈的后果:被限流/网络抖动几轮 → 积压把它当"这东西有问题"逐格沉底 →
+            # 攒够 MAX_ATTEMPTS 就**永久丢弃一个真实存在的市场**。
+            # 这与 registration_backlog 里「被预算跳过 ≠ 尝试失败」是同一条原则,
+            # 只是当初只堵了"预算跳过"这一个入口,限流从旁边绕了过去。
+            inconclusive += 1
+            continue
+        tried_cids.append(cid)   # 真问到答案了(不论答案是"有"还是"没有")
         if not m:
             fail += 1
             continue
@@ -395,6 +528,8 @@ def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
         outcome["attempted"] = tried_cids
         outcome["registered"] = ok_cids
     _bump_by(net, "register_budget_skipped_count", len(items) - attempted)
+    # 「0 也要写」:稳态该恒 0,而键缺失与"真的是 0"长得一模一样 —— 那正是要消灭的模糊。
+    _bump_by(net, "register_inconclusive_count", inconclusive)
     if rows:
         dest = REGISTRY_DIR / f"{uuid.uuid4().hex}.parquet"
         _atomic_write_parquet(pa.Table.from_pylist(rows, schema=MARKETS_SCHEMA), dest)

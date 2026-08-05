@@ -220,7 +220,7 @@ def test_unicode_decode_error_does_not_crash_the_cycle(monkeypatch, counters):
 def test_firehose_counts_truncation_on_give_up(monkeypatch, counters):
     """firehose 分页中途重试耗尽 → 本轮**活跃市场集合被缩小**(少发现=少收数据)。
     firehose_fail 只抓"总数为 0",抓不住这种部分截断,故必须单独出声。"""
-    monkeypatch.setattr(ds, "_get", lambda url, net=None: {"__http__": ds.RETRY_EXHAUSTED})
+    monkeypatch.setattr(ds, "_get", lambda url, **kw: {"__http__": ds.RETRY_EXHAUSTED})
     out = ds.sample_firehose(5000, net=counters)
     assert out == []
     assert counters["firehose_truncated_count"] == 1
@@ -228,7 +228,7 @@ def test_firehose_counts_truncation_on_give_up(monkeypatch, counters):
 
 def test_firehose_confirmed_empty_is_not_truncation(monkeypatch, counters):
     """接口确认返回空 = 正常翻到底,不算截断(不许误报)。"""
-    monkeypatch.setattr(ds, "_get", lambda url, net=None: [])
+    monkeypatch.setattr(ds, "_get", lambda url, **kw: [])
     assert ds.sample_firehose(5000, net=counters) == []
     assert counters["firehose_truncated_count"] == 0
 
