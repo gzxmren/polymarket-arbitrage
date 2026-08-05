@@ -211,6 +211,10 @@ AUDIT_FIELDS = (
     "firehose_gap_seconds",           # 缺口多长 —— 校准阈值要的是分布,不是布尔量
     "firehose_offset_ceiling_count",  # 撞接口 offset 10000 硬顶(≠ 翻到底)
     "firehose_window_seconds",        # 本轮采样实际覆盖时长(实测旧配置只有 3.8 分钟)
+    # --- 2026-08-05 新增:注册积压(跳过的市场不再靠"再成交一次"才回得来)---
+    "pending_registration_count",          # 积压规模。恒定不变 = 强可疑(每轮处理同一批)
+    "pending_registration_dropped_count",  # 丢弃数。静默丢 = 用新的静默失败换掉旧的
+    "pending_registration_oldest_age_s",   # 最老年龄:队头卡住时条数可能纹丝不动
 )
 
 

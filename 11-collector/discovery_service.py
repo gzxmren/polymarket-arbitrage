@@ -27,6 +27,7 @@ import pyarrow.parquet as pq
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import registration_backlog as rb  # noqa: E402
 from storage_engine import DATA_ROOT, _atomic_write_parquet  # noqa: E402
 
 _ORIG_GAI = socket.getaddrinfo
@@ -73,6 +74,10 @@ DISCOVERY_COUNTER_KEYS = (
     "firehose_gap_seconds",            # 缺口**多长**(布尔量答不了"是否在恶化")
     "firehose_offset_ceiling_count",   # 撞接口 offset 硬顶(≠ 翻到底,处置完全不同)
     "firehose_window_seconds",         # 本轮采样实际覆盖的时长(25% 覆盖率盲区的解药)
+    # --- 2026-08-05 新增:注册积压。补的是「跳过 ≠ 延后,而是永久丢」这个盲区 ---
+    "pending_registration_count",           # 积压规模(等着被登记的市场数)
+    "pending_registration_dropped_count",   # 超尝试上限/超容量而丢弃 —— 丢必须出声
+    "pending_registration_oldest_age_s",    # 最老条目年龄:「在涨」和「卡住了」是两种病
 )
 
 # 正常市场的 condition_id = "0x" + 64 位 hex。
@@ -330,8 +335,14 @@ def _lookup_gamma(slug: str, net: dict | None = None) -> dict | None:
 
 def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
                          net: dict | None = None,
-                         time_budget_s: float | None = None) -> tuple[int, int]:
+                         time_budget_s: float | None = None,
+                         outcome: dict | None = None) -> tuple[int, int]:
     """对新市场按需查 Gamma 注册。返回 (注册成功数, 查询失败数)。失败计数不静默丢。
+
+    `stubs` 的**顺序即优先级**(dict 保插入顺序),由 `registration_backlog.order` 决定。
+    `outcome` 是可选出参,填 `{"attempted": [...], "registered": [...]}` ——
+    积压层要靠它区分「真发出去查了但没成」与「压根没轮到」:前者才该 `attempts+1` 沉底,
+    后者原样等下轮。混为一谈的话,"系统忙了几轮"会被当成"这东西有问题"。
 
     ## 两道闸,一个都不能少
 
@@ -354,6 +365,7 @@ def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
     """
     now = int(dt.datetime.now(dt.UTC).timestamp())
     rows, fail, attempted = [], 0, 0
+    tried_cids, ok_cids = [], []
     t0 = time.monotonic()
     items = list(stubs.items())
     for cid, stub in items:
@@ -365,6 +377,7 @@ def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
             break
         attempted += 1     # 闸管的是**成本**(发出去的查询),不是成果 ——
                            # 否则失败的市场不占额度,接口挂掉时会一直查到超时
+        tried_cids.append(cid)
         slug = stub.get("slug")
         m = _lookup_gamma(slug, net=net) if slug else None
         if not m:
@@ -376,7 +389,11 @@ def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
             continue
         row["snapshot_at"] = now
         rows.append(row)
+        ok_cids.append(cid)
         time.sleep(0.15)
+    if outcome is not None:
+        outcome["attempted"] = tried_cids
+        outcome["registered"] = ok_cids
     _bump_by(net, "register_budget_skipped_count", len(items) - attempted)
     if rows:
         dest = REGISTRY_DIR / f"{uuid.uuid4().hex}.parquet"
@@ -387,25 +404,52 @@ def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
 def refresh_and_registry(sample_limit: int = 5000, max_new: int | None = None,
                          net: dict | None = None, since_ts: int | None = None,
                          sample_time_budget_s: float | None = None,
-                         register_time_budget_s: float | None = None) -> tuple[list[dict], dict]:
+                         register_time_budget_s: float | None = None,
+                         backlog_file=None) -> tuple[list[dict], dict]:
     """发现 → 注册新市场 → 返回 (可轮询市场行列表, 计数)。
 
     可轮询 = 当前活跃(firehose 出现)且已注册、market_class=event、未关闭。
+
+    ## 候选集 = 本轮新发现 ∪ **积压**(2026-08-05)
+
+    改之前候选集只有本轮 firehose 窗口里的新市场,而 watermark 每轮照常推进 ——
+    被预算跳过的 cid 下一轮就不在窗口里了,**只有再成交一次**才回得来。
+    低频盘既排在后面先被砍、又最不可能再成交 ⇒ 丢得**与结果相关**(致命形态)。
+    现在跳过的进 `registration_backlog`,下轮按 (attempts, first_seen) 优先取。
     """
+    bl_path = backlog_file or rb.BACKLOG_FILE
+
     trades = sample_firehose(sample_limit, net=net, since_ts=since_ts,
                              time_budget_s=sample_time_budget_s)
     active = extract_active(trades, net)
     registry = load_registry()
-    new = {cid: s for cid, s in active.items() if cid not in registry}
-    n_reg, n_fail = register_new_markets(new, max_new=max_new, net=net,
-                                         time_budget_s=register_time_budget_s)
+    fresh = {cid: s for cid, s in active.items() if cid not in registry}
+
+    now_ts = int(dt.datetime.now(dt.UTC).timestamp())
+    # 积压里若有已经注册上的(别的路径登记的),先摘掉再合并,免得白占预算。
+    backlog = {c: e for c, e in rb.load(bl_path).items() if c not in registry}
+    backlog = rb.merge(backlog, fresh, now_ts)
+    candidates = rb.order(backlog)
+
+    outcome: dict = {}
+    n_reg, n_fail = register_new_markets(candidates, max_new=max_new, net=net,
+                                         time_budget_s=register_time_budget_s,
+                                         outcome=outcome)
+    backlog = rb.settle(backlog, attempted=outcome.get("attempted", ()),
+                        registered=outcome.get("registered", ()),
+                        now=now_ts, counts=net)
+    rb.save(bl_path, backlog)
+
     if n_reg:
         registry = load_registry()
     pollable = [registry[cid] for cid in active
                 if cid in registry and not registry[cid]["closed"]
                 and registry[cid]["market_class"] == "event"]
     stats = {"firehose_trades": len(trades), "active_cids": len(active),
-             "new_discovered": len(new),   # 涌入量:与 new_registered 并排看才知道闸是否在削平
+             # 涌入量 = **本轮新发现**(不含积压),与 new_registered 并排看才知道闸是否在削平。
+             # 若把积压算进来,涌入量会被自己上一轮的欠账顶高 —— 那就再也看不出真实涌入了。
+             "new_discovered": len(fresh),
+             "pending_registration": len(backlog),   # 欠账规模,与涌入量分开报
              "new_registered": n_reg, "register_fail": n_fail, "pollable": len(pollable),
              "firehose_newest_ts": newest_trade_ts(trades)}
     return pollable, stats
