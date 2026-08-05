@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""run_cycle.py — 守护层入口:一个采集周期。由 systemd --user timer 每 10 分钟调用。
+"""run_cycle.py — 守护层入口:一个采集周期。由 systemd --user timer 每 **15** 分钟调用。
+
+⚠️ 间隔以 `deploy/systemd/polymarket-rebirth-collector.timer` 的 `OnCalendar` 为准
+(仓库那份是权威,本机副本会被重装覆盖)。2026-08-04 从 10 分钟放宽到 15 分钟,
+本文件的时间闸与 `alerts.CYCLE_BUDGET_S=900` 都是按 15 分钟算的 —— 改间隔必须三处同改。
 
 兑现《数据契约 v1.2》守护层:
 = 采集(run_once:Firehose 发现 + 逐市场增量轮询)
@@ -25,9 +29,45 @@ import storage_engine as se
 # 每轮工作量必须能在 15 分钟间隔内跑完(否则被超时杀、永远跑不到写心跳=空转打转)。
 # 上限见 alerts.CYCLE_BUDGET_S(2026-08-04 从 10 分钟/480s 放宽到 15 分钟/900s)。
 # 实测冷启动 register 112 + poll 270(含大量 8000 笔全回填)单轮 >10 分钟。故双封顶:
-DEFAULT_MAX_NEW = 40      # 每轮最多注册 N 个新市场(~1.3s/个 Gamma)
+# ---------- 发现层配额(2026-08-04 晚重定,全部有实测支撑)----------
+# 实测每轮涌入 ~90 个新市场,而旧上限是 40 → new_registered 逐轮恒在 33~38
+# (「恒定不变的计数」= 被上限削平,不是自然产出)。注册滞后实测 p50=94 分钟 / p90=17.8 小时。
+DEFAULT_MAX_NEW = 100     # 上限必须够得着实测到达率(~90/轮),否则积压永远清不掉
+# ⚠️ 接口硬顶(实测):offset > 10000 一律 HTTP 400
+#    {"error":"max historical trades offset of 10000 exceeded"}
+# → 最多拿到 11000 笔 ≈ **8.4 分钟**(按实测峰值 1316 笔/分钟 = 5000 笔 / 3.8 分钟)。
+DEFAULT_SAMPLE = 11000    # 上限;实际翻多少由 watermark 决定(接上上一轮就停)
+
+# ⭐已知的结构性缺口 —— 写下来是为了它不能悄悄变大。
+# 采集间隔(15 分钟)> 采样够得着的时长(~8.4 分钟)→ **每轮必然漏掉 ~6.6 分钟**,
+# 这段时间里只在别处成交过的市场,本轮看不见。翻页解决不了(接口不给)。
+# 缓解:市场一旦注册,poll_market 会从 offset=0 补全历史(实测注册前累积成交
+# p50=8 / p90=42 / max=8000,无一超 OFFSET_CAP=10000)→ **晚发现 ≠ 丢数据**;
+# 真损失只有"一生从未被任何采样窗撞上"的市场。
+# 根治要么降间隔到 <8 分钟(当前周期耗时装不下),要么把发现层拆成独立的轻量 timer。
+# 由 test_firehose_coverage.py::test_known_structural_gap_is_written_down_and_reconciled 对账。
+KNOWN_FIREHOSE_GAP_MIN = 6.6
 DEFAULT_POLL_LIMIT = 50   # 每轮最多轮询 N 个市场(冷启动全回填 ~11s/个)
 # 冷启动:全宇宙(~600)摊到 ~12 轮(~2 小时)跑满;之后 watermark 令轮询转增量、极快。
+
+# ⭐两道时间闸 —— 计数闸挡不住的那一半。
+# 发现层耗时 ≈ 常数 + N × (一次 Gamma 往返),而**往返时长不由我们决定**:
+# 实测同一天从 ~1.2s 漂到 1.90s(代理隧道退化)。纯计数闸在延迟翻倍时让周期跟着翻倍
+# → 撞 systemd 超时被杀(08-04 当天真的发生了 12 次,而被杀的是已干完大半活的周期)。
+# 有时间闸就变成**降级**:本轮少采/少注册几个并出声计数,下轮继续。
+# ⚠️ **每一段都要有闸,否则"周期有界"是假的**:第一版只给发现层和注册层加了闸,
+# 判据里就敢写"最坏周期 = 各闸之和 + 实测其余" —— 而轮询层无界,代理一退化就穿底。
+# 上限依据(2026-08-04 晚新配置真机实测两轮 499s / 453s):
+#   固定开销 = 结算 61s(受 checked=800 配额约束)+ compaction 2s + 注册表读取 3s = 66s
+#   90 + 180 + 170 + 66 = 506s < 慢周期告警线 540s(见 alerts.slow_cycle_threshold_s)
+# 该算式由 test_registration_budget.py::test_worst_case_cycle_fits_under_the_alert_line 焊死。
+#
+# ⚠️ 三道闸目前**每轮都在咬**(实测 没轮到 注册45/轮询18,firehose 只翻到 8 页)——
+# 即系统已在容量边缘,瓶颈是代理往返 ~2.4s/次。这不是配错了,是硬约束;
+# 余量只剩 34s,慢周期告警线(540s)需在 08-11 用一周心跳分布重新推导。
+FIREHOSE_TIME_BUDGET_S = 90    # 必须够翻满 11 页到接口硬顶,否则第 3 条的覆盖率白改
+REGISTER_TIME_BUDGET_S = 180   # 实测 ~2.35s/个 → ~76 个/轮
+POLL_TIME_BUDGET_S = 170       # 实测 ~5.6s/个(含新注册市场的冷启动全回填)
 
 
 COMPACT_MIN_FILES = 50   # 分区文件数超此值即合并(含被回填污染的旧分区)
@@ -45,7 +85,7 @@ def _compaction_sweep() -> list[str]:
 SLOW_STREAK_FILE = se.DATA_ROOT / "state" / "slow_cycle_streak.json"
 
 
-def main(sample: int = 5000, max_new: int | None = DEFAULT_MAX_NEW,
+def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
          poll_limit: int | None = DEFAULT_POLL_LIMIT) -> int:
     t0 = time.monotonic()   # 单调钟:测耗时不能用 wall clock(NTP 校时会把它拨得忽前忽后)
     print(f"=== 采集周期 {dt.datetime.now(dt.UTC):%Y-%m-%d %H:%M:%S}Z ===", flush=True)
@@ -54,7 +94,11 @@ def main(sample: int = 5000, max_new: int | None = DEFAULT_MAX_NEW,
     # 能指出"慢在哪一段"的信息 —— 当时只能靠手工逐段实测才定位到网络。那是可观测性缺口,
     # 不是"注意一点"能避免的,故焊进日志。
     t = time.monotonic()
-    counts = collector_core.run_once(limit=poll_limit, sample=sample, max_new=max_new)
+    counts = collector_core.run_once(
+        limit=poll_limit, sample=sample, max_new=max_new,
+        sample_time_budget_s=FIREHOSE_TIME_BUDGET_S,
+        register_time_budget_s=REGISTER_TIME_BUDGET_S,
+        poll_time_budget_s=POLL_TIME_BUDGET_S)
     t_collect = time.monotonic() - t
 
     t = time.monotonic()

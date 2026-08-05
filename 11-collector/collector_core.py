@@ -33,6 +33,9 @@ from discovery_service import refresh_and_registry, resolve_asset_index
 
 # 注册链路连零计数(跨周期落盘;每轮是独立进程)
 REGISTER_STREAK_FILE = se.DATA_ROOT / "state" / "register_streak.json"
+# firehose 采样 watermark:上一轮采到的最新成交时间。发现层据此翻页到"接上"为止
+# (不是翻满写死的条数)—— 见 discovery_service.sample_firehose。
+FIREHOSE_WM_FILE = se.DATA_ROOT / "state" / "firehose_watermark.json"
 
 _ORIG_GAI = socket.getaddrinfo
 socket.getaddrinfo = lambda h, p, f=0, t=0, pr=0, fl=0: _ORIG_GAI(h, p, socket.AF_INET, t, pr, fl)
@@ -49,7 +52,8 @@ COUNTER_KEYS = (
     "offset_overflow_count", "dedup_collapse_count", "parse_reject_count",
     "poll_truncated_count",          # 网络断掉导致分页提前结束(≠ 翻到底)
     "rate_limit_give_up_count",      # 被 429 打满而放弃(与"隧道坏了"分开,处置不同)
-) + ds.NET_COUNTER_KEYS
+    "poll_budget_skipped_count",     # 轮询超时间闸而没轮到的市场数(下轮 watermark 接续)
+) + ds.NET_COUNTER_KEYS + ds.DISCOVERY_COUNTER_KEYS
 
 
 def new_counters() -> dict:
@@ -174,7 +178,39 @@ def poll_market(market: dict, counters: dict, wm: int | None) -> list[dict]:
     return new_rows
 
 
-def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None = None) -> dict:
+def poll_markets(markets: list[dict], counters: dict, wms: dict,
+                 time_budget_s: float | None = None) -> int:
+    """逐市场增量轮询落库。返回**实际轮询到的市场数**。
+
+    ⭐为什么这一段也必须有时间闸:2026-08-04 晚给发现层/注册层加了闸之后,判据里写下
+    「最坏周期 = 各闸之和 + 实测其余部分」—— 而轮询压根没有闸。代理一退化它就无界增长,
+    那个"最坏"根本不是最坏。**只要还有一段无界,"周期有界"就是假的。**
+
+    没轮到的市场不丢数据:watermark 驱动,下轮从上次断点继续。但必须**出声计数**,
+    否则"每轮只轮询前 N 个"又会变成第 N+1 个永远轮不到而无人知晓。
+    """
+    total_written = 0
+    polled = 0
+    t0 = time.monotonic()
+    for m in markets:
+        if time_budget_s is not None and time.monotonic() - t0 >= time_budget_s:
+            break                # 查询前判:查完再判必然超出一整个市场的分页时长
+        polled += 1
+        # 溢出时 poll_market 已保留近端并计数(不再抛异常丢批);守护层据心跳 offset_overflow 压频/告警
+        rows = poll_market(m, counters, wms.get(m["condition_id"]))
+        if rows:
+            se.write_trades(rows)
+            total_written += len(rows)
+        time.sleep(0.1)  # 礼貌节流(全局无 429,仍留余量)
+    counters["new_trades"] = total_written
+    counters["poll_budget_skipped_count"] = len(markets) - polled
+    return polled
+
+
+def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None = None,
+             sample_time_budget_s: float | None = None,
+             register_time_budget_s: float | None = None,
+             poll_time_budget_s: float | None = None) -> dict:
     """发现一轮活跃市场 → 逐市场增量轮询落库 → 写审计心跳。返回本轮计数。
 
     v1.2:市场来自 Firehose 发现(refresh_and_registry),不再全量枚举。
@@ -185,7 +221,17 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
     # 发现层与轮询层分开计时:实测这两段成本完全不同(firehose ~10s + 注册 40 个 ~52s
     # vs 轮询 50 个市场 ~84s),混在一起报数等于没报 —— 慢的时候仍然不知道该查哪一段。
     t_disc = time.monotonic()
-    markets, disc = refresh_and_registry(sample_limit=sample, max_new=max_new, net=counters)
+    # watermark 驱动采样:翻页到接上上一轮为止。首轮(无 watermark)退化为翻满 sample。
+    since_ts = cycle_state.read_state(FIREHOSE_WM_FILE, "newest_ts", None)
+    markets, disc = refresh_and_registry(
+        sample_limit=sample, max_new=max_new, net=counters, since_ts=since_ts,
+        sample_time_budget_s=sample_time_budget_s,
+        register_time_budget_s=register_time_budget_s)
+    # 只在真采到东西时推进 watermark:采空(网络挂了)不许推进,否则那段时间永久跳过 ——
+    # 「静默丢样本」的经典造法(丢得与结果相关才致命,而"网络坏的那几分钟"很可能不随机)。
+    if disc.get("firehose_newest_ts"):
+        cycle_state.write_state(FIREHOSE_WM_FILE, "newest_ts",
+                                disc["firehose_newest_ts"], "firehose watermark")
     counters["discovery_seconds"] = time.monotonic() - t_disc
     print(f"发现层: {disc} | 耗时 {counters['discovery_seconds']:.0f}s", flush=True)
     if limit:
@@ -196,16 +242,9 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
         wms = se.all_watermarks(con)
     finally:
         con.close()
-    total_written = 0
-    for m in markets:
-        # 溢出时 poll_market 已保留近端并计数(不再抛异常丢批);守护层据心跳 offset_overflow 压频/告警
-        rows = poll_market(m, counters, wms.get(m["condition_id"]))
-        if rows:
-            se.write_trades(rows)
-            total_written += len(rows)
-        time.sleep(0.1)  # 礼貌节流(全局无 429,仍留余量)
-    counters["new_trades"] = total_written
+    poll_markets(markets, counters, wms, time_budget_s=poll_time_budget_s)
     counters["register_fail"] = disc.get("register_fail", 0)
+    counters["new_discovered"] = disc.get("new_discovered", 0)
     # 注册链路断供守护(静默失败):关心的是"成功登记了几个",不是"报了几个错"。
     # 单次注册失败会自愈(市场还在交易,下轮会被重新登记);真事故是接口挂掉 → 全部失败
     # → 新市场再也进不来、宇宙悄悄停止增长。尝试数 = 成功 + 失败;为 0 表示本轮没新市场
@@ -225,11 +264,12 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
     #      天然是瞎的。移到末尾后,心跳 = "整轮真的跑完了",新鲜度才真的有分辨力。
     # 代价:被杀的周期不再留下部分计数 —— 这是**对的**语义(没跑完就是没跑完),
     # 由看门狗的心跳新鲜度(HEARTBEAT_STALE_MIN)负责发现。
-    print(f"本轮: 市场 {counters['total_markets_polled']} | 新成交 {total_written} | "
+    print(f"本轮: 市场 {counters['total_markets_polled']} | 新成交 {counters['new_trades']} | "
           f"4xx {counters['http_4xx_count']} | 限流 {counters['rate_limit_hits']} | "
           f"offset溢出 {counters['offset_overflow_count']} | 解析拒绝 {counters['parse_reject_count']} | "
           f"网络重试 {counters['net_retry_count']}/{counters['net_attempt_count']} | "
-          f"重试耗尽 {counters['net_give_up_count']} | 分页截断 {counters['poll_truncated_count']}",
+          f"重试耗尽 {counters['net_give_up_count']} | 分页截断 {counters['poll_truncated_count']} | "
+          f"没轮到 注册{counters['register_budget_skipped_count']}/轮询{counters['poll_budget_skipped_count']}",
           flush=True)
     return counters
 

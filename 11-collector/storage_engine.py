@@ -199,6 +199,18 @@ AUDIT_FIELDS = (
     # 而 alerts.py 里那几条 TODO 明写了要靠心跳历史校准 —— 故必须落到 parquet。
     "register_zero_streak", "truth_supply_zero_streak", "slow_cycle_streak",
     "new_registered",         # 成功登记数:注册断供守护关心的是"成功了几个",不是"失败几个"
+    # --- 2026-08-04 新增:发现层预算与覆盖。补的是"每轮取前 N 个而第 N+1 个永远轮不到"
+    #     和"采样只盖 25% 时间而无人知晓"两个盲区 ---
+    "excluded_parlay_count",          # 剔掉的串关(旧代码放进去、到注册层再静默失败)
+    "excluded_hft_count",             # 剔掉的 HFT 盘(旧代码 continue 无计数)
+    "new_discovered",                 # 本轮涌入的新市场数 —— 与 new_registered 并排看
+                                      # 才知道"恒定的 34"是自然产出还是被上限削平的
+    "register_budget_skipped_count",  # 没轮到注册的个数(回答"第 N+1 个何时轮到")
+    "poll_budget_skipped_count",      # 没轮到轮询的个数(同上,轮询层)
+    "firehose_gap_uncovered_count",   # 采样没接上上一轮 = 有一段时间的市场本轮看不见
+    "firehose_gap_seconds",           # 缺口多长 —— 校准阈值要的是分布,不是布尔量
+    "firehose_offset_ceiling_count",  # 撞接口 offset 10000 硬顶(≠ 翻到底)
+    "firehose_window_seconds",        # 本轮采样实际覆盖时长(实测旧配置只有 3.8 分钟)
 )
 
 
