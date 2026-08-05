@@ -220,6 +220,9 @@ AUDIT_FIELDS = (
     "firehose_rate_limited_count",   # 被限流打断分页(≠ 翻到底,≠ 隧道坏了)
     "firehose_http_error_count",     # 未知形态的 HTTP 错误;稳态恒 0,非零即"出了没想到的事"
     "register_inconclusive_count",   # 查 Gamma 没查成(≠ 查不到)—— 不许被积压当死号沉底
+    # --- 2026-08-06 新增:轮询层饿死。实测注册表 67,156 个市场里只有 30,430 个采到过成交 ---
+    "poll_never_polled_count",       # 本轮可轮询里"从没采过"的个数 = 衡量饿死是否在好转
+    "poll_timegate_skipped_count",   # 没轮到里**被时间闸**砍掉的(与"名额不够"处置不同)
 )
 
 

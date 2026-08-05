@@ -48,6 +48,10 @@ def _offline(monkeypatch, tmp_path):
     monkeypatch.setattr(cc.se, "write_trades", lambda rows: None)
     monkeypatch.setattr(cc, "REGISTER_STREAK_FILE", tmp_path / "reg.json")
     monkeypatch.setattr(cc, "FIREHOSE_WM_FILE", tmp_path / "wm.json")
+    # ⚠️ 2026-08-06 实测踩到:新增 POLL_CURSOR_FILE 后忘了在这里重定向,
+    # 跑一次单测就把**生产**的 data/state/poll_cursor.json 写成了 {"cursor": ""}
+    # (= 把线上轮询轮转位置重置回开头)。测试隔离是硬规矩,不是习惯。
+    monkeypatch.setattr(cc, "POLL_CURSOR_FILE", tmp_path / "poll_cursor.json")
     monkeypatch.setattr(cc.time, "sleep", lambda *_: None)
 
 

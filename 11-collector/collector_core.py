@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import datetime as dt
 import http.client
 import json
@@ -52,7 +53,13 @@ COUNTER_KEYS = (
     "offset_overflow_count", "dedup_collapse_count", "parse_reject_count",
     "poll_truncated_count",          # 网络断掉导致分页提前结束(≠ 翻到底)
     "rate_limit_give_up_count",      # 被 429 打满而放弃(与"隧道坏了"分开,处置不同)
-    "poll_budget_skipped_count",     # 轮询超时间闸而没轮到的市场数(下轮 watermark 接续)
+    "poll_budget_skipped_count",     # 本轮**没轮到**轮询的市场数(硬名额 + 时间闸,两者都算)
+    "poll_never_polled_count",       # 其中"从来没采过"的有多少 —— 饿死是否在好转的直接量
+    # ⭐两种"没轮到"的**处置方向不同**,必须分开:
+    #   名额不够  → 结构性,要么让单市场更便宜,要么拆独立 timer
+    #   时间闸咬住 → 可变,冷启动回填贵 / 网络慢,下轮会继续
+    # 合成一个数会让"轮转片实际完成了几个"变得不可知,而那正是一圈多久的决定量。
+    "poll_timegate_skipped_count",   # 其中**被时间闸**砍掉的(名额本来给了它,没跑完)
 ) + ds.NET_COUNTER_KEYS + ds.DISCOVERY_COUNTER_KEYS
 
 
@@ -200,6 +207,78 @@ def poll_market(market: dict, counters: dict, wm: int | None) -> list[dict]:
     return new_rows
 
 
+# ---------- 轮询名额的分配(2026-08-06)----------
+#
+# 病:`run_once` 里原本是一刀裸切片 `markets[:limit]`,而 markets 按 firehose 新鲜度排序
+# ⇒ 每轮永远只采「最近成交的前 50 个」,冷门盘每轮都被砍、可能一生轮不到。
+# 实测(DuckDB 查全量数据湖):注册表 67,156 个市场里只有 30,430 个采到过成交;
+# 进行中的盘 20,340 个里 13,163 个(65%)一笔都没采过。丢得**与结果相关**(专丢低频盘)。
+#
+# ⚠️ 而 `poll_budget_skipped_count` 当时在**截断之后**才算,对这一刀完全是瞎的 ——
+# 心跳里逐轮写着「没轮到 轮询0」。恒为 0 是因为它没在看,不是因为没事。
+#
+# ⭐为什么不能纯轮转:实测单市场成交率 p99=126/小时、最热 3,954/小时。
+# 纯轮转一圈 ~5 小时,最热的盘会攒 ~19,770 笔 > OFFSET_CAP(10,000)→ 分页截断
+# = 用一个新的丢数据换掉旧的。故劈成两片(推导与红线见 test_poll_rotation.py)。
+# ⚠️ 24 不是拍的,是被两条红线**夹出来**的唯一窗口(判据先写,参数后定):
+#   下界:一圈必须短于 OFFSET_CAP / p99.9 成交率 = 10000/859 ≈ 11.6 小时 → 至少 23
+#   上界:新鲜片必须占多数(热门盘的保护)→ 至多 24
+# ⭐余量很薄(p99.9 一圈攒 ~9,200 / 硬顶 10,000,只剩 8%)。这不是配得巧,
+# 是**名额本身就不够**:1029 个可轮询 vs 每轮 50 个,而 50 已被时间闸 170s 顶死。
+# 真要松快,得先让单市场轮询变便宜或拆出独立 timer —— 那是另一件事,不在本次。
+POLL_ROTATE_SHARE = 24   # 每轮固定留给游标轮转的名额;其余给"最近成交"
+POLL_CURSOR_FILE = se.DATA_ROOT / "state" / "poll_cursor.json"
+
+
+def poll_fresh_share(limit: int) -> int:
+    """新鲜片名额。轮转片不许吃掉全部 —— 那会让热门盘等一圈而攒爆分页上限。"""
+    return max(0, limit - POLL_ROTATE_SHARE)
+
+
+def select_poll_targets(markets: list[dict], wms: dict, limit: int | None,
+                        cursor: str) -> tuple[list[dict], str, int]:
+    """选出本轮要轮询的市场。返回 (选中列表, 新游标, **被砍掉的个数**)。
+
+    `markets` 已按 firehose 新鲜度排序(下标 0 = 最近成交)。
+
+    - **新鲜片**:照旧取最前面几个。热门盘天然一直"新鲜",于是仍每轮被采 ——
+      这不是巧合:成交率高 ⇔ 一直排在最前,两者是同一件事。
+    - **轮转片**:在剩下的里按 condition_id 游标轮转 + 回卷,给冷门盘一个**有界**的等待。
+      游标存**排序键**而非下标(可轮询集合每轮都在变,存下标会乱跳)——
+      与 `settlement_watcher.select_batch` 同一条理由,那边已被 08-03 事故验证过。
+    """
+    total = len(markets)
+    if limit is None or limit >= total:
+        return list(markets), cursor, 0
+
+    n_rot = min(POLL_ROTATE_SHARE, limit)
+    picked = list(markets[:limit - n_rot])
+    taken = {m["condition_id"] for m in picked}
+    rest = sorted((m for m in markets if m["condition_id"] not in taken),
+                  key=lambda m: m["condition_id"])
+    if rest:
+        n_rot = min(n_rot, len(rest))     # 防回卷时把同一个市场取两次
+        keys = [m["condition_id"] for m in rest]
+        i = bisect.bisect_right(keys, cursor)
+        rot = rest[i:i + n_rot]
+        if len(rot) < n_rot:              # 走到末尾 → 回卷,否则后半段永远轮不到
+            rot = rot + rest[:n_rot - len(rot)]
+        picked += rot
+        if rot:
+            cursor = rot[-1]["condition_id"]
+    return picked, cursor, total - len(picked)
+
+
+def count_never_polled(markets: list[dict], wms: dict, counters: dict) -> None:
+    """本轮可轮询里"从来没采过"的个数(没有 watermark = 一笔都没收过)。
+
+    这是衡量饿死是否在好转的**直接量**。没有它,"65% 从没采过"修没修好
+    只能靠人手工去查数据湖 —— 那等于没人会知道。
+    """
+    counters["poll_never_polled_count"] = sum(
+        1 for m in markets if m["condition_id"] not in wms)
+
+
 def poll_markets(markets: list[dict], counters: dict, wms: dict,
                  time_budget_s: float | None = None) -> int:
     """逐市场增量轮询落库。返回**实际轮询到的市场数**。
@@ -225,7 +304,11 @@ def poll_markets(markets: list[dict], counters: dict, wms: dict,
             total_written += len(rows)
         time.sleep(0.1)  # 礼貌节流(全局无 429,仍留余量)
     counters["new_trades"] = total_written
-    counters["poll_budget_skipped_count"] = len(markets) - polled
+    timegate_skipped = len(markets) - polled
+    counters["poll_timegate_skipped_count"] = timegate_skipped
+    # ⚠️ 累加而非赋值:硬名额砍掉的那一批已由 select_poll_targets 记在这里了。
+    # 写成 `=` 就会把它抹掉 —— 那正是改之前"没轮到 轮询恒 0"的成因(在截断之后才算)。
+    counters["poll_budget_skipped_count"] += timegate_skipped
     return polled
 
 
@@ -256,15 +339,21 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
                                 disc["firehose_newest_ts"], "firehose watermark")
     counters["discovery_seconds"] = time.monotonic() - t_disc
     print(f"发现层: {disc} | 耗时 {counters['discovery_seconds']:.0f}s", flush=True)
-    if limit:
-        markets = markets[:limit]
-    # 一次性预取所有市场 watermark(空湖返回 {})
+    # 一次性预取所有市场 watermark(空湖返回 {})。
+    # ⚠️ 必须在选名额**之前**取:"有没有 watermark" = "从没采过",是可见性的来源。
     con = se.duckdb_conn()
     try:
         wms = se.all_watermarks(con)
     finally:
         con.close()
+    # 分母是**截断前**的全部可轮询市场 —— 截断后再统计就是在问"被留下的那些怎么样",
+    # 而我们要问的恰恰是被砍掉的那些。
+    count_never_polled(markets, counters=counters, wms=wms)
+    cursor = cycle_state.read_state(POLL_CURSOR_FILE, "cursor", "")
+    markets, cursor, skipped = select_poll_targets(markets, wms, limit, cursor)
+    counters["poll_budget_skipped_count"] = skipped
     poll_markets(markets, counters, wms, time_budget_s=poll_time_budget_s)
+    cycle_state.write_state(POLL_CURSOR_FILE, "cursor", cursor, "轮询游标")
     counters["register_fail"] = disc.get("register_fail", 0)
     counters["new_discovered"] = disc.get("new_discovered", 0)
     # 注册链路断供守护(静默失败):关心的是"成功登记了几个",不是"报了几个错"。
@@ -294,7 +383,11 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
           f"offset溢出 {counters['offset_overflow_count']} | 解析拒绝 {counters['parse_reject_count']} | "
           f"网络重试 {counters['net_retry_count']}/{counters['net_attempt_count']} | "
           f"重试耗尽 {counters['net_give_up_count']} | 分页截断 {counters['poll_truncated_count']} | "
-          f"没轮到 注册{counters['register_budget_skipped_count']}/轮询{counters['poll_budget_skipped_count']}",
+          f"没轮到 注册{counters['register_budget_skipped_count']}"
+          f"/轮询{counters['poll_budget_skipped_count']}"
+          # 「从没采过」与「本轮没轮到」必须并排看:前者是**存量欠账**(修复效果的直接量),
+          # 后者是本轮流量。只报后者会让人以为"每轮都砍这么多"是稳态而心安。
+          f"(其中从没采过 {counters['poll_never_polled_count']})",
           flush=True)
     return counters
 
