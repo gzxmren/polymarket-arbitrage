@@ -217,6 +217,95 @@ def test_time_budget_stops_before_starting_another_market(monkeypatch):
     assert counts["attempted"] == 3, f"预算 25s/每个 10s,应做 3 个,实际 {counts['attempted']}"
 
 
+# ============ 判据组 D2:游标只许走过**真做过**的市场(2026-08-06 补) ============
+#
+# 病:`select_batch` 一次规划 400 个,而时间闸(300s)实际只做得完中位 240 个,
+# 游标却按**规划的最后一个**往前跳 ⇒ 每轮约 160 个从没被碰过就被跳过,
+# 一圈只覆盖目标集的约六成(实测 60 轮日志:做活的 48 轮 attempted 96/240/314)。
+#
+# 打个比方:银行叫号一次叫 400 人进来,下班只办完 240 个,剩下 160 个被请出去,
+# **而叫号机照样跳到 400 号** —— 他们的号作废,明天重排队尾。
+#
+# ⭐ 这是 `settlement_watcher` 08-06 已修过的**同一个形状**,当时只修了三处中的一处。
+#    "分 N 次发现同一类错"正是设计梳理认定的病根(修实例没修类)。
+
+def test_cursor_only_advances_over_markets_actually_attempted(monkeypatch):
+    """时间闸砍断时,游标必须停在**最后一个真做过的**,不是最后一个计划做的。"""
+    monkeypatch.setattr(bf, "collector_is_running", lambda: False)
+    clock = _Clock()
+    monkeypatch.setattr(bf.time, "monotonic", clock)
+    targets = _targets(100)
+
+    def slow(m):
+        clock.t += 10.0
+        return [_row(1)]
+
+    counts = bf.backfill_once(targets, cursor="", max_markets=100,
+                              time_budget_s=25, fetch=slow, write=lambda rows: None)
+    ordered = sorted(targets, key=lambda m: m["condition_id"])
+    assert counts["attempted"] == 3
+    assert counts["cursor"] == ordered[2]["condition_id"], \
+        "游标跳过了本轮压根没碰过的市场 —— 它们要多等一整圈"
+
+
+def test_cursor_does_not_advance_when_yielding_midway(monkeypatch):
+    """给采集器让路而中断时同理 —— 让路是**降级**,不该顺手丢掉没做的那批。"""
+    state = {"n": 0}
+
+    def running():
+        state["n"] += 1
+        return state["n"] > 3
+
+    monkeypatch.setattr(bf, "collector_is_running", running)
+    targets = _targets(50)
+    counts = bf.backfill_once(targets, cursor="", max_markets=50, time_budget_s=1000,
+                              fetch=lambda m: [_row(1)], write=lambda rows: None,
+                              yield_check_every=1)
+    ordered = sorted(targets, key=lambda m: m["condition_id"])
+    assert counts["yielded"] == 1
+    assert counts["cursor"] == ordered[counts["attempted"] - 1]["condition_id"]
+
+
+def test_nothing_attempted_leaves_the_cursor_alone(monkeypatch):
+    """一个都没做成 → 游标原地不动,整批留给下轮。
+
+    (预算为 0 时若仍推进游标,等于"什么都没干却宣布这批过去了"。)
+    """
+    monkeypatch.setattr(bf, "collector_is_running", lambda: False)
+    clock = _Clock()
+    monkeypatch.setattr(bf.time, "monotonic", clock)
+    counts = bf.backfill_once(_targets(20), cursor="", max_markets=20,
+                              time_budget_s=0, fetch=lambda m: [_row(1)],
+                              write=lambda rows: None)
+    assert counts["attempted"] == 0
+    assert not counts.get("cursor"), "什么都没做却推进了游标"
+
+
+def test_no_target_is_skipped_across_repeatedly_cut_rounds(monkeypatch):
+    """⭐端到端红线:反复被砍断的多轮之后,**每个目标都必须被碰到**。
+
+    这条才是真正要保的性质 —— 前面几条只是它的局部表现。
+    修之前:每轮做 3 个却跳过 10 个,跑 10 轮也只覆盖不到三分之一。
+    """
+    monkeypatch.setattr(bf, "collector_is_running", lambda: False)
+    clock = _Clock()
+    monkeypatch.setattr(bf.time, "monotonic", clock)
+    targets = _targets(30)
+    seen, cursor = set(), ""
+
+    def slow(m):
+        clock.t += 10.0
+        seen.add(m["condition_id"])
+        return [_row(1)]
+
+    for _ in range(10):            # 10 轮 × 每轮 3 个 = 刚好够覆盖 30 个
+        counts = bf.backfill_once(targets, cursor=cursor, max_markets=30,
+                                  time_budget_s=25, fetch=slow,
+                                  write=lambda rows: None)
+        cursor = counts.get("cursor") or cursor
+    assert len(seen) == 30, f"10 轮之后仍有 {30 - len(seen)} 个目标从没被碰过"
+
+
 def test_max_markets_caps_the_batch(monkeypatch):
     """两道闸都要有:时间闸挡延迟退化,个数闸挡"网络特别快时一口气打爆接口"。"""
     monkeypatch.setattr(bf, "collector_is_running", lambda: False)

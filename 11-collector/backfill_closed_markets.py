@@ -172,8 +172,9 @@ def backfill_once(targets: list[dict], cursor: str, max_markets: int,
         counts["yielded"] = 1        # 出声:否则"为什么一直没补"无从解释
         return counts
 
-    batch, new_cursor = select_batch(targets, cursor, max_markets)
+    batch, _planned_cursor = select_batch(targets, cursor, max_markets)
     t0 = time.monotonic()
+    last_done = None                 # ⭐游标只认**真做过**的,见下方说明
     for i, m in enumerate(batch):
         # 两道闸都在**发起请求之前**判。查完再判必然超出一整个市场的耗时。
         if time.monotonic() - t0 >= time_budget_s:
@@ -191,10 +192,22 @@ def backfill_once(targets: list[dict], cursor: str, max_markets: int,
             write(rows)              # 空 rows 不写:空文件会污染分区、拖垮 compaction
         else:
             counts["empty"] += 1     # 零返回要出声:系统性查不到否则完全隐形
+        last_done = m
     # 本清扫扫的正是"已关闭且一笔没采过"的盘 —— **撞 offset 硬顶概率最高的那一类**。
     # 不冲痕迹 = 历史空洞只记一半,而漏掉的恰是最容易出洞的那一半。
     cc.flush_truncations(_fetch.counters)
-    counts["cursor"] = new_cursor
+    # 🔴 2026-08-06:此前这里写的是 `counts["cursor"] = new_cursor`,即**规划的最后一个**。
+    # 而一轮规划 400 个、时间闸(300s)实际只做得完中位 240 个 ⇒ 每轮约 160 个
+    # 压根没被碰过就被游标跳过,一圈只覆盖目标集的约六成,补完存量的时间因此多出六成。
+    #
+    # 打个比方:银行叫号一次叫 400 人进来,下班只办完 240 个,剩下的被请出去,
+    # **而叫号机照样跳到 400 号** —— 他们的号作废,明天重新排队尾。
+    #
+    # ⭐ 这与 `settlement_watcher.watch_settlements` 里"游标只走过真查过的市场"
+    # 是**同一个形状**,那边 08-06 已修 —— 当时三处只修了一处。
+    # 一个都没做成 → 不写游标,整批留给下轮(否则等于"什么都没干却宣布这批过去了")。
+    if last_done is not None:
+        counts["cursor"] = last_done["condition_id"]
     return counts
 
 
