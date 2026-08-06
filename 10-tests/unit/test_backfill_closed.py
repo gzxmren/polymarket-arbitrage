@@ -55,16 +55,158 @@ def _targets(n: int) -> list[dict]:
 
 # ============ 判据组 A:目标集不许被结果相关的条件筛 ============
 
-def test_target_sql_selects_only_closed_and_never_polled():
-    """目标集的定义只能是「已关闭 ∧ 成交湖里没有」。
+def test_target_sql_has_no_outcome_correlated_filter():
+    """目标集里不许出现与结果相关的筛选条件。
 
     加任何"只补最近 N 天""只补成交量大的"之类的条件,都是**用与结果相关的变量筛样本**
     —— 补回来的会系统性偏向某一类,而基于它的任何结论结构性作废(CLAUDE.md 铁律 2)。
+
+    ⚠️ 这条只查"有没有禁用词",**不验它到底选出了什么** ——
+    下面那组真建一个临时数据湖跑 SQL 的判据才验行为。
+    2026-08-06 改目标集语义时,本条一声不吭地全绿,那正是它分辨力的边界。
     """
     sql = bf.TARGET_SQL.lower()
     assert "closed" in sql and "is null" in sql, "目标集定义变了"
     for banned in ("end_date >", "end_date <", "limit ", "volume", "order by rand"):
         assert banned not in sql, f"目标集里出现了与结果相关的筛选:{banned}"
+
+
+# ============ 判据组 A2:不变量 A4 —— 关闭后必有一次完整采集(2026-08-06)============
+#
+# 洞 0:市场一关闭就被 `pollable` 过滤掉,活体链路永远不再碰它;
+# 而旧的兜底只捞「一笔都没采过」的 ⇒ **采过一半的掉进缝里**。
+# 实测 24,772 个已关闭市场缺了结算前最后一段(中位 7.1 小时 / p90 6.7 天),
+# 而那正是价格向真实结果收敛、信息密度最高的一段。
+#
+# 下面这组**真建一个临时数据湖、真跑那条 SQL** —— 因为语义变更正是上面那条
+# 只查字符串的判据抓不住的东西。
+
+def _mini_lake(tmp_path, monkeypatch):
+    """造一个最小数据湖:注册表 + 成交 + 完成标记。返回目录。"""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    import storage_engine as se
+
+    root = tmp_path / "lake"
+    (root / "registry").mkdir(parents=True)
+    (root / "raw" / "dt=2026-08-01").mkdir(parents=True)
+    (root / "swept").mkdir(parents=True)
+    monkeypatch.setattr(se, "DATA_ROOT", root)
+    monkeypatch.setattr(se, "RAW_DIR", root / "raw")
+    monkeypatch.setattr(se, "SWEPT_DIR", root / "swept")
+    monkeypatch.setattr(se, "AUDIT_DIR", root / "audit")
+    return root, pa, pq, se
+
+
+def _reg_row(cid, closed):
+    return {"condition_id": cid, "slug": "s", "title": "t", "event_slug": "e",
+            "market_class": "event", "hft_suspect": False,
+            "token_id_0": "1", "token_id_1": "2", "outcomes_json": "[]",
+            "closed": closed, "resolved_outcome": None,
+            "start_date": None, "end_date": None, "snapshot_at": 100}
+
+
+def _trade_row(cid, ts):
+    return {"transaction_hash": f"0x{ts}", "proxy_wallet": "0xw", "condition_id": cid,
+            "asset": "1", "outcome_index": 0, "outcome_label": "Yes", "side": "BUY",
+            "size": 1.0, "price": 0.5, "timestamp": ts, "ingested_at": ts}
+
+
+def test_a4_targets_include_closed_markets_that_were_only_partly_collected(
+        tmp_path, monkeypatch):
+    """⭐洞 0 的核心判据:采过一半的已关闭市场**必须**进目标集。
+
+    旧定义(「一笔都没有」)会把它排除在外 —— 于是它的结算前最后一段永远没人补。
+    修之前这条必红。
+    """
+    import discovery_service as ds
+    root, pa, pq, se = _mini_lake(tmp_path, monkeypatch)
+    pq.write_table(pa.Table.from_pylist(
+        [_reg_row("0xA", True), _reg_row("0xB", True), _reg_row("0xC", False)],
+        schema=ds.MARKETS_SCHEMA), root / "registry" / "r.parquet")
+    pq.write_table(pa.Table.from_pylist(
+        [_trade_row("0xA", 1700000000)], schema=se.TRADES_SCHEMA),
+        root / "raw" / "dt=2026-08-01" / "t.parquet")
+
+    targets = {t["condition_id"]: t for t in bf.load_targets()}
+    assert "0xA" in targets, "采过一半的已关闭市场被漏掉了 —— 这就是洞 0"
+    assert "0xB" in targets, "一笔没采过的仍要补"
+    assert "0xC" not in targets, "还开着的市场不该进目标集"
+
+
+def test_a4_a_swept_marker_removes_the_market_from_the_target_set(
+        tmp_path, monkeypatch):
+    """落了完成标记的市场必须从目标集消失 —— 否则会被无限重扫。"""
+    import discovery_service as ds
+    root, pa, pq, se = _mini_lake(tmp_path, monkeypatch)
+    pq.write_table(pa.Table.from_pylist(
+        [_reg_row("0xA", True), _reg_row("0xB", True)], schema=ds.MARKETS_SCHEMA),
+        root / "registry" / "r.parquet")
+    pq.write_table(pa.Table.from_pylist(
+        [{"condition_id": "0xA", "swept_at": 1, "source": "backfill",
+          "trades_written": 0}], schema=se.SWEPT_SCHEMA),
+        root / "swept" / "s.parquet")
+
+    targets = {t["condition_id"] for t in bf.load_targets()}
+    assert targets == {"0xB"}
+
+
+def test_a4_target_carries_the_existing_watermark(tmp_path, monkeypatch):
+    """目标集要带上水位线 —— 缺的只是尾巴,按水位线增量拉即可。
+
+    从头全拉会把已有的几百万笔重复写回去(白烧接口配额和磁盘);
+    从没采过的市场水位线为 None,`poll_market` 自然退化成全量回填。
+    """
+    import discovery_service as ds
+    root, pa, pq, se = _mini_lake(tmp_path, monkeypatch)
+    pq.write_table(pa.Table.from_pylist(
+        [_reg_row("0xA", True), _reg_row("0xB", True)], schema=ds.MARKETS_SCHEMA),
+        root / "registry" / "r.parquet")
+    pq.write_table(pa.Table.from_pylist(
+        [_trade_row("0xA", 1700000000), _trade_row("0xA", 1700009999)],
+        schema=se.TRADES_SCHEMA), root / "raw" / "dt=2026-08-01" / "t.parquet")
+
+    targets = {t["condition_id"]: t for t in bf.load_targets()}
+    assert targets["0xA"]["wm"] == 1700009999, "水位线没带上 → 会从头重拉"
+    assert targets["0xB"]["wm"] is None, "从没采过的必须是 None(退化为全量回填)"
+
+
+def test_a4_marker_is_written_even_when_the_tail_was_empty(monkeypatch):
+    """扫过但一笔没补到,**也要**落标记。
+
+    A4 的义务是"扫过一遍",不是"扫到东西"。不落标记的话,
+    真没成交的市场会永远留在目标集里被反复重扫(而且看起来像"一直补不上")。
+    """
+    monkeypatch.setattr(bf, "collector_is_running", lambda: False)
+    marked = []
+    counts = bf.backfill_once(_targets(3), cursor="", max_markets=3, time_budget_s=100,
+                              fetch=lambda m: [], write=lambda rows: None,
+                              mark=marked.extend, net={})
+    assert counts["empty"] == 3
+    assert counts["swept_marked"] == 3
+    assert {r["condition_id"] for r in marked} == {t["condition_id"] for t in _targets(3)}
+
+
+def test_a4_marker_is_not_written_when_the_sweep_was_cut_short(monkeypatch):
+    """⭐网络中途断掉时**不许**落标记 —— 否则等于宣布"扫过了"而其实没扫完,
+    而这个市场从此再也不会进目标集,丢的那段永久没人管。
+
+    不对称:不落标记只是白跑一次接口;错落标记是永久丢数据。
+    """
+    monkeypatch.setattr(bf, "collector_is_running", lambda: False)
+    net = {"poll_truncated_count": 0}
+
+    def flaky(m):
+        net["poll_truncated_count"] += 1     # 模拟 poll_market 的"分页被网络截断"
+        return [_row(1)]
+
+    marked = []
+    counts = bf.backfill_once(_targets(2), cursor="", max_markets=2, time_budget_s=100,
+                              fetch=flaky, write=lambda rows: None,
+                              mark=marked.extend, net=net)
+    assert counts["attempted"] == 2
+    assert counts["sweep_incomplete"] == 2, "扫不完必须出声,否则无从解释它为何老在目标集里"
+    assert counts["swept_marked"] == 0 and marked == []
 
 
 # ============ 判据组 B:游标轮转(补不完必须能接着补) ============

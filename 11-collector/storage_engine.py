@@ -100,6 +100,49 @@ def write_truncations(rows: list[dict]) -> Path | None:
     return dest
 
 
+# ---------- 关闭后完整采集的完成标记(不变量 A4,2026-08-06)----------
+#
+# 不变量 A4:**每个市场在关闭之后,必须有且至少有一次完整采集。**
+#
+# 为什么要有它:市场一关闭就被 `pollable` 过滤掉,活体链路永远不再碰它;
+# 而此前唯一的兜底(回填清扫)只捞「一笔都没采过」的 —— 于是**采过一半的掉进缝里**:
+# 实测 24,772 个已关闭市场,最后一次采集发生在我们看到它关闭之前,
+# 缺的正是结算前最后一段(价格向真实结果收敛、信息密度最高的那一段)。
+#
+# 为什么用**记账**而不是算条件:条件式判据要依赖 Gamma 给的 `end_date`,
+# 那是**名义**结束日期、不是真实关闭时刻(市场可能提前关也可能拖后关)。
+# 记账只依赖「我们自己做过什么」—— 拿不准的一律没标记,于是会被再扫一遍。
+#
+# ⭐配套的不对称原则:**不确定时必须偏向"再采一次"**。
+#   误判成"没采过" = 白跑一次接口;误判成"采过了" = **永久丢一段数据**。
+SWEPT_DIR = DATA_ROOT / "swept"
+SWEPT_SCHEMA = pa.schema([
+    ("condition_id", pa.string()),
+    ("swept_at", pa.int64()),
+    ("source", pa.string()),        # backfill=真扫过一遍 / seed=一次性回填标记(见下)
+    ("trades_written", pa.int64()),  # 0 也是合法结果(市场真没成交);义务是"扫过",不是"扫到"
+])
+
+
+def write_swept(rows: list[dict]) -> Path | None:
+    """追加一批完成标记(append-only)。空列表返回 None,绝不落空文件。
+
+    单独一个目录而不是塞进 trades:它是**关于采集过程的数据**,
+    混进 trades 会污染 watermark 和所有成交口径的统计(与 truncations/ 同一理由)。
+    """
+    if not rows:
+        return None
+    table = pa.Table.from_pylist(rows, schema=SWEPT_SCHEMA)
+    dest = SWEPT_DIR / f"{uuid.uuid4().hex}.parquet"
+    _atomic_write_parquet(table, dest)
+    return dest
+
+
+def has_swept_data() -> bool:
+    """标记目录里是否已有任何 parquet(空目录时 read_parquet 对空 glob 会报错,须先判)。"""
+    return any(SWEPT_DIR.glob("*.parquet"))
+
+
 def compact_day(day: str, keep_originals: bool = False) -> Path | None:
     """把某日分区的小文件合并成一个大文件(不可变重写 + 审计),提升查询速度。
 
