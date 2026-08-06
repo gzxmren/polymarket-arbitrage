@@ -20,15 +20,13 @@ from __future__ import annotations
 import argparse
 import bisect
 import datetime as dt
-import http.client
-import json
 import socket
 import time
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
 import cycle_state
 import discovery_service as ds
+import http_client as hc
 import storage_engine as se
 from discovery_service import refresh_and_registry, resolve_asset_index
 
@@ -112,45 +110,34 @@ class _GiveUp:
 GIVE_UP = _GiveUp()
 
 
-def _get(url: str, counters: dict, tries: int = 5):
+# ⚠️ 本模块的网络失败退避是 **1.5 秒**,而发现层那份是 1.2 秒(见 http_client.RETRY_SLEEP_S)。
+# 两个值都没有实测支撑,只是历史上各写各的。**故意保留这个差异**:统一它是行为变更
+# (退避时长直接进周期耗时 ⇒ 改变慢周期分布),该单独论证、单独验证,
+# 不能夹在"纯重构"里偷偷做(CLAUDE.md 铁律 1:一次只动一个自变量)。
+# 并入 ⏰2026-08-11 阈值校准一起定。
+POLL_RETRY_SLEEP_S = 1.5
+
+
+def _get(url: str, counters: dict, tries: int = 5, deadline: float | None = None):
     """GET;429/4xx 计数;重试耗尽返回 GIVE_UP(区别于确认空的 [] 和 4xx 的 None)。
 
-    ⚠️ 网络异常分支必须计数:`ssl.SSLError`/`socket.timeout` 都是 `OSError` 子类,
-    全落在下面那个 except 里。2026-08-04 实测 23% 请求走这条路被静默吞掉,
-    而心跳 `4xx 0 | 限流 0` 看着一切正常 —— 判据 test_net_failure_counting.py。
+    2026-08-06 起这只是 `http_client.request_json` 的**薄适配层** ——
+    重试/计数/归因/时间闸的真身在那一个模块里,全项目只此一份。
+    合并的理由见 http_client 的模块说明(两份实现已经分叉过一次,而判据不会变红)。
+
+    `deadline`(绝对时刻,`time.monotonic()` 尺度)是这次合并**新拿到的能力**:
+    此前本函数根本不收这个参数,于是单市场翻页在结构上就装不上时间闸 ——
+    那是全系统唯一还无界的一段。⚠️ 默认 `None` = 老行为,本次没有任何调用方传它;
+    真正把闸装上去是**下一步**,要单独出判据、单独验证。
     """
-    n_429 = n_net = 0                # 记「因为什么而耗尽」——两者的处置完全不同
-    for _ in range(tries):
-        counters["net_attempt_count"] += 1
-        try:
-            with urlopen(Request(url, headers=UA), timeout=25) as r:
-                return json.loads(r.read().decode())
-        except HTTPError as e:
-            if e.code == 429:
-                counters["rate_limit_hits"] += 1
-                n_429 += 1
-                time.sleep(3)
-                continue
-            if 400 <= e.code < 500:
-                counters["http_4xx_count"] += 1
-                return None          # 对方明确答复,不是网络断 → 不重试、不计 net_give_up
-            counters["net_server_error_count"] += 1   # 5xx:对方暂时挂了,重试有意义
-            counters["net_retry_count"] += 1
-            n_net += 1
-            time.sleep(1.5)
-        except (URLError, TimeoutError, OSError, http.client.HTTPException,
-                json.JSONDecodeError, UnicodeDecodeError):
-            # UnicodeDecodeError(ValueError 子类,非 OSError)必须显式列:代理返回半截/乱码
-            # 字节时 r.read().decode() 就抛它 —— 漏了会**整轮崩掉**,而这正是当前代理的形态。
-            counters["net_retry_count"] += 1
-            n_net += 1
-            time.sleep(1.5)
-    # 归因:纯 429 打满 ≠ 隧道坏了。混为一谈会让告警文案(「先查代理隧道」)把人指错方向。
-    if n_net == 0 and n_429 > 0:
-        counters["rate_limit_give_up_count"] += 1
-    else:
-        counters["net_give_up_count"] += 1
-    return GIVE_UP
+    data, failure = hc.request_json(
+        url, urlopen, headers=UA, counters=counters, tries=tries,
+        retry_sleep_s=POLL_RETRY_SLEEP_S, count_4xx=True, deadline=deadline)
+    if failure is None:
+        return data
+    if isinstance(failure, int):
+        return None              # 4xx:对方明确答复,不是网络断
+    return GIVE_UP               # 重试耗尽 / 被限流打满 / 预算用尽
 
 
 def poll_market(market: dict, counters: dict, wm: int | None) -> list[dict]:

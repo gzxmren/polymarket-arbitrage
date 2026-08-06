@@ -21,8 +21,13 @@
 ## 怎么用
 
 - **合并之前**:本文件必须全绿(它描述的就是今天的行为)。
-- **合并之后**:本文件**仍须全绿**,一条都不许改。
-  改了任何一条断言 = 行为变了 = 那就不是重构,必须单独说明并单独验证。
+- **合并之后**:
+  - **第一~七节(行为)必须原样全绿,一条都不许改。**
+    改了任何一条 = 行为变了 = 那就不是重构,必须单独说明并单独验证。
+  - **第八节(差异清单)必须逐条退休** —— 每条从"记录分歧"改写成"记录决定"。
+    ⚠️ 2026-08-06 补记:第一版这里写的是"全文件一条都不许改",**那句是错的** ——
+    第八节里有一条断言"轮询版没有 deadline 参数",而给它装上 deadline
+    恰恰是本次合并的目的。规则和目的自相矛盾时,错的通常是规则。
 
 ## 本判据**不**回答什么
 
@@ -216,6 +221,12 @@ def test_ds_4xx_returns_the_code_and_counts_nothing(monkeypatch, sleeps):
     assert n["net_give_up_count"] == 0
     assert n["net_retry_count"] == 0
     assert sleeps == []
+    # ⭐ 这一行是变异测试逼出来的(2026-08-06):原版只断言"没计网络失败",
+    # 于是把 `count_4xx` 从 False 翻成 True **全套判据一条都不红** ——
+    # 而那正是我在设计文档里写着"必须单独做、不许混进纯重构"的那个行为增强。
+    # 「没断言到的地方就是没在验」:差异①要真被焊住,得直接断言这个键不存在。
+    assert "http_4xx_count" not in n, \
+        "发现层历史上**不计** 4xx;开始计是行为增强,须单独论证、单独验证"
 
 
 @pytest.mark.parametrize("code", [401, 403, 404, 422])
@@ -438,40 +449,101 @@ def test_difference_1_only_one_side_counts_4xx():
     assert "http_4xx_count" not in ds.NET_COUNTER_KEYS
 
 
-def test_difference_2_retry_backoff_differs():
-    """差异②:网络失败后的退避时长不同(1.5s vs 1.2s)。
+def test_difference_2_retry_backoff_stays_explicit_and_parameterised():
+    """差异②【已处置:参数化,**故意不统一**】网络失败退避 1.5s vs 1.2s。
 
-    合并时的处置:参数化。统一成同一个值是**行为变更**,
-    会改变慢周期的耗时分布(退避时长直接进周期耗时),须单独论证。
+    两个值都没有实测支撑,只是历史上各写各的。统一它们是**行为变更**
+    (退避时长直接进周期耗时 ⇒ 改变慢周期分布),该单独论证、单独验证,
+    不能夹在"纯重构"里偷偷做。⏰ 并入 2026-08-11 阈值校准一起定。
+
+    本判据从"记录分歧"改写成"记录决定":差异仍在,但现在它是**一个显式参数**,
+    而不是藏在两份函数体里的两个字面量 —— 后者才是分叉的温床。
     """
-    assert ds.RETRY_SLEEP_S == 1.2
-    # collector 版把 1.5 写死在函数体里 —— 连常量都没有,这本身就是分叉的温床
-    import inspect
-    assert "time.sleep(1.5)" in inspect.getsource(cc._get)
+    import http_client as hc
+    assert cc.POLL_RETRY_SLEEP_S == 1.5
+    assert hc.RETRY_SLEEP_S == 1.2
+    assert ds.RETRY_SLEEP_S is hc.RETRY_SLEEP_S      # 发现层走默认值
+    # 两个值都必须是模块常量,不许再写死在函数体里
+    # (退避是否还留在适配层里,由 test_there_is_now_exactly_one_retry_loop 按语法树焊住)
 
 
-def test_difference_3_rate_limit_backoff_is_the_same():
-    """差异③(实为一致):限流退避两边都是 3 秒。
+def test_difference_3_rate_limit_backoff_now_has_a_single_definition():
+    """差异③【已处置:收成一处】限流退避两边本来就都是 3 秒,现在只定义一次。
 
-    写下来是为了合并时**不要以为它也需要参数化** ——
-    一致的地方也要被记录,否则"哪些一致、哪些不一致"仍然只存在于人的记忆里。
+    一致的地方也要被焊住 —— 否则"两处碰巧相同"随时会变成"两处悄悄不同",
+    而那正是 429 处置分叉那次的成因。
     """
-    assert ds.RATE_LIMIT_SLEEP_S == 3.0
-    import inspect
-    assert "time.sleep(3)" in inspect.getsource(cc._get)
+    import http_client as hc
+    assert hc.RATE_LIMIT_SLEEP_S == 3.0
+    assert ds.RATE_LIMIT_SLEEP_S is hc.RATE_LIMIT_SLEEP_S
 
 
-def test_difference_4_only_discovery_accepts_a_deadline():
-    """差异④:只有 discovery 版收截止时刻 —— **这就是洞 2 的成因**。
+def test_difference_4_both_sides_now_accept_a_deadline():
+    """差异④【已处置:这是本次合并要收的主账】截止时刻现在两边都收。
 
-    单市场翻页调用的是 collector 版,而它连这个参数都没有,
-    于是"给翻页装时间闸"在结构上就做不到。
-    合并时的处置:**必须让合并后的实现全程支持截止时刻**,
-    这是本次合并要收的最大一笔账(不是顺带的整理)。
+    合并前只有 discovery 版收 deadline,而单市场翻页调用的是 collector 版 ——
+    于是"给翻页装时间闸"在**结构上**就做不到,那是全系统唯一还无界的一段(洞 2)。
+
+    ⚠️ 但**参数装上 ≠ 洞补上**:本次没有任何调用方传它,
+    `poll_market` 仍然一次钟都不看。"零件合格 ≠ 装上车"(08-05 栽过一次)。
+    真正把闸装上去是下一步,由 test_registration_budget.py::
+    test_known_unbounded_segments_are_pinned 继续钉住那个洞。
     """
     import inspect
     assert "deadline" in inspect.signature(ds._get).parameters
-    assert "deadline" not in inspect.signature(cc._get).parameters
+    assert "deadline" in inspect.signature(cc._get).parameters
+    assert cc._get.__defaults__[-1] is None, "默认必须是 None = 老行为"
+    # 洞还在:调用方没传
+    assert "deadline" not in inspect.getsource(cc.poll_market)
+
+
+def _code_of(fn):
+    """取函数体的语法树,**剥掉 docstring**。
+
+    ⚠️ 为什么不用正则查源码:第一版就是那么写的,当场被 docstring 里的
+    「429/4xx 计数」这句**说明文字**判定成"又长出了限流判断"。
+    查散文得不出关于代码的结论 —— 这跟项目里"用结构性判据、别拿症状当身份"
+    (串关剔除那条)是同一条道理。
+    """
+    import ast
+    import inspect
+    import textwrap
+    fn_node = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+    body = fn_node.body
+    if (body and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)):
+        body = body[1:]
+    return [n for stmt in body for n in ast.walk(stmt)]
+
+
+def test_there_is_now_exactly_one_retry_loop():
+    """⭐【合并的核心断言】全项目只剩**一份**重试实现。
+
+    这条才是合并的目的。前面几条记录的是"差异怎么处置",这条焊死的是
+    **分歧不可能再发生** —— 两个适配层里都不许再出现重试循环、异常分支、限流判断。
+
+    上一次分叉(429 的处置改了一份、另一份没跟上)之所以能潜伏几十轮,
+    正是因为没有任何一条判据在管"到底有几份实现"。
+    """
+    import ast
+    import http_client as hc
+
+    core = _code_of(hc.request_json)
+    assert any(isinstance(n, ast.For) for n in core), "真身里的重试循环没了?"
+    assert any(isinstance(n, ast.ExceptHandler) for n in core), "真身里的异常分支没了?"
+
+    for fn in (cc._get, ds._get):
+        body = _code_of(fn)
+        who = fn.__module__
+        assert not any(isinstance(n, (ast.For, ast.While)) for n in body), \
+            f"{who} 又长出了自己的重试循环"
+        assert not any(isinstance(n, ast.ExceptHandler) for n in body), \
+            f"{who} 又长出了自己的异常分支"
+        assert not any(isinstance(n, ast.Constant) and n.value == 429 for n in body), \
+            f"{who} 又长出了自己的限流判断"
+        assert not any(isinstance(n, ast.Call) and "sleep" in ast.dump(n.func)
+                       for n in body), f"{who} 又长出了自己的退避"
 
 
 def test_difference_5_return_conventions_are_incompatible():

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import http.client
 import json
 import re
 import socket
@@ -24,9 +23,9 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
+import http_client as hc  # noqa: E402
 import registration_backlog as rb  # noqa: E402
 from storage_engine import DATA_ROOT, _atomic_write_parquet  # noqa: E402
 
@@ -59,18 +58,17 @@ def resolve_asset_index(asset: str, clob_token_ids: list[str]) -> int | None:
     return toks.index(a) if a in toks else None
 
 
-RETRY_EXHAUSTED = "retry_exhausted"
-# 2026-08-06:429 曾与 400/404 同路(不重试、不计数)。但 429 不是"对方明确答复",
-# 是"对方让你等会儿再来" —— 400 是柜台说"查无此人",429 是"现在人太多,等五分钟"。
-RATE_LIMITED = "rate_limited"     # 被 429 打满:处置是压频,不是查隧道
-DEADLINE_HIT = "deadline"         # 预算用尽,主动停手:既不是限流也不是网络故障,不许污染归因
-
-# 重试参数集中定义(不再散在函数体里):判据 test_registration_budget 要按它们算溢出上界,
-# 而从源码里正则抠 `timeout=25` 会在改成变量的那天悄悄失效。
-TRIES = 5
-TIMEOUT_S = 25
-RETRY_SLEEP_S = 1.2
-RATE_LIMIT_SLEEP_S = 3.0   # 与 collector_core 一致:限流要退得比网络抖动更久
+# 失败归因常量与重试参数:2026-08-06 起**只在 http_client 里定义一份**,这里只是别名。
+# 为什么保留别名而不是让调用方直接引 http_client:调用方的迁移是**另一个自变量**,
+# 该单独一步、单独验证(CLAUDE.md 铁律 1)。别名保证了这期间两处不可能再分叉 ——
+# 上一次分叉(429 的处置)正是"各写各的常量"埋下的。
+RETRY_EXHAUSTED = hc.RETRY_EXHAUSTED   # 重试耗尽:处置是查代理隧道
+RATE_LIMITED = hc.RATE_LIMITED         # 被 429 打满:处置是压频,不是查隧道
+DEADLINE_HIT = hc.DEADLINE_HIT         # 预算用尽主动停手:既不是限流也不是故障,不许污染归因
+TRIES = hc.TRIES
+TIMEOUT_S = hc.TIMEOUT_S
+RETRY_SLEEP_S = hc.RETRY_SLEEP_S
+RATE_LIMIT_SLEEP_S = hc.RATE_LIMIT_SLEEP_S
 
 NET_COUNTER_KEYS = ("net_attempt_count", "net_retry_count", "net_give_up_count",
                     "net_server_error_count", "firehose_truncated_count",
@@ -158,8 +156,7 @@ def _bump_by(net: dict | None, key: str, n: int) -> None:
     """按量累加。**n=0 时也要写**(而不是跳过)—— 「本轮一个都没跳过」是要被看见的信息,
     键缺失会让下游 `.get(k, 0)` 与"真的是 0"长得一模一样,那正是要消灭的那种模糊。
     """
-    if net is not None:
-        net[key] = net.get(key, 0) + n
+    hc.bump(net, key, n)
 
 
 def new_net_stats() -> dict:
@@ -174,16 +171,12 @@ def new_net_stats() -> dict:
 
 def _bump(net: dict | None, key: str) -> None:
     """计数是可选的(net=None 时静默跳过),但**一旦传了就必须计满** —— 半计数比不计更坏。"""
-    if net is not None:
-        net[key] = net.get(key, 0) + 1
+    hc.bump(net, key)
 
 
 def _sleep_within(seconds: float, deadline: float | None) -> None:
     """退避也要看钟 —— 否则"预算用尽"会被一次 sleep 拖到预算之外。"""
-    if deadline is not None:
-        seconds = min(seconds, max(0.0, deadline - time.monotonic()))
-    if seconds > 0:
-        time.sleep(seconds)
+    hc.sleep_within(seconds, deadline)
 
 
 def _get(url: str, tries: int = TRIES, net: dict | None = None,
@@ -210,49 +203,19 @@ def _get(url: str, tries: int = TRIES, net: dict | None = None,
     (只夹前者不够 —— 剩 3 秒仍用 25 秒超时,一次请求就超预算 22 秒)。
 
     判据:test_discovery_rate_limit_and_deadline.py
+
+    ## 2026-08-06:这只剩一层薄适配
+
+    重试/计数/归因/时间闸的真身搬进了 `http_client.request_json`,全项目只此一份。
+    本函数只负责把 `(data, failure)` 翻译成本模块历史上的 `{"__http__": ...}` 约定 ——
+    保留这层翻译是**有意的**:调用方的迁移是另一个自变量,该单独一步、单独验证。
     """
-    n_429 = n_net = 0        # 记「因为什么而耗尽」——限流与隧道故障的处置完全相反
-    for _ in range(tries):
-        timeout = TIMEOUT_S
-        if deadline is not None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            timeout = min(TIMEOUT_S, remaining)
-        _bump(net, "net_attempt_count")
-        try:
-            with urlopen(Request(url, headers=UA), timeout=timeout) as r:
-                return json.loads(r.read().decode())
-        except HTTPError as e:
-            if e.code == 429:
-                # 限流 = "等会儿再来",重试有意义。必须计数,否则这三条链路
-                # 到底有没有被限流过,事后永远无法回答。
-                _bump(net, "rate_limit_hits")
-                n_429 += 1
-                _sleep_within(RATE_LIMIT_SLEEP_S, deadline)
-                continue
-            if 400 <= e.code < 500:
-                return {"__http__": e.code}   # 对方明确答复,不是网络断 → 不重试、不计 net_*
-            # 5xx 是对方**暂时**挂了,重试有意义(且必须计数:代理隧道抽风时
-            # Gamma 侧 5xx 风暴正是要暴露的形态之一)。
-            _bump(net, "net_server_error_count")
-            _bump(net, "net_retry_count")
-            n_net += 1
-            _sleep_within(RETRY_SLEEP_S, deadline)
-        except (URLError, TimeoutError, OSError, http.client.HTTPException,
-                json.JSONDecodeError, UnicodeDecodeError):
-            _bump(net, "net_retry_count")
-            n_net += 1
-            _sleep_within(RETRY_SLEEP_S, deadline)
-    # 归因三选一。⚠️ 一次都没发出去时(预算在进门前就用尽)既不是限流也不是网络故障,
-    # 记进任何一个 give_up 都是往归因里掺假 —— 那正是"限流被说成隧道坏了"的同一个病。
-    if n_429 and not n_net:
-        _bump(net, "rate_limit_give_up_count")
-        return {"__http__": RATE_LIMITED}
-    if n_net:
-        _bump(net, "net_give_up_count")
-        return {"__http__": RETRY_EXHAUSTED}
-    return {"__http__": DEADLINE_HIT}
+    data, failure = hc.request_json(
+        url, urlopen, headers=UA, counters=net, tries=tries,
+        timeout_s=TIMEOUT_S, retry_sleep_s=RETRY_SLEEP_S,
+        rate_limit_sleep_s=RATE_LIMIT_SLEEP_S, deadline=deadline,
+        count_4xx=False)     # ⚠️ 本链路历史上不计 4xx;开始计是行为增强,须单独做
+    return data if failure is None else {"__http__": failure}
 
 
 # ---------- 发现层 ----------

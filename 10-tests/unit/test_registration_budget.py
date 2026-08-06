@@ -298,12 +298,14 @@ def test_known_unbounded_segments_are_pinned():
     import inspect
     import re
 
-    # discovery 侧读模块常量(源码正则会在"把字面量改成变量"的那天悄悄失效 ——
-    # 08-06 就真的这样红了一次,那正是这种读法该被淘汰的证据)。
+    # 两侧都读模块常量。⚠️ 2026-08-06 二度更正:core 侧原本用源码正则抠 `timeout=25`,
+    # 而本判据自己的注释就写着"这种读法会在把字面量改成变量的那天悄悄失效" ——
+    # 合并两份 _get 时那一天到了,它就是这么红的。**预言了却没改,等于没预言**;
+    # 现在两侧统一读常量,把这条读法彻底淘汰。
+    import http_client as hc
     worst_disc_get = ds.TRIES * ds.TIMEOUT_S + (ds.TRIES - 1) * ds.RETRY_SLEEP_S
-    tries = inspect.signature(cc._get).parameters["tries"].default
-    timeout = int(re.search(r"timeout=(\d+)", inspect.getsource(cc._get)).group(1))
-    worst_core_get = tries * timeout + (tries - 1) * 1.5
+    worst_core_get = (hc.TRIES * hc.TIMEOUT_S
+                      + (hc.TRIES - 1) * cc.POLL_RETRY_SLEEP_S)
     assert (worst_disc_get, worst_core_get) == (129.8, 131.0), (
         f"单次 _get 最坏耗时变了(discovery {worst_disc_get}s / core {worst_core_get}s)"
         " —— 调 tries/timeout 会同步放大所有无闸段的溢出量,请重算下面几条并更新本判据")
