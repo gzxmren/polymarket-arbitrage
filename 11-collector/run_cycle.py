@@ -80,13 +80,13 @@ SETTLEMENT_TIME_BUDGET_S = 80
 COMPACT_MIN_FILES = 50   # 分区文件数超此值即合并(含被回填污染的旧分区)
 
 
-def _compaction_sweep() -> list[str]:
+def _compaction_sweep(counts: dict | None = None) -> list[str]:
     """扫全部分区,合并文件数超阈值的(不只"昨天")。
 
     自限:合并后分区落到 1 个大文件,须再累积 >阈值 才会被下轮重新合并 → 天然幂等、不空转。
     修掉旧"每天只合并昨天一次"的盲区(回填写进旧日期分区 → 小文件永久累积)。
     """
-    return se.compact_due_partitions(min_files=COMPACT_MIN_FILES)
+    return se.compact_due_partitions(min_files=COMPACT_MIN_FILES, counts=counts)
 
 
 SLOW_STREAK_FILE = se.DATA_ROOT / "state" / "slow_cycle_streak.json"
@@ -116,7 +116,7 @@ def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
     print(f"结算守望: {settle}", flush=True)
 
     t = time.monotonic()
-    comp = _compaction_sweep()
+    comp = _compaction_sweep(counts)
     t_compact = time.monotonic() - t
     if comp:
         print(f"compaction: 合并 {len(comp)} 个分区 {comp}", flush=True)

@@ -92,13 +92,40 @@ cd dashboard && make test                             # backend pytest (dashboar
 
 ### Automatic subagent review — required after Python edits
 
-After editing ANY `.py` file in `06-tools/` or `dashboard/backend/`, immediately invoke the `python-reviewer` subagent before marking the task complete:
+After editing ANY `.py` file in `06-tools/`、`dashboard/backend/` 或 **`11-collector/`**,
+immediately invoke the `python-reviewer` subagent before marking the task complete:
 
 ```
 use subagent: python-reviewer
 ```
 
 For files whose names include any of: `monitor`, `notif`, `telegram`, `sync`, `fetch`, `http`, `request`, `socket`, `api`, `clob`, `polymarket` — this is **mandatory**, not optional. The PostToolUse hook will surface a reminder automatically.
+
+> **`11-collector/` 于 2026-08-06 加入(用户明令)。** 理由:它是 07-22 起从零写的目录,
+> 出坑最多,而原范围**恰好没覆盖它** —— 自己写的代码自己 review,今天已被证明无效
+> (同一个游标 bug 上午修了一处、下午在新代码里又写了一遍)。
+
+### 🔴 动手前先自查这两个形状(2026-08-06 设计梳理归纳,不是泛泛提醒)
+
+这两条是从十几个实际坑里归纳出来的**同一形状的反复发作**,不是"要细心"这类空话。
+`11-collector/` 的 PostToolUse 钩子会在每次编辑时把它们摆到眼前。
+
+1. **「记录事实 vs 使用事实,只接了一头」**(犯过 4 次)——
+   新增/修改的量,记下来之后**有人读它吗**?
+   实例:水位线前进却没记截断;计数器算了没进心跳;时间闸参数定义了调用方没传;
+   截断留了痕而下游没有任何消费者。
+2. **「照抄结构而不抽象」**(犯过 3 次)——
+   这段逻辑在别处是不是已经有一份?抄的话,上一份的教训跟过来了吗?
+   实例:游标轮转抄 3 遍、时间闸抄 5 遍、连零守护抄 4 遍。
+
+### 🔴 每一步动手前先写三问(2026-08-06 用户明令,进提交信息)
+
+1. 这一步**服务哪条需求**?(指不到 `docs/DESIGN_COLLECTOR_INVARIANTS.md` 里某条不变量的,就别做)
+2. **不做会怎样**?—— 答不出实质后果的,**不做**。
+3. 做完**怎么验证**它确实服务了那条需求?
+
+实例:2026-08-06 的"巨盘优先名额"就是靠第 2 问被取消的 ——
+证据显示那个坑不存在,而我差点为它建一整套机制。
 
 ### Exception handling checklist (every network/IO/subprocess edit)
 

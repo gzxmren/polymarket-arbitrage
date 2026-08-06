@@ -21,6 +21,8 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+import http_client as hc
+
 DATA_ROOT = Path(os.environ.get("REBIRTH_DATA", Path(__file__).resolve().parent / "data"))
 RAW_DIR = DATA_ROOT / "raw"          # trades:  raw/dt=YYYY-MM-DD/<uuid>.parquet
 AUDIT_DIR = DATA_ROOT / "audit"      # 审计心跳: audit/dt=YYYY-MM-DD/<uuid>.parquet
@@ -143,11 +145,17 @@ def has_swept_data() -> bool:
     return any(SWEPT_DIR.glob("*.parquet"))
 
 
-def compact_day(day: str, keep_originals: bool = False) -> Path | None:
+def compact_day(day: str, keep_originals: bool = False,
+                counts: dict | None = None) -> Path | None:
     """把某日分区的小文件合并成一个大文件(不可变重写 + 审计),提升查询速度。
 
     合并 = 读全部小 Parquet → 去重(自然元组,保留最早 ingested_at)→ 写单个新文件 → 删小文件。
     keep_originals=True 时把小文件移到 _archive/ 而非删除(更保守)。
+
+    ⚠️ 2026-08-06 补上 `counts`:去重是**真的在丢行**(重复轮询抓回同一批成交),
+    而此前**一声不吭** —— 违反项目自己那条"任何降级/剔除/回退必须出声计数"。
+    `dedup_collapse_count` 这个字段其实 07-22 就声明了,只是从没有人接上去,
+    于是心跳里恒为 0,而**恒为 0 与"健康的 0"无法区分**(判据 test_no_dead_counters)。
     """
     part = RAW_DIR / f"dt={day}"
     files = sorted(f for f in part.glob("*.parquet"))
@@ -166,6 +174,7 @@ def compact_day(day: str, keep_originals: bool = False) -> Path | None:
             seen.add(k)
             keep_rows.append(i)
     deduped = table.take(pa.array(keep_rows))
+    hc.bump(counts, "dedup_collapse_count", table.num_rows - len(keep_rows))
     merged = part / f"compacted-{uuid.uuid4().hex}.parquet"
     _atomic_write_parquet(deduped, merged)
     archive = part / "_archive"
@@ -178,7 +187,8 @@ def compact_day(day: str, keep_originals: bool = False) -> Path | None:
     return merged
 
 
-def compact_due_partitions(min_files: int = 50, keep_originals: bool = False) -> list[str]:
+def compact_due_partitions(min_files: int = 50, keep_originals: bool = False,
+                           counts: dict | None = None) -> list[str]:
     """扫全部 dt= 分区,把文件数 > min_files 的都合并(不只"昨天")。
 
     盲区修复:分区按成交事件日期分,巨盘历史回填会把成交写进旧日期分区;旧逻辑每天只合并
@@ -192,7 +202,8 @@ def compact_due_partitions(min_files: int = 50, keep_originals: bool = False) ->
         if not part.is_dir():
             continue
         if len(list(part.glob("*.parquet"))) > min_files:
-            compact_day(part.name[len("dt="):], keep_originals=keep_originals)
+            compact_day(part.name[len("dt="):], keep_originals=keep_originals,
+                        counts=counts)
             compacted.append(part.name[len("dt="):])
     return compacted
 
