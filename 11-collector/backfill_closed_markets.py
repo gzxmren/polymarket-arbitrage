@@ -191,6 +191,9 @@ def backfill_once(targets: list[dict], cursor: str, max_markets: int,
             write(rows)              # 空 rows 不写:空文件会污染分区、拖垮 compaction
         else:
             counts["empty"] += 1     # 零返回要出声:系统性查不到否则完全隐形
+    # 本清扫扫的正是"已关闭且一笔没采过"的盘 —— **撞 offset 硬顶概率最高的那一类**。
+    # 不冲痕迹 = 历史空洞只记一半,而漏掉的恰是最容易出洞的那一半。
+    cc.flush_truncations(_fetch.counters)
     counts["cursor"] = new_cursor
     return counts
 

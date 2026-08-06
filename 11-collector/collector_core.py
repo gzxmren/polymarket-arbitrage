@@ -51,6 +51,8 @@ OFFSET_WARN = 8000       # 逼近上限的告警线(留余量,提示需压频)
 COUNTER_KEYS = (
     "total_markets_polled", "http_4xx_count", "rate_limit_hits",
     "offset_overflow_count", "dedup_collapse_count", "parse_reject_count",
+    # offset 截断拆成可修/不可修两半(2026-08-06):合成一个数就分辨不出该不该管
+    "offset_overflow_cold_count", "offset_overflow_warm_count",
     "poll_truncated_count",          # 网络断掉导致分页提前结束(≠ 翻到底)
     "rate_limit_give_up_count",      # 被 429 打满而放弃(与"隧道坏了"分开,处置不同)
     "poll_budget_skipped_count",     # 本轮**没轮到**轮询的市场数(硬名额 + 时间闸,两者都算)
@@ -198,9 +200,29 @@ def poll_market(market: dict, counters: dict, wm: int | None) -> list[dict]:
         offset += PAGE
         if offset >= OFFSET_WARN and (wm is None or (new_rows and new_rows[-1]["timestamp"] > wm)):
             # 逼近 offset 上限仍未追到 watermark → 更早历史够不着(诚实截断)。
-            # ★保留已抓的近端成交(有效数据,不丢),计数供守护层压频/告警,只停止再往回翻。
+            # ★保留已抓的近端成交(有效数据,不丢):不写反而更坏 —— 市场停在"从没采过",
+            #   下轮再翻一遍再撞顶,永远拿不到数据还每轮白烧 20 页(判据焊死了这一点)。
+            #
+            # ⭐两种截断处置完全不同,必须分开数(判据 test_history_truncation.py):
+            #   cold = 首次全量回填就超过 10,000 笔 → **接口硬约束,修不掉**
+            #   warm = 有水位线却没追上,即两轮之间攒爆了 → **可修**,它等价于
+            #          「轮转一圈太久」,是 test_poll_rotation.py 那条红线被踩穿的现场证据
+            mode = "cold" if wm is None else "warm"
             counters["offset_overflow_count"] += 1
-            print(f"    ⚠️ offset 截断: {cid[:14]}.. 保留近端 {len(new_rows)} 笔,更早历史待压频回填",
+            counters[f"offset_overflow_{mode}_count"] += 1
+            # 留痕。数据丢失修不掉(接口硬顶),但**它此前是静默的**:实测 377 个受影响市场
+            # 序列开头空白 p50 199 天(对照组 1 天),而它们长得和"刚开盘的新市场"一模一样。
+            counters.setdefault("truncations", []).append({
+                "condition_id": cid, "detected_at": now, "mode": mode,
+                "offset_reached": offset, "kept_rows": len(new_rows),
+                "oldest_kept_ts": new_rows[-1]["timestamp"] if new_rows else None,
+                "watermark_before": wm,
+            })
+            # ⚠️ 这句原本写的是"更早历史待压频回填" —— **那个回填不存在,也不可能存在**
+            # (offset 顶 10000 是硬约束,不是频率问题)。假承诺比没说明更坏:
+            # 它让读的人以为有人在管,于是没人去管。
+            print(f"    ⚠️ offset 截断[{mode}]: {cid[:14]}.. 保留近端 {len(new_rows)} 笔;"
+                  f"更早历史**永久取不回**(接口 offset 顶 {OFFSET_CAP}),已留痕",
                   flush=True)
             break
     counters["total_markets_polled"] += 1
@@ -279,6 +301,19 @@ def count_never_polled(markets: list[dict], wms: dict, counters: dict) -> None:
         1 for m in markets if m["condition_id"] not in wms)
 
 
+def flush_truncations(counters: dict) -> None:
+    """把本批攒下的截断痕迹冲进数据湖,并清空缓冲(可重复调用,天然幂等)。
+
+    ⚠️ `poll_market` 有**两个**调用方:本模块的 `poll_markets` 和回填清扫。
+    只在一处冲盘 = 痕迹只记一半,而漏掉的恰是回填清扫扫的那批(已关闭且没采过,
+    撞顶概率最高)—— 又一次"丢得与结果相关"。故抽成函数,两处都调。
+    """
+    recs = counters.get("truncations")
+    if recs:
+        se.write_truncations(recs)
+        counters["truncations"] = []
+
+
 def poll_markets(markets: list[dict], counters: dict, wms: dict,
                  time_budget_s: float | None = None) -> int:
     """逐市场增量轮询落库。返回**实际轮询到的市场数**。
@@ -303,6 +338,8 @@ def poll_markets(markets: list[dict], counters: dict, wms: dict,
             se.write_trades(rows)
             total_written += len(rows)
         time.sleep(0.1)  # 礼貌节流(全局无 429,仍留余量)
+    # 截断痕迹冲盘。留在内存里等于没留 —— 每轮是独立进程,退出即失忆。
+    flush_truncations(counters)
     counters["new_trades"] = total_written
     timegate_skipped = len(markets) - polled
     counters["poll_timegate_skipped_count"] = timegate_skipped
@@ -380,7 +417,11 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
         print(note, flush=True)
     print(f"本轮: 市场 {counters['total_markets_polled']} | 新成交 {counters['new_trades']} | "
           f"4xx {counters['http_4xx_count']} | 限流 {counters['rate_limit_hits']} | "
-          f"offset溢出 {counters['offset_overflow_count']} | 解析拒绝 {counters['parse_reject_count']} | "
+          # 拆开报:冷=接口硬约束(没得治),增量=轮转一圈太久(可治)。
+          # 只报总数的话,"该不该动手"这个问题日志答不出来。
+          f"offset溢出 {counters['offset_overflow_count']}"
+          f"(冷{counters['offset_overflow_cold_count']}/增量{counters['offset_overflow_warm_count']}) | "
+          f"解析拒绝 {counters['parse_reject_count']} | "
           f"网络重试 {counters['net_retry_count']}/{counters['net_attempt_count']} | "
           f"重试耗尽 {counters['net_give_up_count']} | 分页截断 {counters['poll_truncated_count']} | "
           f"没轮到 注册{counters['register_budget_skipped_count']}"

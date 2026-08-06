@@ -35,10 +35,17 @@ SETTLEMENT_FAIL_MIN = 20
 # 故连续 18 轮(3 小时)一个都没有是强异常。⚠️ 修复后仅 6 轮观测且全是清存量轮次,
 # 尚无稳态分布 → 此值为保守初值,zero_streak 已逐轮入日志,攒够一周应回来校准。
 TRUTH_SUPPLY_ZERO_CYCLES = 18
-# offset 截断是巨盘历史回填触上限的**稳态自愈事件**(近端已保留 + 下轮压频回填)。
-# 实测心跳分布(首日 82 条):中位 1 / p90 3 / 最大 8。原逻辑 ov>0 就推 = 每轮洪水告警。
-# 降级:截断只进汇总日志(collector_core 每轮打印 + 心跳 parquet 留痕),**只有尖峰
-# (≥阈值,远超稳态峰值 8)才当"轮询系统性追不上"的真异常推 Telegram**。(2026-07-23 用户明令)
+# 🔴 2026-08-06 更正:这里原本写着 offset 截断是「稳态**自愈**事件(近端已保留 +
+# 下轮压频回填)」—— **前半句是假的,后半句承诺的东西不存在**。
+# 实测:撞顶的 377 个市场,序列开头空白 p50 199 天 / p90 327 天(对照组 1 天 / 6 天)。
+# 水位线是 max(timestamp),近端一写进去就跳到最新,下轮再也不往回翻 ⇒ **永久空洞**;
+# 而"压频"回不了 —— offset 顶 10000 是接口硬约束,不是频率问题。
+# 在一个错的框架里调阈值,正是 CLAUDE.md 第 4 条要防的("先问这个量本身该不该被监控")。
+#
+# 拆开之后两半的处置完全不同:
+#   cold(首次全量就超顶)= 接口硬约束,推它只是噪音 → 不告警,只留痕
+#   warm(两轮之间攒爆)  = ⭐可修,等价于轮转一圈太久 → **发生即红线被踩穿,必推**
+# 总数阈值保留给"尖峰"这层旧语义(轮询系统性追不上),不删,免得回归掉旧行为。
 OFFSET_OVERFLOW_ALERT_THRESHOLD = 20
 
 # ---------- 慢周期守护(2026-08-04)----------
@@ -104,6 +111,16 @@ def _send(msg: str) -> bool:
 
 def maybe_alert(counts: dict) -> bool:
     """按阈值决定是否告警。返回是否真的推送了。"""
+    body = build_alert(counts)
+    return _send(body) if body else False
+
+
+def build_alert(counts: dict) -> str | None:
+    """拼出告警正文;无触发返回 None。
+
+    与 `maybe_alert` 分开是为了**判据能验内容而不只验"推没推"**:
+    "推了一条"通不过"推的是不是那件事"这一问。
+    """
     triggers = []
     ov = counts.get("offset_overflow_count", 0)
     if counts.get("firehose_fail", 0) > 0:
@@ -112,7 +129,18 @@ def maybe_alert(counts: dict) -> bool:
     # 稳态截断(ov 低于阈值)不推:自愈事件,靠汇总日志 + 心跳留痕即可。
     # 只有尖峰(≥阈值)才异常——意味轮询系统性追不上,值得人工看一眼。
     if ov >= OFFSET_OVERFLOW_ALERT_THRESHOLD:
-        triggers.append(f"⚠️ offset 截断尖峰 {ov} 个市场(远超稳态,轮询恐系统性追不上,须查压频/间隔)")
+        triggers.append(f"⚠️ offset 截断尖峰 {ov} 个市场(远超稳态,轮询恐系统性追不上,须查间隔/名额)")
+    # ⭐增量截断:有水位线却没追上 = 两轮之间攒了 >10,000 笔 = **轮转一圈太久**,
+    # 即 test_poll_rotation.py 那条红线(一圈须短于 OFFSET_CAP / p99.9 成交率 ≈ 11.6h)
+    # 被踩穿的现场证据。后果是序列中间出一个**永久**空洞(实测同类空白 p50 199 天)。
+    # 阈值不需要实测分布:红线已经写死"不该发生",发生一次就是踩穿。
+    # 防洪的另一头由判据焊住:cold(接口硬约束)再多也不推,稳态因此完全静默。
+    ow = counts.get("offset_overflow_warm_count", 0)
+    if ow > 0:
+        triggers.append(
+            f"🔴 增量 offset 截断 {ow} 个市场:两轮之间攒爆 10,000 笔 = **轮转一圈太久**"
+            f"(红线 ≈11.6 小时)。这些市场的序列**中间**已出现永久空洞,补不回来 —— "
+            f"须缩短一圈(加名额/加轮转片),不是调告警")
     # 注册链路断供(静默失败)。register_fail 个数本身不再告警 —— 单次失败会自愈,
     # 数个数是错的形状;失败仍逐轮进日志/心跳留痕,只是不再打扰人。
     rzs = counts.get("register_zero_streak", 0)
@@ -145,11 +173,11 @@ def maybe_alert(counts: dict) -> bool:
             f"/{counts.get('firehose_truncated_count', 0)}\n"
             + _slow_cycle_hint(counts))
     if not triggers:
-        return False
+        return None
     body = "🔴 <b>Polymarket 采集器守护告警</b>\n" + "\n".join(triggers)
     body += (f"\n\n本轮: 市场 {counts.get('total_markets_polled', 0)} / "
              f"新成交 {counts.get('new_trades', 0)} / 新结算 {counts.get('newly_resolved', 0)}")
-    return _send(body)
+    return body
 
 
 if __name__ == "__main__":

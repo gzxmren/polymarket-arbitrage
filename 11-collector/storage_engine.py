@@ -66,6 +66,40 @@ def write_trades(rows: list[dict], day: str | None = None) -> Path | None:
     return dest
 
 
+# ---------- 历史空洞留痕(2026-08-06)----------
+#
+# 接口 `offset > 10000` 一律 400 ⇒ 单市场只够回溯最近 ~11,000 笔。撞顶时近端已保留、
+# 水位线随之跳到最新一笔,**下一轮再也不会往回翻** —— 更早的历史永久取不回。
+# 这一条是接口硬约束,修不掉;能修的是**它此前完全静默**:
+# 一个开头缺 199 天的序列,长得和"刚开盘的新市场"一模一样。
+# 实测:377 个市场受影响,序列开头空白 p50 199 天 / p90 327 天(对照组 1 天 / 6 天)。
+# 判据:10-tests/unit/test_history_truncation.py
+TRUNCATIONS_DIR = DATA_ROOT / "truncations"
+TRUNCATION_SCHEMA = pa.schema([
+    ("condition_id", pa.string()),
+    ("detected_at", pa.int64()),
+    ("mode", pa.string()),            # cold=首次全量就超顶(接口硬约束) / warm=两轮之间攒爆(可修)
+    ("offset_reached", pa.int64()),
+    ("kept_rows", pa.int64()),
+    ("oldest_kept_ts", pa.int64()),   # 空洞的**新端**:我们保留到的最旧一笔
+    ("watermark_before", pa.int64()),  # 空洞的**旧端**(warm 才有;cold 为 null=一直缺到开盘)
+])
+
+
+def write_truncations(rows: list[dict]) -> Path | None:
+    """追加一批截断痕迹(append-only)。空列表返回 None,绝不落空文件。
+
+    单独一个目录而不是塞进 trades:它是**关于数据的数据**,
+    混进 trades 会污染 watermark(`max(timestamp)`)和所有成交口径的统计。
+    """
+    if not rows:
+        return None
+    table = pa.Table.from_pylist(rows, schema=TRUNCATION_SCHEMA)
+    dest = TRUNCATIONS_DIR / f"{uuid.uuid4().hex}.parquet"
+    _atomic_write_parquet(table, dest)
+    return dest
+
+
 def compact_day(day: str, keep_originals: bool = False) -> Path | None:
     """把某日分区的小文件合并成一个大文件(不可变重写 + 审计),提升查询速度。
 
@@ -227,6 +261,10 @@ AUDIT_FIELDS = (
     # 稳态应恒 0;持续非零 = 结算吞吐在悄悄掉,而 settlement_checked 自己看不出来
     # (它现在报的是"实际查过"而非"打算查",两者一起才知道被砍了多少)。
     "settlement_timegate_skipped_count",
+    # --- 2026-08-06 新增:offset 截断拆成可修/不可修两半 ---
+    # 合成一个数 = 把可修的那一半藏在不可修的那一半后面(处置完全不同,不该共用一个数字)
+    "offset_overflow_cold_count",   # 首次全量就超 10,000 笔:接口硬约束,修不掉
+    "offset_overflow_warm_count",   # 两轮之间攒爆:⭐可修,= 轮转一圈太久(红线被踩穿)
     # 🔴 加上一行时撞出来的旧洞:下面三个 run_cycle 一直在算,却因为没列进本元组
     # 而被 `counts.get(k, 0)` **一声不吭地丢掉** —— 日志里看得见,心跳里查不到,
     # 而校准阈值只能用心跳。判据:test_settlement_time_gate.py::
