@@ -200,7 +200,8 @@ def test_every_network_stage_has_a_time_gate():
      「如果它现在就是坏的,我看到的会有什么不同?」—— 轮询涨到 600s 时这条测试照样绿。)
     """
     import run_cycle as rc
-    for name in ("FIREHOSE_TIME_BUDGET_S", "REGISTER_TIME_BUDGET_S", "POLL_TIME_BUDGET_S"):
+    for name in ("FIREHOSE_TIME_BUDGET_S", "REGISTER_TIME_BUDGET_S", "POLL_TIME_BUDGET_S",
+                 "SETTLEMENT_TIME_BUDGET_S"):   # 结算段 2026-08-06 补上,此前是唯一无闸的一段
         assert getattr(rc, name, None), f"{name} 缺失 → 该段无界 → 周期不是有界的"
 
 
@@ -229,7 +230,12 @@ def test_declared_budgets_sum_under_the_alert_line():
     直接 import 被检验对象自己的红线(而非复制粘贴数字),改了那边这里会跟着红。
 
     实测固定开销(2026-08-04 晚,新配置真机两轮:499s / 453s):
-      结算守望 61s(未设闸,受 checked=800 固定配额约束)+ compaction 2s + 注册表读取 3s
+      compaction 2s + 注册表读取 3s
+    ⚠️ 2026-08-06 起结算守望**不再算作固定开销** —— 它有了自己的闸(80s)。
+    此前那个 61s 是拿一次实测顶替一段无界耗时,而该段实测 max 是 441s:
+    「用 p90 冒充上界」正是 CLAUDE.md 第 1 条要防的东西(闸值推导见
+    test_settlement_time_gate.py)。换成闸值之后这个和从 506s 涨到 525s,
+    **不是配置变差了,是原来的数字本来就偏乐观**。
 
     ⚠️ **这条不证明周期有界** —— 它证明的是"闸的参数配得不至于稳态就天天告警"。
     真正的最坏情况见 `test_known_unbounded_segments_are_pinned`:时间闸只在**工作单元
@@ -240,9 +246,10 @@ def test_declared_budgets_sum_under_the_alert_line():
     import alerts
     import run_cycle as rc
 
-    MEASURED_FIXED_S = 61 + 2 + 3
+    MEASURED_FIXED_S = 2 + 3
     declared_s = (rc.FIREHOSE_TIME_BUDGET_S + rc.REGISTER_TIME_BUDGET_S
-                  + rc.POLL_TIME_BUDGET_S + MEASURED_FIXED_S)
+                  + rc.POLL_TIME_BUDGET_S + rc.SETTLEMENT_TIME_BUDGET_S
+                  + MEASURED_FIXED_S)
     assert declared_s < alerts.slow_cycle_threshold_s(), (
         f"闸声明值之和 {declared_s}s 已越过慢周期告警线 "
         f"{alerts.slow_cycle_threshold_s():.0f}s → 稳态就会天天告警(防洪失效)")
@@ -266,14 +273,15 @@ def test_known_unbounded_segments_are_pinned():
     故 **firehose 段与注册段现在是真有界的**,端到端判据见
     `test_discovery_rate_limit_and_deadline.py::test_*_bounded_under_a_retry_storm`。
 
-    **仍然无界的两处**(本判据钉的就是它们):
+    **结算段也已补上(2026-08-06 当天晚些时候)**:`SETTLEMENT_TIME_BUDGET_S=80`,
+    且 deadline 穿透到 `_batch_lookup_gamma → _get`。判据 test_settlement_time_gate.py。
+    (上一版这里写着"结算段仍然无界,且 429 重试让它更坏了" —— 那句话是当时的实情,
+     写下来的作用就是让它别烂在无人知晓处;现在它被修掉了,这条判据跟着改。)
+
+    **仍然无界的一处**(本判据钉的就是它):
 
     1. `collector_core.poll_market` 的 `while offset <= OFFSET_CAP` 分页循环
        **一次钟都不看** → 单市场最坏 20 × 131s ≈ 44 分钟
-    2. **结算段**:`settlement_watcher` 共用 `discovery_service._get` 却**不传 deadline**,
-       且整段没有任何时间闸(它靠 `checked=800` 的配额约束,不是时间)。
-       ⚠️ 08-06 给 429 加重试后,这一段的最坏耗时**变大了**(限流从"立即返回"变成"重试 5 次")
-       —— 改动的副作用必须写下来,而不是留在无人知晓处。
 
     所以「周期结构性有界」这句话**仍然是假的**,真正的兜底还是 systemd 的
     `TimeoutStartSec=900` 硬杀。这条判据不假装那个洞不存在,而是把它量出来钉住。
@@ -303,17 +311,16 @@ def test_known_unbounded_segments_are_pinned():
     # --- 已经有界的两段:焊住"deadline 真的被传下去了" ---
     # 光有 `_get(deadline=...)` 这个参数不算数,得调用方真的传。
     # 这是"零件合格 ≠ 装上车"的同一条教训(08-05 栽过一次)。
-    for fn in (ds.sample_firehose, ds.register_new_markets, ds._lookup_gamma):
+    import settlement_watcher as sw
+    for fn in (ds.sample_firehose, ds.register_new_markets, ds._lookup_gamma,
+               sw._batch_lookup_gamma, sw.watch_settlements):
         assert "deadline" in inspect.getsource(fn), \
             f"{fn.__name__} 没把 deadline 传进 _get → 该段又变回无界"
 
-    # --- 仍然无界的两段:钉住"它们仍然无界"这个事实本身 ---
-    # 哪天有人把这里也修了,这两条会红 → 那是好事,提醒把它们升级成真有界断言。
+    # --- 仍然无界的那一段:钉住"它仍然无界"这个事实本身 ---
+    # 哪天有人把这里也修了,这条会红 → 那是好事,提醒把它升级成真有界断言。
     assert "monotonic" not in inspect.getsource(cc.poll_market), (
         "poll_market 里出现了时钟检查 → 分页循环可能已有界,请改写本判据")
-    import settlement_watcher as sw
-    assert "deadline" not in inspect.getsource(sw._batch_lookup_gamma), (
-        "结算段开始传 deadline 了 → 请把它也升级成真有界断言并更新本判据叙述")
 
     # 真正的兜底只有 systemd 硬杀,不是这些闸。这条焊死三者的一致性。
     assert alerts.CYCLE_BUDGET_S >= alerts.slow_cycle_threshold_s(), "告警线反而高过硬杀线"

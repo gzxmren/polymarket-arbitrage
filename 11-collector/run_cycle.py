@@ -68,6 +68,13 @@ DEFAULT_POLL_LIMIT = 50   # 每轮最多轮询 N 个市场(冷启动全回填 ~1
 FIREHOSE_TIME_BUDGET_S = 90    # 必须够翻满 11 页到接口硬顶,否则第 3 条的覆盖率白改
 REGISTER_TIME_BUDGET_S = 180   # 实测 ~2.35s/个 → ~76 个/轮
 POLL_TIME_BUDGET_S = 170       # 实测 ~5.6s/个(含新注册市场的冷启动全回填)
+# ⭐第四道闸(2026-08-06 补)。此前结算段是唯一无闸的一段 —— 它靠 `checked=800` 这个
+# **个数**配额约束,而个数挡不住延迟退化:同样 800 个,往返 1.1s→10s 就从 18s 变成 160s。
+# 实测 160 轮心跳:p50 25s / p90 57s / p99 389s / max 441s(p50 与 max 差 17.6 倍),
+# 441s 那轮把整轮推到 438s,离告警线只剩 ~100s,而那 100s 不由我们决定。
+# 取值被两条红线夹出来:> 实测 p90(57s,否则稳态天天被砍)且 < 95s(否则四闸之和越过
+# 540s 告警线)。推导与判据见 10-tests/unit/test_settlement_time_gate.py。
+SETTLEMENT_TIME_BUDGET_S = 80
 
 
 COMPACT_MIN_FILES = 50   # 分区文件数超此值即合并(含被回填污染的旧分区)
@@ -103,7 +110,8 @@ def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
 
     t = time.monotonic()
     # 结算守望的网络失败也计进同一份 net_*(同一条代理隧道,见 discovery_service.new_net_stats)
-    settle = settlement_watcher.watch_settlements(net=counts)
+    settle = settlement_watcher.watch_settlements(
+        net=counts, time_budget_s=SETTLEMENT_TIME_BUDGET_S)
     t_settle = time.monotonic() - t
     print(f"结算守望: {settle}", flush=True)
 
@@ -123,6 +131,8 @@ def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
         "newly_resolved": settle["newly_resolved"],
         "settlement_lookup_fail": settle["lookup_fail"],
         "settlement_checked": settle["checked"],  # 失败按比率判定,须带上分母
+        # 被时间闸砍掉几个。稳态应恒 0;持续非零 = 结算吞吐在悄悄掉,而 checked 本身看不出来
+        "settlement_timegate_skipped_count": settle["timegate_skipped"],
         "truth_supply_zero_streak": settle["zero_streak"],  # 真值断供守护(静默失败)
         "cycle_seconds": dur,
         # run_once 内部再拆成发现/轮询两段(它自己填 discovery_seconds),这里减出纯轮询耗时

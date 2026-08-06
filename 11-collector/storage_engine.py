@@ -223,6 +223,17 @@ AUDIT_FIELDS = (
     # --- 2026-08-06 新增:轮询层饿死。实测注册表 67,156 个市场里只有 30,430 个采到过成交 ---
     "poll_never_polled_count",       # 本轮可轮询里"从没采过"的个数 = 衡量饿死是否在好转
     "poll_timegate_skipped_count",   # 没轮到里**被时间闸**砍掉的(与"名额不够"处置不同)
+    # --- 2026-08-06 新增:结算段第四道时间闸(此前是唯一无闸的一段)---
+    # 稳态应恒 0;持续非零 = 结算吞吐在悄悄掉,而 settlement_checked 自己看不出来
+    # (它现在报的是"实际查过"而非"打算查",两者一起才知道被砍了多少)。
+    "settlement_timegate_skipped_count",
+    # 🔴 加上一行时撞出来的旧洞:下面三个 run_cycle 一直在算,却因为没列进本元组
+    # 而被 `counts.get(k, 0)` **一声不吭地丢掉** —— 日志里看得见,心跳里查不到,
+    # 而校准阈值只能用心跳。判据:test_settlement_time_gate.py::
+    # test_every_field_run_cycle_computes_reaches_the_heartbeat(两个方向都焊)。
+    "newly_resolved",          # ⭐正是 08-03 静默 11 天的那个量;修完之后它竟一直没进心跳
+    "settlement_lookup_fail",  # 分子
+    "settlement_checked",      # 分母 —— run_cycle 那行注释写着"须带上分母",而它就是被丢的那个
 )
 
 

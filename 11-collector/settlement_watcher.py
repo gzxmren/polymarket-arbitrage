@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import datetime as dt
+import time
 import uuid
 
 import cycle_state
@@ -120,18 +121,22 @@ def _save_streak(n: int) -> None:
 
 # ---------- 批量查询(必须两遍) ----------
 
-def _batch_lookup_gamma(cids: list[str], net: dict | None = None) -> dict[str, dict]:
+def _batch_lookup_gamma(cids: list[str], net: dict | None = None,
+                        deadline: float | None = None) -> dict[str, dict]:
     """批量查 Gamma,返回 {condition_id: market}。查不到的**不出现在返回里**(调用方计数)。
 
     🔴 必须两遍:`condition_ids=` 默认只返回未关闭市场,已结算的只有加 &closed=true 才拿得到。
     只查一遍 = 静默丢掉全部已结算样本 = 与结果相关的丢样本(实测 100 丢 28,全是已结算)。
+
+    `deadline` 是**绝对时刻**,原样交给 `_get`(它在重试之间和 socket 超时上都看钟)。
+    批次之间看钟挡不住单次重试风暴 —— 一次 `_get` 最坏 ~130s,比整段的闸(80s)还大。
     """
     out: dict[str, dict] = {}
     if not cids:
         return out
     q = "&".join(f"condition_ids={c}" for c in cids)
     for suf in ("", "&closed=true"):
-        d = _get(f"{GAMMA}?{q}{suf}&limit=500", net=net)
+        d = _get(f"{GAMMA}?{q}{suf}&limit=500", net=net, deadline=deadline)
         if not isinstance(d, list):
             continue  # 该遍失败(_get 返回 {"__http__": ...});缺的市场由调用方计入 lookup_fail
         for m in d:
@@ -142,20 +147,37 @@ def _batch_lookup_gamma(cids: list[str], net: dict | None = None) -> dict[str, d
 
 
 def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK,
-                      net: dict | None = None) -> dict:
+                      net: dict | None = None,
+                      time_budget_s: float | None = None) -> dict:
     """扫注册表里 resolved_outcome 仍为空、且 end_date 已过的市场,重查 Gamma;
-    新拿到干净 0/1 的,append 新注册表行。返回计数(不静默:失败计数)。"""
+    新拿到干净 0/1 的,append 新注册表行。返回计数(不静默:失败计数)。
+
+    `time_budget_s` 是本段的时间闸(默认 None = 关闭,老行为)。
+    个数配额(`max_check`)挡不住延迟退化:同样 800 个,往返从 1.1s 涨到 10s
+    就从 18s 变成 160s。实测该段 p50=25s 而 max=441s,差 17.6 倍 —— 那一轮把
+    整轮推到 438s,离慢周期告警线只剩 ~100s。闸值推导见 test_settlement_time_gate.py。
+
+    ⭐超预算时**游标只走过真的查过的那些市场**。照旧写 `picked[-1]` 的话,
+    被砍的尾巴每圈都被跳过,而跳掉的恰是"延迟退化时排在后面"的那批 —— 丢得与结果相关。
+    """
     reg = load_registry()
     pending = [r for r in reg.values()
                if r["resolved_outcome"] is None and _end_passed(r["end_date"])]
     pending.sort(key=_sort_key)
-    picked, new_cursor = select_batch(pending, _load_cursor(), max_check or DEFAULT_MAX_CHECK)
+    cursor = _load_cursor()
+    picked, _ = select_batch(pending, cursor, max_check or DEFAULT_MAX_CHECK)
 
+    t0 = time.monotonic()
+    deadline = None if time_budget_s is None else t0 + time_budget_s
     now = int(dt.datetime.now(dt.UTC).timestamp())
-    rows, fail = [], 0
+    rows, fail, checked, last_checked = [], 0, 0, None
     for i in range(0, len(picked), SETTLEMENT_BATCH):
+        # 钟看在**发起这一批之前**:查完再看必然超出一整批的耗时。
+        if deadline is not None and time.monotonic() >= deadline:
+            break
         chunk = picked[i:i + SETTLEMENT_BATCH]
-        found = _batch_lookup_gamma([r["condition_id"] for r in chunk], net=net)
+        found = _batch_lookup_gamma([r["condition_id"] for r in chunk],
+                                    net=net, deadline=deadline)
         for r in chunk:
             m = found.get(r["condition_id"])
             if not m:
@@ -165,14 +187,21 @@ def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK,
             if parsed and parsed["resolved_outcome"] is not None:
                 parsed["snapshot_at"] = now
                 rows.append(parsed)
+        checked += len(chunk)
+        last_checked = chunk[-1]
     if rows:
         dest = REGISTRY_DIR / f"settle-{uuid.uuid4().hex}.parquet"
         _atomic_write_parquet(pa.Table.from_pylist(rows, schema=MARKETS_SCHEMA), dest)
-    _save_cursor(new_cursor)
-    streak = next_zero_streak(_load_streak(), len(rows), len(picked))
+    if last_checked is not None:      # 一个都没查成 → 游标原地不动,整批留给下轮
+        cursor = _sort_key(last_checked)
+        _save_cursor(cursor)
+    # 分母用**实际查过**的个数:被闸砍光 = "没能问",不是"问了没有",
+    # 两者处置不同(前者查网络/闸值,后者查真值链路),混在一起会让守护在网络退化时误报。
+    streak = next_zero_streak(_load_streak(), len(rows), checked)
     _save_streak(streak)
     return {"pending_settlement": len(pending), "newly_resolved": len(rows),
-            "lookup_fail": fail, "checked": len(picked), "zero_streak": streak}
+            "lookup_fail": fail, "checked": checked, "zero_streak": streak,
+            "timegate_skipped": len(picked) - checked}
 
 
 if __name__ == "__main__":
