@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>系统摸底与评估 · 2026-08-06 · Polymarket 采集器</title>
+<style>
+  :root{
+    --bg:#fbfaf8; --fg:#1f2328; --muted:#5b6570; --line:#e3e0da;
+    --card:#fff; --accent:#8a5a2b; --red:#b3261e; --amber:#8a6100; --green:#1e6b3a;
+    --codebg:#f3f1ec;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#15181c; --fg:#e6e3dd; --muted:#9aa3ad; --line:#2b3037;
+      --card:#1c2026; --accent:#d9a066; --red:#f2836f; --amber:#e0b25c; --green:#7fc79a;
+      --codebg:#22272e;
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px; margin:0 auto; padding:48px 24px 96px}
+  header{border-bottom:2px solid var(--fg); padding-bottom:20px; margin-bottom:12px}
+  h1{font-size:1.9rem; line-height:1.3; margin:0 0 8px}
+  .sub{color:var(--muted); font-size:.92rem}
+  .note{
+    background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent);
+    padding:14px 18px; margin:24px 0; border-radius:0 6px 6px 0; font-size:.94rem; color:var(--muted);
+  }
+  .note strong{color:var(--fg)}
+  h2{font-size:1.35rem; margin:52px 0 14px; padding-bottom:8px; border-bottom:1px solid var(--line)}
+  h3{font-size:1.06rem; margin:32px 0 8px}
+  h3 .tag{font-size:.78rem; padding:2px 8px; border-radius:999px; vertical-align:middle; margin-right:8px; font-weight:700}
+  .t-red{background:rgba(179,38,30,.13); color:var(--red)}
+  .t-amber{background:rgba(138,97,0,.15); color:var(--amber)}
+  p{margin:12px 0}
+  ul{margin:12px 0; padding-left:22px} li{margin:6px 0}
+  code{background:var(--codebg); padding:1px 5px; border-radius:4px; font-size:.88em;
+       font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .scroll{overflow-x:auto; margin:18px 0; -webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse; width:100%; min-width:440px; font-size:.93rem; background:var(--card)}
+  th,td{border:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top}
+  th{background:var(--codebg); font-weight:600}
+  td.num{text-align:right; font-variant-numeric:tabular-nums}
+  blockquote{
+    margin:20px 0; padding:14px 20px; border-left:4px solid var(--accent);
+    background:var(--card); border-radius:0 6px 6px 0;
+  }
+  blockquote p{margin:6px 0}
+  .kicker{color:var(--green); font-weight:700}
+  .bad{color:var(--red); font-weight:700}
+  .warn{color:var(--amber); font-weight:700}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin:22px 0}
+  .stat{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px}
+  .stat .k{font-size:.8rem; color:var(--muted); margin-bottom:4px}
+  .stat .v{font-size:1.35rem; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.2}
+  .stat .n{font-size:.78rem; color:var(--muted); margin-top:4px}
+  footer{margin-top:64px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:.86rem}
+  @media (max-width:560px){ .wrap{padding:32px 16px 72px} h1{font-size:1.55rem} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>系统摸底与评估</h1>
+  <div class="sub">Polymarket 重生采集器 · 2026-08-06 · 分支 <code>feat/rebirth-data-contract</code></div>
+</header>
+
+<div class="note">
+  本文所有数字都是当天<strong>实测</strong>(DuckDB 查数据湖 / systemd / git / pytest),不是从文档或记忆里抄的;推断处会明确标注。<br>
+  写它的直接原因:用户指出「这一段时间基本处于修复—发现错误—修复的循环」,要求下次回来<strong>先设计再实现</strong>。
+  所以这不是成果汇报,是<strong>动手前的地面实况</strong>。
+</div>
+
+<h2>一、系统现在是什么</h2>
+
+<p>项目本来有三块,过去两周只有<strong>第三块</strong>在活跃演进,前两块停在原地:</p>
+
+<div class="scroll">
+<table>
+<tr><th>子系统</th><th>状态</th><th>说明</th></tr>
+<tr><td>老监控引擎 <code>06-tools/monitoring</code></td><td>⏸️ <strong>无常驻服务在跑</strong></td><td>Telegram 告警、套利扫描、大户追踪</td></tr>
+<tr><td>Web 看板 <code>dashboard/</code></td><td>⏸️ <strong>无常驻服务在跑</strong></td><td>Flask :5000 + React :3000</td></tr>
+<tr><td><strong>重生采集器 <code>11-collector/</code></strong></td><td>▶️ <strong>7×24 运行中</strong></td><td>本文的主角</td></tr>
+</table>
+</div>
+
+<h3>采集器的四个环节</h3>
+<p>由 systemd timer 每 15 分钟触发一个采集周期:</p>
+<ul>
+  <li><strong>发现层</strong> —— 从全局成交流采样,捞出正在交易的市场登记进注册表,每轮新登记约 <strong>100 个</strong>。</li>
+  <li><strong>轮询层</strong> —— 给市场收成交明细,每轮 <strong>50 个</strong>:26 个"最近成交的" + <strong>24 个游标轮转的</strong>(让冷门盘不至于永远排不上队)。</li>
+  <li><strong>结算守望</strong> —— 去 Gamma 查官方结算结果(0/1),每轮 <strong>800 个</strong>。这是回测唯一能用的<strong>地面真值</strong>。</li>
+  <li><strong>compaction</strong> —— 合并小 parquet 文件。</li>
+</ul>
+<p>另有独立 timer <strong>回填清扫</strong>(每 15 分钟,班次 <code>:07/:22/:37/:52</code>):捞"已关闭但一笔成交都没采到"的市场补回来,并<strong>主动给采集器让路</strong>(共用一条代理隧道)。</p>
+
+<h3>数据落地方式</h3>
+<p>只追加的 Parquet 数据湖 + DuckDB 查询。写进去的东西<strong>从不改</strong>,小文件靠 compaction 合并。水位线 = 每个市场已收到的最新成交时间,驱动增量轮询。</p>
+
+<h2>二、家底(2026-08-06 13:00 实测)</h2>
+
+<div class="grid">
+  <div class="stat"><div class="k">成交流</div><div class="v">13,054,169</div><div class="n">笔 · 覆盖 40,361 个市场</div></div>
+  <div class="stat"><div class="k">时间跨度</div><div class="v">15 个月</div><div class="n">2025-05-13 → 2026-08-06</div></div>
+  <div class="stat"><div class="k">注册表</div><div class="v">71,442</div><div class="n">个市场 · 已关闭 50,166</div></div>
+  <div class="stat"><div class="k">结算真值</div><div class="v">50,161</div><div class="n">已关闭市场的 99.99%</div></div>
+  <div class="stat"><div class="k">回填剩余目标</div><div class="v">16,859</div><div class="n">当天早上是 23,714,持续下降</div></div>
+  <div class="stat"><div class="k">判据</div><div class="v">385 / 0</div><div class="n">通过 / 失败</div></div>
+</div>
+
+<p>另:历史截断留痕 377 条,心跳 1,940 轮,磁盘 666 MB,<strong>25 个提交未 push</strong>。</p>
+
+<blockquote>
+<p><span class="kicker">结算真值是最健康的一项。</span> 对照:2026-08-03 发现该链路已静默死亡 11 天,当时真值只有 <strong>504 个</strong>。现在 5 万个,<strong>够做回测的家底了</strong>。</p>
+</blockquote>
+
+<h2>三、覆盖率:当前最大的功能缺口</h2>
+
+<div class="scroll">
+<table>
+<tr><th></th><th class="num">市场数</th><th class="num">采到过成交</th><th class="num">覆盖率</th></tr>
+<tr><td><strong>进行中</strong></td><td class="num">21,276</td><td class="num">7,054</td><td class="num"><span class="bad">33%</span></td></tr>
+<tr><td>已关闭</td><td class="num">50,166</td><td class="num">33,307</td><td class="num">66%</td></tr>
+</table>
+</div>
+
+<p>进行中的市场有 <strong>14,222 个一笔成交都没采过</strong>。</p>
+
+<p><strong>成因</strong>(实测):每轮注册进来约 90~100 个新市场,而轮询名额只有 50 个 —— <strong>进的比出的快接近一倍</strong>。排不上队的每轮 553~784 个,其中从没采过的 229~345 个。</p>
+
+<p><strong>后果分两面:</strong></p>
+<ul>
+  <li><span class="kicker">不算永久丢失</span> —— 市场一旦关闭就掉进回填清扫的目标集被捞回来。目标集当天 23,714 → 16,859,净在下降(实测漏入约 4,600/天 &lt; 吞吐约 19,600/天)。</li>
+  <li><span class="bad">实时监控这一块是残的</span> —— 市场<strong>开着的时候</strong>看不见它,做"当下正在发生什么"的分析必然不完整。</li>
+</ul>
+
+<p class="warn">⚠️ 净下降只观测了约 9.5 小时的连续窗口,没跨过整个白天高峰,不能当稳态结论。</p>
+
+<h2>四、还存在的问题(按排序)</h2>
+
+<h3><span class="tag t-red">元问题</span>1. 整个系统没做过设计</h3>
+<p>做法一直是:遇到问题 → 加一个计数器 + 一道守护 + 一组判据 → 交付。做了十几轮。结果是 <strong>46 个心跳字段 / 4 道时间闸 / 3 套游标轮转 / 3 套连零守护</strong>,每件单独看都对,<strong>合起来没有任何人(包括写它的我)能说清系统的不变量是什么</strong>。</p>
+<p>因此只能靠踩到才知道哪里漏。已踩到的坑高度重复,是<strong>同一个形状</strong>:</p>
+<blockquote><p><strong>记录事实的那一头,和使用事实的那一头是分开接的,而只接了一头。</strong></p></blockquote>
+<ul>
+  <li>水位线往前走了,但"这里被截断过"没记 → 空洞隐形(377 个市场)</li>
+  <li>计数算出来了,但没进心跳字段清单 → 静默消失(丢了 3 个)</li>
+  <li>时间闸参数定义了,但调用方没传 → 线上仍然无闸</li>
+  <li>判据写了,但把被测对象本身 mock 掉了 → 验的是替身</li>
+</ul>
+<p>这四件是<strong>分四次发现、分四次修</strong>的。它们是同一个类 —— 一直在修实例,没修类。</p>
+<p>第二个重复形状:<strong>照抄结构而不抽象</strong>。游标轮转写了 3 遍、时间闸 4 遍、连零守护 3 遍,每遍重新推一次,每遍推出一点不一样的错。</p>
+<p><strong>下次的第一件事</strong>:写不变量清单 + 重复形状清单,确认后再动手。</p>
+
+<h3><span class="tag t-amber">未修</span>2. 一段代码仍然无界</h3>
+<p><code>collector_core.poll_market</code> 的翻页循环<strong>一次钟都不看</strong>,单市场最坏 20 × 131s ≈ <strong>44 分钟</strong>。现在是四段里<strong>唯一</strong>一处无界,真兜底只有 systemd <code>TimeoutStartSec=900</code> 硬杀。</p>
+
+<h3><span class="tag t-amber">待校准</span>3. 慢周期告警线余量只剩 15 秒</h3>
+<p>四道时间闸声明值之和 <strong>525s</strong>,告警线 <strong>540s</strong>。</p>
+<p>这个数字是当天诚实化之后才暴露的:原来那个 506s 里,结算段是拿"实测 61s"顶替一段<strong>无界</strong>耗时,而该段实测最大值是 <strong>441s</strong> —— <strong>用 p90 冒充上界</strong>本来就偏乐观。⇒ 540s 这条线本身需要重推。</p>
+
+<h3><span class="tag t-red">不可逆</span>4. 377 个市场的历史有永久空洞</h3>
+<p>接口 <code>offset &gt; 10000</code> 一律 400,单市场只够回溯最近约 11,000 笔。撞顶的市场保留了近端,但水位线随之跳到最新 ⇒ <strong>再也不往回翻</strong>。</p>
+<div class="scroll">
+<table>
+<tr><th></th><th>撞过硬顶的 377 个</th><th>对照:没撞过、也有 ≥1000 笔的 2,075 个</th></tr>
+<tr><td>序列开头空白</td><td class="bad">p50 199 天 / p90 327 天 / 最大 380 天</td><td>p50 1 天 / p90 6 天</td></tr>
+</table>
+</div>
+<p>377 个里 347 个空白 &gt; 30 天。<strong>丢得与结果相关</strong> —— 专丢成交最密那批市场的最早那段。当天已做<strong>留痕</strong>(377 条可查询)与<strong>冷热分开计数</strong>;<strong>数据本身补不回来</strong>,以后用到这些市场早期历史的分析必须先排除它们。</p>
+
+<h3><span class="tag t-amber">待校准</span>5. 一堆阈值仍是占位值</h3>
+<p>积压上限、回填连零守护、新增的冷/热截断计数、结算时间闸砍掉数、真值断供守护 —— 都没有实测分布撑着。要攒够一周,而且<strong>必须跨过网络好和坏两种状态</strong>,否则定出来的是"一种天气下的数"。⏰ 约 2026-08-11。</p>
+
+<h3><span class="tag t-amber">运维</span>6. 运维层的洞</h3>
+<ul>
+  <li><strong>回填清扫没有看门狗</strong> —— timer 停摆无人知晓(采集器有,它没有)</li>
+  <li><code>data/backfill.log</code> 无轮转</li>
+  <li><strong>代理耦合</strong>:7×24 的采集器依赖手动开的 v2rayN 图形界面。2026-08-04 就是隧道退化导致 12 轮被 systemd 杀掉。换常驻代理需用户决定。</li>
+</ul>
+
+<h3>7. 其他</h3>
+<ul>
+  <li>PR#2 / PR#3 仍开着未合;<strong>25 个提交未 push</strong></li>
+  <li>看板侧 Phase-3 的七张表仍是空的(代码合了,调度链没跑起来)</li>
+</ul>
+
+<h2>五、当天完成的两件事(供对照)</h2>
+<div class="scroll">
+<table>
+<tr><th>提交</th><th>内容</th></tr>
+<tr><td><code>4ef438c</code></td><td>结算段第四道时间闸(80s,夹在实测 p90 57s 与上界 95s 之间)+ 补回三个"算了却没落心跳"的字段(含 08-03 事故主角 <code>newly_resolved</code>)。判据 17 条,<strong>9/9 变异全抓</strong></td></tr>
+<tr><td><code>a47837b</code></td><td>offset 截断留痕 + <strong>冷/热拆开计数</strong>(冷 = 接口硬约束不告警;热 = 轮转一圈太久、红线被踩穿、发生即推)+ 纠正 <code>alerts.py</code> 里"稳态自愈"的假信念 + 历史 377 个补录。判据 <strong>12/12 变异全抓</strong></td></tr>
+</table>
+</div>
+<p>另有一项判 <strong>⛔ 不下结论</strong>:轮询名额调整。实测<strong>推翻了自己的阻塞假设</strong>(冷启动市场并不比增量贵,中位取回仅 37 笔),但预登记单里的成本模型写成"各市场 p90 之和",而同轮内各市场耗时<strong>高度相关</strong>(共用代理隧道)⇒ 模型误设。<strong>不在看到结果之后换模型</strong>(那是自欺)⇒ 须新开一张预登记单。</p>
+
+<h2>六、一句话概括</h2>
+<blockquote>
+<p><strong>数据这条腿是健康的,而且结算真值的家底已经够做回测了;<br>
+但系统本身是补丁堆出来的,说不清自己的不变量 —— 所以下一步是补设计,不是继续补代码。</strong></p>
+</blockquote>
+
+<footer>
+  生成于 2026-08-06 · 对应 Markdown:<code>docs/SYSTEM_STATUS_2026-08-06.md</code> ·
+  交接单见 Memory <code>handoff-2026-08-06-pm</code>
+</footer>
+
+</div>
+</body>
+</html>
