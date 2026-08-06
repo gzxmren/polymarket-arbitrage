@@ -2,6 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🔴 最高原则(2026-08-06 用户明令):这个项目是为了赚钱
+
+**本项目存在的唯一目的,是找到能实际盈利的 edge。** 其它一切 —— 采集器、数据湖、
+Dashboard、告警、判据、重构 —— 都是**手段**,不是目的。
+
+判断任何一件工作值不值得做,先问这一句:
+
+> **它离"能赚到钱"这件事有多远?中间还隔着几步?那几步现在成立吗?**
+
+三条推论(都是本项目真踩过的坑):
+
+1. **不许拿"数据更全 / 代码更干净 / 覆盖率更高"本身当理由。**
+   数据的价值不在总量,在于**能支撑多少个独立、可验证的结论**。
+   实测:成交总笔数 1300 万,但统计功效由**已结算市场个数**(约 5 万)决定,
+   不是由笔数决定。多采一倍的笔数不会让结论强一倍。
+2. **数据变多但口径变了,比数据少更危险。** 样本量大会让置信区间变窄,
+   于是**错误的结论看起来更可信**。故任何采集口径变更必须留下带日期的记录,
+   发掘窗/验证窗切分时把它当边界。
+3. **先证伪比先建设便宜。** 本项目已证伪的候选(跟鲸鱼 / 长热偏差 / H6 / H7 /
+   跨市场套利)都是靠"先做最便宜的那个检验"砍掉的。
+   任何新方向,先找那个**最可能一枪打死它**的检验,别先修基础设施。
+
 ## What this is
 
 Polymarket 智能监控系统 — a prediction-market **monitoring / arbitrage-discovery / whale (大户) behavior-tracking** platform. It is **read-only / advisory**: there is no order-execution layer (`06-tools/trading/` is a README only). Comments, docs, and Telegram output are in Chinese.
