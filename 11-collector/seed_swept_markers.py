@@ -45,7 +45,9 @@ import storage_engine as se
 # last_ing > t_closed ⇒ 在"已经知道它关了"之后还采过一遍 ⇒ 那一遍是完整的。
 SEED_SQL = """
 with reg as (select condition_id, closed, snapshot_at
-             from read_parquet('{registry}/*.parquet')),
+             -- union_by_name 必须带:注册表加字段后新老两版并存,不带它会静默丢列
+             -- (2026-08-07 实测,判据 test_registry_schema_evolution.py)
+             from read_parquet('{registry}/*.parquet', union_by_name=true)),
 closed_at as (select condition_id, min(snapshot_at) t_closed
               from reg where closed = true group by 1),
 latest as (select * from (

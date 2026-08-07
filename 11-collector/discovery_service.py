@@ -371,10 +371,23 @@ def parse_market(m: dict) -> dict | None:
 
 
 def load_registry() -> dict[str, dict]:
-    """读注册表所有 Parquet,按 condition_id 取 snapshot_at 最新一版。空注册表返回 {}。"""
+    """读注册表所有 Parquet,按 condition_id 取 snapshot_at 最新一版。空注册表返回 {}。
+
+    ⭐`schema=MARKETS_SCHEMA` 不是可有可无的参数,是**必须**(2026-08-07 实测):
+    注册表 append-only,加字段之后必然出现老文件 14 列、新文件 18 列并存。
+    不显式给 schema 时,`pq.read_table(目录)` **只按其中一份格式来,多出来的列
+    静默丢掉、不报错**(换文件顺序、改用 pyarrow.dataset 都一样丢 —— 三种写法实测两种丢)。
+    后果:采集器照常跑、日志照常打、看门狗照常绿,而新字段永远是空的 ——
+    "一切正常,只有某个东西恒为空",本项目反复发作的那个病。
+
+    给了 schema 之后:老文件缺的列补成 null,新文件的值原样保留,行数不变。
+    ⚠️ 反过来也成立:**文件里有而 MARKETS_SCHEMA 里没有的列会被丢弃** —— 这是有意的,
+    schema 是契约。加字段必须同时改 `parse_market` 与 `MARKETS_SCHEMA`,
+    漏一个会被 `test_registry_schema_evolution.py` 当场抓住。
+    """
     if not any(REGISTRY_DIR.glob("*.parquet")):
         return {}
-    tbl = pq.read_table(REGISTRY_DIR)
+    tbl = pq.read_table(REGISTRY_DIR, schema=MARKETS_SCHEMA)
     reg: dict[str, dict] = {}
     for r in tbl.to_pylist():
         cid = r["condition_id"]

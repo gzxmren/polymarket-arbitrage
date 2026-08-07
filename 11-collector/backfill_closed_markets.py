@@ -77,7 +77,10 @@ with reg1 as (
   select * from (
     select condition_id, token_id_0, token_id_1, closed,
            row_number() over (partition by condition_id order by snapshot_at desc) rn
-    from read_parquet('{registry}/*.parquet')
+    -- union_by_name 是**必须**:注册表 append-only,加字段后新老两版并存,
+    -- 不带它 DuckDB 只按第一份文件的格式来、多出来的列静默丢掉(2026-08-07 实测)。
+    -- 判据 test_registry_schema_evolution.py 会挡住去掉它。
+    from read_parquet('{registry}/*.parquet', union_by_name=true)
   ) where rn = 1
 ),
 swept as ({swept_src}),
