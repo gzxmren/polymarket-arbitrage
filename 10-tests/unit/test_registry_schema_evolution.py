@@ -127,20 +127,84 @@ def test_an_empty_registry_is_not_an_error(tmp_path, monkeypatch):
 
 # ============ 组 B:结构判据 —— 另外两个读取点也不许漏 ============
 
+def _read_parquet_calls(src: str) -> list[str]:
+    """揪出源码里每一处 `read_parquet(...)` 的完整参数串(括号配对,认得嵌套)。
+
+    ⚠️ 这个函数是 2026-08-07 评审抓出漏洞后重写的。原来的写法是一条正则:
+        r"read_parquet\\(\\s*'?\\{?registry\\}?[^)]*\\)"
+    它只认 `.format(registry=...)` 那一种拼串方式。实测:
+        read_parquet(f'{REGISTRY_DIR}/*.parquet')        → **匹配不到**
+        read_parquet(str(REGISTRY_DIR) + '/*.parquet')   → **匹配不到**
+    而 `REGISTRY_DIR` 恰恰是这个模块导出的真实常量名 —— 也就是说,
+    **最自然的那种写法正好是它抓不到的**,而判据的说明里却写着"挡住以后新增第四处"。
+    判据在验证自己的替身,今天第三次。
+    """
+    out, i = [], 0
+    while (i := src.find("read_parquet(", i)) != -1:
+        j, depth = i + len("read_parquet("), 1
+        while j < len(src) and depth:
+            depth += (src[j] == "(") - (src[j] == ")")
+            j += 1
+        out.append(src[i:j])
+        i = j
+    return out
+
+
 def test_every_duckdb_reader_of_the_registry_unions_by_name():
     """⭐同一个隐患有三处(load_registry、回填目标集、seed 脚本)。
 
     实测 DuckDB 不带 `union_by_name=true` 时**同样静默丢列**。
     修一处不够 —— 这条判据把另外两处也焊上,并挡住以后新增第四处。
+
+    认"读的是不是注册表"用的是宽判据:参数串里出现 `registry`(不分大小写)就算,
+    于是 `{registry}`、`REGISTRY_DIR`、`registry_dir` 三种命名风格都盖得住。
+    ⚠️ 仍是**代理判据**:有人把路径拆成变量、参数串里一个 registry 字样都不出现的话,
+    它还是抓不到。这一层写清楚,不许再吹成"以后不会重演"。
     """
     offenders = []
     for p in sorted(COLLECTOR_DIR.glob("*.py")):
-        src = p.read_text(encoding="utf-8")
-        for m in re.finditer(r"read_parquet\(\s*'?\{?registry\}?[^)]*\)", src):
-            if "union_by_name" not in m.group(0):
-                offenders.append(f"{p.name}: {m.group(0)[:70]}")
+        for call in _read_parquet_calls(p.read_text(encoding="utf-8")):
+            if "registry" in call.lower() and "union_by_name" not in call:
+                offenders.append(f"{p.name}: {call[:80]}")
     assert not offenders, ("这些地方读注册表没带 union_by_name=true,"
-                          f"格式变更时会静默丢列:{offenders}")
+                           f"格式变更时会静默丢列:{offenders}")
+
+
+def test_the_blind_spot_of_the_previous_regex_is_now_covered():
+    """把评审实测到的两种"抓不到"的写法直接喂进来,证明现在抓得到。
+
+    没有这一条的话,上面那条判据改没改对全靠我说 —— 而它上一版正是"看起来对"。
+    """
+    bad = ("x = read_parquet(f'{REGISTRY_DIR}/*.parquet')\n"
+           "y = read_parquet(str(REGISTRY_DIR) + '/*.parquet')\n")
+    calls = _read_parquet_calls(bad)
+    assert len(calls) == 2
+    assert all("registry" in c.lower() and "union_by_name" not in c for c in calls)
+
+
+def test_every_writer_of_the_registry_declares_the_schema():
+    """⭐读侧焊住了,写侧也得焊(评审指出:7 条判据只守了一半)。
+
+    今天两个写者(discovery_service / settlement_watcher)共享**同一个**
+    MARKETS_SCHEMA 对象,零风险。焊的是未来:CLAUDE.md 自己记着
+    "backfill_*.py / cleanup_*.py 一次性脚本散落、不在 import graph 里" ——
+    这种脚本直接 `pa.Table.from_pylist(rows)`(不带 schema、类型靠推断)写进注册表,
+    就会在**写侧**重新引入同一个病,而读侧那几条判据一条都抓不住。
+    """
+    import ast
+    offenders = []
+    for p in sorted(COLLECTOR_DIR.glob("*.py")):
+        src = p.read_text(encoding="utf-8")
+        if "REGISTRY_DIR /" not in src:
+            continue
+        for node in ast.walk(ast.parse(src)):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            body = ast.get_source_segment(src, node) or ""
+            if "REGISTRY_DIR /" in body and "MARKETS_SCHEMA" not in body:
+                offenders.append(f"{p.name}::{node.name}")
+    assert not offenders, (
+        f"这些函数往注册表写文件却没声明 MARKETS_SCHEMA:{offenders}")
 
 
 def test_the_reader_declares_the_schema_explicitly():
