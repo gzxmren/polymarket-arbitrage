@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import argparse
-import bisect
 import datetime as dt
 import socket
 import time
@@ -27,6 +26,7 @@ from urllib.request import urlopen
 import cycle_state
 import discovery_service as ds
 import http_client as hc
+import rotation
 import storage_engine as se
 from discovery_service import refresh_and_registry, resolve_asset_index
 
@@ -60,6 +60,10 @@ COUNTER_KEYS = (
     #   时间闸咬住 → 可变,冷启动回填贵 / 网络慢,下轮会继续
     # 合成一个数会让"轮转片实际完成了几个"变得不可知,而那正是一圈多久的决定量。
     "poll_timegate_skipped_count",   # 其中**被时间闸**砍掉的(名额本来给了它,没跑完)
+    # 轮转片里"越过没做成的那个继续报上来"的个数。稳态恒 0(循环是做一个报一个,
+    # 中断即中断);非 0 = 有人加了新的跳过路径,或某个市场每轮都做不成把游标卡住了。
+    # 消费者:run_cycle 据它推进 rotation_hole_streak → alerts(判据 test_rotation.py)。
+    "poll_rotation_holes",
 ) + ds.NET_COUNTER_KEYS + ds.DISCOVERY_COUNTER_KEYS
 
 
@@ -245,37 +249,33 @@ def poll_fresh_share(limit: int) -> int:
 
 
 def select_poll_targets(markets: list[dict], wms: dict, limit: int | None,
-                        cursor: str) -> tuple[list[dict], str, int]:
-    """选出本轮要轮询的市场。返回 (选中列表, 新游标, **被砍掉的个数**)。
+                        cursor: str) -> tuple[list[dict], rotation.Rotation, int]:
+    """选出本轮要轮询的市场。返回 (选中列表, **轮转对象**, 被砍掉的个数)。
 
     `markets` 已按 firehose 新鲜度排序(下标 0 = 最近成交)。
 
     - **新鲜片**:照旧取最前面几个。热门盘天然一直"新鲜",于是仍每轮被采 ——
       这不是巧合:成交率高 ⇔ 一直排在最前,两者是同一件事。
     - **轮转片**:在剩下的里按 condition_id 游标轮转 + 回卷,给冷门盘一个**有界**的等待。
-      游标存**排序键**而非下标(可轮询集合每轮都在变,存下标会乱跳)——
-      与 `settlement_watcher.select_batch` 同一条理由,那边已被 08-03 事故验证过。
+
+    ⭐2026-08-07:返回的第二个值从"新游标"改成 `Rotation` 对象。
+    旧签名直接交出**规划的最后一个**,而本轮很可能被时间闸砍断只做了一部分 ——
+    照它写游标,被砍的尾巴每圈都被跳过(洞 1)。新接口下游标只能由
+    `rot.commit()` 给出,而它只认 `rot.done()` 报过的。三处共用同一份规则。
     """
     total = len(markets)
     if limit is None or limit >= total:
-        return list(markets), cursor, 0
+        # 全都要 ⇒ 没有轮转这回事。给一个空轮转:commit() 恒为 None ⇒ 调用方不写游标,
+        # 游标文件保持原值 —— 与旧行为(原样写回 cursor)效果一致,且少一次无谓写盘。
+        return list(markets), rotation.Rotation([], cursor, 0), 0
 
     n_rot = min(POLL_ROTATE_SHARE, limit)
     picked = list(markets[:limit - n_rot])
     taken = {m["condition_id"] for m in picked}
-    rest = sorted((m for m in markets if m["condition_id"] not in taken),
-                  key=lambda m: m["condition_id"])
-    if rest:
-        n_rot = min(n_rot, len(rest))     # 防回卷时把同一个市场取两次
-        keys = [m["condition_id"] for m in rest]
-        i = bisect.bisect_right(keys, cursor)
-        rot = rest[i:i + n_rot]
-        if len(rot) < n_rot:              # 走到末尾 → 回卷,否则后半段永远轮不到
-            rot = rot + rest[:n_rot - len(rot)]
-        picked += rot
-        if rot:
-            cursor = rot[-1]["condition_id"]
-    return picked, cursor, total - len(picked)
+    rest = [m for m in markets if m["condition_id"] not in taken]
+    rot = rotation.Rotation(rest, cursor, n_rot)   # 排序/二分/回卷/防重取都在里面
+    picked += rot.batch
+    return picked, rot, total - len(picked)
 
 
 def count_never_polled(markets: list[dict], wms: dict, counters: dict) -> None:
@@ -302,8 +302,13 @@ def flush_truncations(counters: dict) -> None:
 
 
 def poll_markets(markets: list[dict], counters: dict, wms: dict,
-                 time_budget_s: float | None = None) -> int:
+                 time_budget_s: float | None = None, on_done=None) -> int:
     """逐市场增量轮询落库。返回**实际轮询到的市场数**。
+
+    `on_done(market)` 在**每采完一个**之后调用一次(默认无操作)。
+    调用方传 `rotation.Rotation.done` 进来 —— 这是"不报做了什么就推不动游标"的落点:
+    被时间闸砍断时,没走到的那些压根没被报过,游标自然停在真做过的地方。
+    新鲜片的市场也会被报进来,轮转对象自己会忽略不属于它的(见 rotation.done)。
 
     ⭐为什么这一段也必须有时间闸:2026-08-04 晚给发现层/注册层加了闸之后,判据里写下
     「最坏周期 = 各闸之和 + 实测其余部分」—— 而轮询压根没有闸。代理一退化它就无界增长,
@@ -324,6 +329,8 @@ def poll_markets(markets: list[dict], counters: dict, wms: dict,
         if rows:
             se.write_trades(rows)
             total_written += len(rows)
+        if on_done is not None:
+            on_done(m)   # 零成交也算做完了:轮转的义务是"轮到过",不是"采到东西"
         time.sleep(0.1)  # 礼貌节流(全局无 429,仍留余量)
     # 截断痕迹冲盘。留在内存里等于没留 —— 每轮是独立进程,退出即失忆。
     flush_truncations(counters)
@@ -374,10 +381,16 @@ def run_once(limit: int | None = None, sample: int = 5000, max_new: int | None =
     # 而我们要问的恰恰是被砍掉的那些。
     count_never_polled(markets, counters=counters, wms=wms)
     cursor = cycle_state.read_state(POLL_CURSOR_FILE, "cursor", "")
-    markets, cursor, skipped = select_poll_targets(markets, wms, limit, cursor)
+    markets, rot, skipped = select_poll_targets(markets, wms, limit, cursor)
     counters["poll_budget_skipped_count"] = skipped
-    poll_markets(markets, counters, wms, time_budget_s=poll_time_budget_s)
-    cycle_state.write_state(POLL_CURSOR_FILE, "cursor", cursor, "轮询游标")
+    poll_markets(markets, counters, wms, time_budget_s=poll_time_budget_s,
+                 on_done=rot.done)
+    # 游标只走过**真采过**的那些。一个都没采成(网络全挂/闸值极小)→ commit() 为 None
+    # → 不写游标,整片留给下轮。照旧无条件写回的话,被砍的尾巴要多等一整圈(约 10 小时)。
+    new_cursor = rot.commit()
+    if new_cursor is not None:
+        cycle_state.write_state(POLL_CURSOR_FILE, "cursor", new_cursor, "轮询游标")
+    counters["poll_rotation_holes"] = rot.holes
     counters["register_fail"] = disc.get("register_fail", 0)
     counters["new_discovered"] = disc.get("new_discovered", 0)
     # 注册链路断供守护(静默失败):关心的是"成功登记了几个",不是"报了几个错"。

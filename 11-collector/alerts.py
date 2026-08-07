@@ -48,6 +48,23 @@ TRUTH_SUPPLY_ZERO_CYCLES = 18
 # 总数阈值保留给"尖峰"这层旧语义(轮询系统性追不上),不删,免得回归掉旧行为。
 OFFSET_OVERFLOW_ALERT_THRESHOLD = 20
 
+# ---------- 游标空洞守护(2026-08-07,随 rotation.py 一同立)----------
+# 空洞 = 轮转片里"越过一个没做成的继续往后做"。游标用**保守规则**停在空洞前面
+# (不跨过去,免得那一个每圈都被跳过 —— 丢得与结果相关正是本项目的死因),
+# 而保守规则的反面风险是**卡死**:某个市场每轮都做不成,后面全饿死。
+#
+# 阈值不需要实测分布,因为实测分布就是**恒 0**:今天三处的循环都是"做一个报一个,
+# 中断即中断",结构上产生不出空洞(判据 test_rotation.py::test_steady_state_has_zero_holes)。
+# 故这是一条红线告警("不该发生"),3 轮只是防洪 —— 挡掉新代码上线时的一次性抖动,
+# 不是灵敏度调参。稳态静默由"恒 0"保证,两头都焊死。
+ROTATION_HOLE_CYCLES = 3
+# 回填清扫断供:连续 N 轮"有活干却一个标记都没落成"。
+# 依据(实测 backfill.log,A4 上线后 61 轮):有活干的 53 轮里 swept_marked
+# 中位 213 / p90 272 / max 281;有活干却为 0 的仅 2 轮,**最长自然连零 2 轮**
+# (2026-08-07 早上那次约 15 分钟断网)。取 8 轮(2 小时)≈ 4 倍余量。
+# ⚠️ 样本仅约 15 小时,属**保守初值**;streak 已逐轮入日志,攒够一周应回来校准。
+BACKFILL_ZERO_CYCLES = 8
+
 # ---------- 慢周期守护(2026-08-04)----------
 # 由来:当天 12 轮撞 systemd 超时被 SIGTERM 杀,吞吐可见下滑,而**所有既有告警一条没响**
 # —— 心跳里根本没有"耗时"这个量,故"如果它现在就是坏的,我看到的会有什么不同?"答案是没有。
@@ -98,12 +115,17 @@ def _slow_cycle_hint(counts: dict) -> str:
     return "→ 网络计数干净:慢在本地(看各阶段耗时,尤其 compaction/registry 是否变大)"
 
 
-def _send(msg: str) -> bool:
+def _send(msg: str, max_retries: int = 2) -> bool:
+    """推一条。发送失败一律吞掉 —— 告警发不出去不该反过来搞垮被监控的东西。
+
+    `max_retries` 直通 telegram_notifier_v2:单次 urlopen 超时 30s,故最坏阻塞
+    ≈ max_retries × 30s。调用方所在链路的时间预算紧时应调小(见 maybe_alert_backfill)。
+    """
     if not TELEGRAM_ENABLED:
         print(f"[Telegram 未启用] {msg}", file=sys.stderr)
         return False
     try:
-        return bool(_tg.send_telegram_message(msg))
+        return bool(_tg.send_telegram_message(msg, max_retries=max_retries))
     except Exception as e:  # 发送失败不影响采集主流程
         print(f"[Telegram 发送失败] {e}", file=sys.stderr)
         return False
@@ -158,6 +180,14 @@ def build_alert(counts: dict) -> str | None:
         triggers.append(
             f"🔴 结算真值断供:连续 {zs} 轮(约 {zs * cycle_minutes() / 60:.1f} 小时)有市场可查却一个都没结算。"
             f"正常每轮期望 ~20 个。须查结算守望链路(Gamma 接口/轮转游标/注册表)")
+    # 游标空洞:稳态恒 0(见 ROTATION_HOLE_CYCLES 上方说明),持续非 0 = 结构变了。
+    rhs = counts.get("rotation_hole_streak", 0)
+    if rhs > 0 and rhs % ROTATION_HOLE_CYCLES == 0:
+        triggers.append(
+            f"🔴 轮转游标出现空洞并持续 {rhs} 轮(轮询 {counts.get('poll_rotation_holes', 0)} / "
+            f"结算 {counts.get('settlement_rotation_holes', 0)} 个)。"
+            f"含义:有市场被跳过而轮转不知道,游标已停在它前面 —— 要么有人加了新的跳过路径,"
+            f"要么某个市场每轮都做不成把整条队伍卡住了。须人工看一眼是哪个市场")
     # 慢周期:单发是自愈噪声(网络抖一下),**持续**才是真退化 → 只在连续 N 轮的整数倍推。
     scs = counts.get("slow_cycle_streak", 0)
     if scs > 0 and scs % SLOW_CYCLE_ALERT_CYCLES == 0:
@@ -178,6 +208,51 @@ def build_alert(counts: dict) -> str | None:
     body += (f"\n\n本轮: 市场 {counts.get('total_markets_polled', 0)} / "
              f"新成交 {counts.get('new_trades', 0)} / 新结算 {counts.get('newly_resolved', 0)}")
     return body
+
+
+def maybe_alert_backfill(counts: dict) -> bool:
+    """回填清扫链路的告警。返回是否真的推送了。
+
+    ⚠️ `max_retries=1`(最坏阻塞 ~30s 而非 ~61s):回填的 systemd 硬杀线是 420s,
+    时间闸已占 300s,余量只有 120s —— 而这条推送**恰恰只在出事时才发**,
+    出的事(网络/接口退化)又正是让 Telegram 也卡住的那类。
+    即"告警耗时"与"被告警的故障"相关,不是独立事件,故不能按平时的余量估。
+    重试丢掉的那一次不心疼:防洪规则每 N 轮会复述,结构上自然补推。
+    """
+    body = build_backfill_alert(counts)
+    return _send(body, max_retries=1) if body else False
+
+
+def build_backfill_alert(counts: dict) -> str | None:
+    """回填清扫(独立进程、独立节奏)的告警正文;无触发返回 None。
+
+    ⭐为什么单独一个函数而不是塞进 `build_alert`:回填是**独立链路**,
+    CLAUDE.md 要求独立链路分开判定、计数不许相加 —— 主周期健康并不代表回填健康,
+    合在一起判会让其中一条的故障被另一条的正常稀释掉。
+    复用本模块的 `_send` 与"连续 N 轮整数倍才复述"的防洪写法,不另抄一份发送逻辑。
+
+    由来:2026-08-07 实测发现 `zero_streak` 算了、写了、打印了,却**全仓库无人读** ——
+    回填彻底扫不动时不会有任何通知。本函数就是那个缺失的消费者。
+    """
+    triggers = []
+    zs = counts.get("zero_streak", 0)
+    if zs > 0 and zs % BACKFILL_ZERO_CYCLES == 0:
+        triggers.append(
+            f"🔴 回填清扫断供:连续 {zs} 轮(约 {zs * 15 / 60:.1f} 小时)有市场可扫却一个"
+            f"完成标记都没落成。实测正常每轮 ~213 个。含义:不变量 A4(市场关闭后必有一次"
+            f"完整采集)正在失守,而已关闭的市场**再也不会**出现在活体链路里。须查网络/接口")
+    rhs = counts.get("rotation_hole_streak", 0)
+    if rhs > 0 and rhs % ROTATION_HOLE_CYCLES == 0:
+        triggers.append(
+            f"🔴 回填游标出现空洞并持续 {rhs} 轮(本轮 {counts.get('rotation_holes', 0)} 个)。"
+            f"含义:有市场被跳过而轮转不知道,游标已停在它前面 —— 若是同一个市场每轮都失败,"
+            f"整条队伍会卡死在它那里。须人工看一眼是哪个市场")
+    if not triggers:
+        return None
+    return ("🔴 <b>Polymarket 回填清扫守护告警</b>\n" + "\n".join(triggers)
+            + f"\n\n本轮: 目标 {counts.get('targets', 0)} / 尝试 {counts.get('attempted', 0)}"
+              f" / 落标记 {counts.get('swept_marked', 0)}"
+              f" / 未扫完 {counts.get('sweep_incomplete', 0)}")
 
 
 if __name__ == "__main__":

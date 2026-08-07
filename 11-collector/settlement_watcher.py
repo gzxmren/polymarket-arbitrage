@@ -22,12 +22,12 @@
 from __future__ import annotations
 
 import argparse
-import bisect
 import datetime as dt
 import time
 import uuid
 
 import cycle_state
+import rotation
 
 from discovery_service import (
     GAMMA, MARKETS_SCHEMA, REGISTRY_DIR, _atomic_write_parquet, _get,
@@ -74,21 +74,16 @@ def _sort_key(r: dict) -> str:
     return f"{'1' if not ed else '0'}|{ed or ''}|{r.get('condition_id') or ''}"
 
 
-def select_batch(pending: list[dict], cursor: str, max_check: int) -> tuple[list[dict], str]:
-    """按游标取下一片(pending 须已按 _sort_key 排序)。返回 (本轮切片, 新游标)。
+def select_batch(pending: list[dict], cursor: str, max_check: int) -> rotation.Rotation:
+    """按游标取下一片。返回**轮转对象**(切片在 `.batch`,游标由 `.commit()` 给)。
 
     走到末尾自动回卷到开头继续下一圈 —— 未结算的市场可能后来才结算,须持续复查。
     游标存的是**排序键**而非下标,故 pending 增长(新市场注册)不会让轮转倒退重查。
+
+    ⭐2026-08-07 收进公用的 `rotation.py`:这段骨架原本在本项目里有三份,
+    同一个"游标走过没做过的"bug 被写了三遍。见 rotation 模块头。
     """
-    if not pending:
-        return [], cursor
-    n = min(max_check, len(pending))
-    keys = [_sort_key(r) for r in pending]
-    i = bisect.bisect_right(keys, cursor)
-    picked = pending[i:i + n]
-    if len(picked) < n:  # 回卷
-        picked = picked + pending[:n - len(picked)]
-    return picked, _sort_key(picked[-1])
+    return rotation.Rotation(pending, cursor, max_check, key=_sort_key)
 
 
 def _load_cursor() -> str:
@@ -159,18 +154,18 @@ def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK,
 
     ⭐超预算时**游标只走过真的查过的那些市场**。照旧写 `picked[-1]` 的话,
     被砍的尾巴每圈都被跳过,而跳掉的恰是"延迟退化时排在后面"的那批 —— 丢得与结果相关。
+    这条规则 2026-08-07 起由 `rotation.Rotation` 统一保证(原本三处各写一份、只对了一份)。
     """
     reg = load_registry()
     pending = [r for r in reg.values()
                if r["resolved_outcome"] is None and _end_passed(r["end_date"])]
-    pending.sort(key=_sort_key)
-    cursor = _load_cursor()
-    picked, _ = select_batch(pending, cursor, max_check or DEFAULT_MAX_CHECK)
+    rot = select_batch(pending, _load_cursor(), max_check or DEFAULT_MAX_CHECK)
+    picked = rot.batch
 
     t0 = time.monotonic()
     deadline = None if time_budget_s is None else t0 + time_budget_s
     now = int(dt.datetime.now(dt.UTC).timestamp())
-    rows, fail, checked, last_checked = [], 0, 0, None
+    rows, fail, checked = [], 0, 0
     for i in range(0, len(picked), SETTLEMENT_BATCH):
         # 钟看在**发起这一批之前**:查完再看必然超出一整批的耗时。
         if deadline is not None and time.monotonic() >= deadline:
@@ -188,20 +183,24 @@ def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK,
                 parsed["snapshot_at"] = now
                 rows.append(parsed)
         checked += len(chunk)
-        last_checked = chunk[-1]
+        for r in chunk:               # 报「这些我真查过了」—— 不报就推不动游标
+            rot.done(r)
     if rows:
         dest = REGISTRY_DIR / f"settle-{uuid.uuid4().hex}.parquet"
         _atomic_write_parquet(pa.Table.from_pylist(rows, schema=MARKETS_SCHEMA), dest)
-    if last_checked is not None:      # 一个都没查成 → 游标原地不动,整批留给下轮
-        cursor = _sort_key(last_checked)
-        _save_cursor(cursor)
+    new_cursor = rot.commit()
+    if new_cursor is not None:        # 一个都没查成 → 游标原地不动,整批留给下轮
+        _save_cursor(new_cursor)
     # 分母用**实际查过**的个数:被闸砍光 = "没能问",不是"问了没有",
     # 两者处置不同(前者查网络/闸值,后者查真值链路),混在一起会让守护在网络退化时误报。
     streak = next_zero_streak(_load_streak(), len(rows), checked)
     _save_streak(streak)
     return {"pending_settlement": len(pending), "newly_resolved": len(rows),
             "lookup_fail": fail, "checked": checked, "zero_streak": streak,
-            "timegate_skipped": len(picked) - checked}
+            "timegate_skipped": len(picked) - checked,
+            # 稳态恒 0(整批 chunk 一起报,不可能跳着报)。非 0 = 有人加了新的跳过路径,
+            # 或某批每轮都查不成把游标卡住。消费者:run_cycle → rotation_hole_streak → alerts
+            "rotation_holes": rot.holes}
 
 
 if __name__ == "__main__":

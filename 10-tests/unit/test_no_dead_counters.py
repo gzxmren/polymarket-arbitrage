@@ -50,6 +50,9 @@ ASSEMBLED_BY_RUN_CYCLE = {
     "register_zero_streak", "truth_supply_zero_streak", "slow_cycle_streak",
     "newly_resolved", "settlement_lookup_fail", "settlement_checked",
     "settlement_timegate_skipped_count",
+    # 结算守望里叫 rotation_holes,run_cycle 组装时加前缀区分于轮询那一个
+    # (两处个数必须分开留痕:处置方向不同 —— 轮询查时间闸/网络,结算查 Gamma 批量查询)
+    "settlement_rotation_holes",
     "new_trades", "new_registered", "new_discovered", "register_fail",
     "firehose_fail",
 }

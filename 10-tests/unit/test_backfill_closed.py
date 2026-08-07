@@ -211,6 +211,18 @@ def test_a4_marker_is_not_written_when_the_sweep_was_cut_short(monkeypatch):
 
 # ============ 判据组 B:游标轮转(补不完必须能接着补) ============
 
+def _lap(rot) -> str | None:
+    """把一片全部做完并提交,返回新游标。
+
+    ⭐2026-08-07 起选批函数返回 `rotation.Rotation`:游标不再由"规划了哪些"给出,
+    而是由"真做完了哪些"给出(报一个 `done()` 才算一个,见 rotation.py)。
+    下面这些判据问的是"一圈能不能覆盖全部",故显式把整片做完 —— 与旧行为等价。
+    """
+    for m in rot.batch:
+        rot.done(m)
+    return rot.commit()
+
+
 def test_batch_advances_across_runs():
     """⭐第二轮必须从第一轮停的地方继续,不是重头再来。
 
@@ -218,8 +230,9 @@ def test_batch_advances_across_runs():
     换个地方原样复发。
     """
     targets = _targets(100)
-    b1, c1 = bf.select_batch(targets, cursor="", max_n=30)
-    b2, _ = bf.select_batch(targets, cursor=c1, max_n=30)
+    r1 = bf.select_batch(targets, cursor="", max_n=30)
+    b1 = r1.batch
+    b2 = bf.select_batch(targets, cursor=_lap(r1), max_n=30).batch
     assert not (set(_ids(b1)) & set(_ids(b2))), "第二轮又补了第一轮补过的"
 
 
@@ -229,15 +242,16 @@ def test_every_target_is_reached_within_one_lap():
     targets = _targets(total)
     seen, cursor = set(), ""
     for _ in range(-(-total // n) + 1):
-        batch, cursor = bf.select_batch(targets, cursor=cursor, max_n=n)
-        seen |= set(_ids(batch))
+        rot = bf.select_batch(targets, cursor=cursor, max_n=n)
+        seen |= set(_ids(rot.batch))
+        cursor = _lap(rot)
     assert not set(_ids(targets)) - seen, "转了一圈仍有目标没被取到"
 
 
 def test_cursor_wraps_at_the_end():
     """走到末尾要回卷(否则下一轮空转,新关闭的市场永远排在后面补不到)。"""
     targets = _targets(50)
-    batch, _ = bf.select_batch(targets, cursor=max(_ids(targets)), max_n=10)
+    batch = bf.select_batch(targets, cursor=max(_ids(targets)), max_n=10).batch
     assert len(batch) == 10, "游标到末尾后没有回卷"
 
 
@@ -247,16 +261,18 @@ def test_cursor_is_a_sort_key_not_an_index():
     seen = set()
     for i in range(12):
         targets = _targets(80)[i % 4:]      # 集合每轮变动
-        batch, cursor = bf.select_batch(targets, cursor=cursor, max_n=10)
-        seen |= set(_ids(batch))
+        rot = bf.select_batch(targets, cursor=cursor, max_n=10)
+        seen |= set(_ids(rot.batch))
+        cursor = _lap(rot)
         assert isinstance(cursor, str)
     assert len(seen) > 60, f"集合变动下轮转卡住(12 轮只覆盖 {len(seen)} 个)"
 
 
 def test_empty_target_set_is_not_an_error():
     """全补完了 = 成功,不是故障。必须静默返回,不许崩也不许告警。"""
-    batch, cursor = bf.select_batch([], cursor="abc", max_n=10)
-    assert batch == [] and cursor == "abc"
+    rot = bf.select_batch([], cursor="abc", max_n=10)
+    # commit() 为 None ⇒ 调用方不写游标 ⇒ 文件里的 "abc" 原样留着(旧写法是原样写回)
+    assert rot.batch == [] and rot.commit() is None
 
 
 # ============ 判据组 C:必须给采集器让路(它们抢同一条代理隧道) ============

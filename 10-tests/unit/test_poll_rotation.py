@@ -150,6 +150,18 @@ def test_fresh_share_is_the_majority_but_rotation_is_not_zero():
 
 # ============ 判据组 C:游标轮转必须真的能转完一圈(不许有人永远轮不到) ============
 
+def _lap(rot) -> str | None:
+    """把一片全部做完并提交,返回新游标。
+
+    ⭐2026-08-07 起选批函数返回 `rotation.Rotation`:游标不再由"规划了哪些"给出,
+    而是由"真做完了哪些"给出(报一个 `done()` 才算一个,见 rotation.py)。
+    下面这些判据问的是"一圈能不能覆盖全部",故显式把整片做完 —— 与旧行为等价。
+    """
+    for m in rot.batch:
+        rot.done(m)
+    return rot.commit()
+
+
 def test_cursor_advances_and_covers_everyone_within_one_lap():
     """⭐⭐「第 N+1 个何时轮到」必须有答案:一圈之内**每个**市场都要被采到。
 
@@ -161,8 +173,9 @@ def test_cursor_advances_and_covers_everyone_within_one_lap():
     lap = -(-total // n_rot) + 2          # 一圈所需轮数(向上取整)+ 余量
     seen, cursor = set(), ""
     for _ in range(lap):
-        picked, cursor, _ = cc.select_poll_targets(markets, wms={}, limit=50, cursor=cursor)
+        picked, rot, _ = cc.select_poll_targets(markets, wms={}, limit=50, cursor=cursor)
         seen |= set(_cids(picked))
+        cursor = _lap(rot)
     missing = set(_cids(markets)) - seen
     assert not missing, f"{len(missing)} 个市场转了一整圈仍没轮到 —— 饿死没被解决"
 
@@ -176,7 +189,7 @@ def test_cursor_wraps_around_at_the_end():
     """
     markets = _markets(100)
     last_cid = max(_cids(markets))
-    picked, cursor, _ = cc.select_poll_targets(markets, wms={}, limit=50, cursor=last_cid)
+    picked = cc.select_poll_targets(markets, wms={}, limit=50, cursor=last_cid)[0]
     rot = set(_cids(picked)) - set(_cids(markets[:cc.poll_fresh_share(50)]))
     assert rot, "游标停在末尾后轮转片空了 —— 没有回卷"
 
@@ -191,8 +204,9 @@ def test_cursor_survives_a_changing_market_set():
     for round_i in range(40):
         # 每轮集合都变:新市场进来、老市场退出
         markets = _markets(150)[round_i % 5:]
-        picked, cursor, _ = cc.select_poll_targets(markets, wms={}, limit=50, cursor=cursor)
+        picked, rot, _ = cc.select_poll_targets(markets, wms={}, limit=50, cursor=cursor)
         seen |= set(_cids(picked))
+        cursor = _lap(rot)
         assert isinstance(cursor, str), "游标必须是可存进 JSON 的排序键"
     assert len(seen) > 100, f"集合变动下轮转卡住了(40 轮只覆盖 {len(seen)} 个)"
 

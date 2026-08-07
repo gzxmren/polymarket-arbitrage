@@ -90,6 +90,10 @@ def _compaction_sweep(counts: dict | None = None) -> list[str]:
 
 
 SLOW_STREAK_FILE = se.DATA_ROOT / "state" / "slow_cycle_streak.json"
+# 游标空洞连计(轮询与结算两处共用一条:两者同进程同节奏,任一处出空洞都算"这轮命中"）。
+# ⚠️ 是**布尔或**不是相加 —— 相加会稀释阈值,而 CLAUDE.md 禁止把独立链路的计数相加。
+# 各自的个数仍分别进心跳(poll_rotation_holes / settlement_rotation_holes),不合并。
+HOLE_STREAK_FILE = se.DATA_ROOT / "state" / "rotation_hole_streak.json"
 
 
 def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
@@ -126,6 +130,11 @@ def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
         cycle_state.read_state(SLOW_STREAK_FILE, "streak", 0), hit=alerts.is_slow_cycle(dur))
     cycle_state.write_state(SLOW_STREAK_FILE, "streak", slow_streak, "慢周期连计数")
 
+    hit_hole = counts.get("poll_rotation_holes", 0) > 0 or settle["rotation_holes"] > 0
+    hole_streak = cycle_state.next_hit_streak(
+        cycle_state.read_state(HOLE_STREAK_FILE, "streak", 0), hit=hit_hole)
+    cycle_state.write_state(HOLE_STREAK_FILE, "streak", hole_streak, "游标空洞连计")
+
     merged = {
         **counts,
         "newly_resolved": settle["newly_resolved"],
@@ -134,6 +143,9 @@ def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
         # 被时间闸砍掉几个。稳态应恒 0;持续非零 = 结算吞吐在悄悄掉,而 checked 本身看不出来
         "settlement_timegate_skipped_count": settle["timegate_skipped"],
         "truth_supply_zero_streak": settle["zero_streak"],  # 真值断供守护(静默失败)
+        # 游标空洞:两处的个数分别留痕(处置方向不同),连计数只有一条(见 HOLE_STREAK_FILE)
+        "settlement_rotation_holes": settle["rotation_holes"],
+        "rotation_hole_streak": hole_streak,
         "cycle_seconds": dur,
         # run_once 内部再拆成发现/轮询两段(它自己填 discovery_seconds),这里减出纯轮询耗时
         "poll_seconds": t_collect - counts.get("discovery_seconds", 0.0),

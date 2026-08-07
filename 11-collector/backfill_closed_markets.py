@@ -36,17 +36,20 @@
 from __future__ import annotations
 
 import argparse
-import bisect
 import datetime as dt
 import subprocess
 import time
 
+import alerts
 import collector_core as cc
 import cycle_state
+import rotation
 import storage_engine as se
 
 CURSOR_FILE = se.DATA_ROOT / "state" / "backfill_closed_cursor.json"
 STREAK_FILE = se.DATA_ROOT / "state" / "backfill_closed_streak.json"
+# 游标空洞连计(跨轮累积;每轮是独立进程,不落盘就等于没数)
+HOLE_STREAK_FILE = se.DATA_ROOT / "state" / "backfill_hole_streak.json"
 COLLECTOR_UNIT = "polymarket-rebirth-collector.service"
 
 # 默认值:采集器在 :00/:15/:30/:45 跑约 345s,故清扫排在 :07/:22/:37/:52,
@@ -114,23 +117,15 @@ def load_targets() -> list[dict]:
             for c, t0, t1, wm in rows]
 
 
-def select_batch(targets: list[dict], cursor: str, max_n: int) -> tuple[list[dict], str]:
-    """按游标取下一片 + 回卷。返回 (本轮切片, 新游标)。
+def select_batch(targets: list[dict], cursor: str, max_n: int) -> rotation.Rotation:
+    """按游标取下一片 + 回卷。返回**轮转对象**(切片在 `.batch`,游标由 `.commit()` 给)。
 
     游标存**排序键**(condition_id)而非下标:目标集每轮都在变
     —— 补完的消失、新关闭的加入 —— 存下标会乱跳。
-    与 `settlement_watcher.select_batch` / `collector_core.select_poll_targets` 同一套。
+    与 `settlement_watcher.select_batch` / `collector_core.select_poll_targets`
+    2026-08-07 起共用同一份实现(`rotation.py`),不再各写一遍。
     """
-    if not targets:
-        return [], cursor
-    ordered = sorted(targets, key=lambda m: m["condition_id"])
-    keys = [m["condition_id"] for m in ordered]
-    n = min(max_n, len(ordered))
-    i = bisect.bisect_right(keys, cursor)
-    picked = ordered[i:i + n]
-    if len(picked) < n:                      # 回卷:不然队尾永远补不到
-        picked = picked + ordered[:n - len(picked)]
-    return picked, picked[-1]["condition_id"]
+    return rotation.Rotation(targets, cursor, max_n)
 
 
 # systemd 里**明确表示"没在跑"**的状态。其余一律当成在跑(含没见过的新状态)——
@@ -203,17 +198,16 @@ def backfill_once(targets: list[dict], cursor: str, max_markets: int,
     net = _fetch.counters if net is None else net
     counts = {"targets": len(targets), "attempted": 0, "with_trades": 0,
               "empty": 0, "trades_written": 0, "yielded": 0,
-              "swept_marked": 0, "sweep_incomplete": 0}
+              "swept_marked": 0, "sweep_incomplete": 0, "rotation_holes": 0}
     if collector_is_running():
         counts["yielded"] = 1        # 出声:否则"为什么一直没补"无从解释
         return counts
 
-    batch, _planned_cursor = select_batch(targets, cursor, max_markets)
+    rot = select_batch(targets, cursor, max_markets)
     t0 = time.monotonic()
     now = int(dt.datetime.now(dt.UTC).timestamp())
     swept: list[dict] = []
-    last_done = None                 # ⭐游标只认**真做过**的,见下方说明
-    for i, m in enumerate(batch):
+    for i, m in enumerate(rot.batch):
         # 两道闸都在**发起请求之前**判。查完再判必然超出一整个市场的耗时。
         if time.monotonic() - t0 >= time_budget_s:
             break
@@ -243,7 +237,7 @@ def backfill_once(targets: list[dict], cursor: str, max_markets: int,
             # 不落的话,真没成交的市场会永远留在目标集里被反复重扫。
             swept.append({"condition_id": m["condition_id"], "swept_at": now,
                           "source": "backfill", "trades_written": len(rows)})
-        last_done = m
+        rot.done(m)                  # ⭐游标只认**真做过**的,见下方说明
     # 本清扫扫的正是"已关闭且一笔没采过"的盘 —— **撞 offset 硬顶概率最高的那一类**。
     # 不冲痕迹 = 历史空洞只记一半,而漏掉的恰是最容易出洞的那一半。
     cc.flush_truncations(_fetch.counters)
@@ -261,9 +255,13 @@ def backfill_once(targets: list[dict], cursor: str, max_markets: int,
     #
     # ⭐ 这与 `settlement_watcher.watch_settlements` 里"游标只走过真查过的市场"
     # 是**同一个形状**,那边 08-06 已修 —— 当时三处只修了一处。
-    # 一个都没做成 → 不写游标,整批留给下轮(否则等于"什么都没干却宣布这批过去了")。
-    if last_done is not None:
-        counts["cursor"] = last_done["condition_id"]
+    # 2026-08-07:三处收进 `rotation.py`,这条规则不再靠各自记得。
+    # 一个都没做成 → commit() 为 None → 不写游标,整批留给下轮
+    # (否则等于"什么都没干却宣布这批过去了")。
+    new_cursor = rot.commit()
+    if new_cursor is not None:
+        counts["cursor"] = new_cursor
+    counts["rotation_holes"] = rot.holes
     return counts
 
 
@@ -285,11 +283,24 @@ def run(max_markets: int = DEFAULT_MAX_MARKETS,
     cycle_state.write_streak(STREAK_FILE, streak)
     counts["zero_streak"] = streak
     counts.pop("cursor", None)
+    # 游标空洞连计:保守规则的反面风险是**卡死**(某个市场每轮都做不成,后面全饿死),
+    # 症状就是同一个空洞每轮都在。单发不算(可能是一次性抖动),持续才是真卡住。
+    hole_streak = cycle_state.next_hit_streak(
+        cycle_state.read_state(HOLE_STREAK_FILE, "streak", 0),
+        hit=counts["rotation_holes"] > 0)
+    cycle_state.write_state(HOLE_STREAK_FILE, "streak", hole_streak, "游标空洞连计")
+    counts["rotation_hole_streak"] = hole_streak
     net = _fetch.counters
     print(f"[回填清扫] {counts} | 4xx {net['http_4xx_count']} "
           f"限流 {net['rate_limit_hits']} 重试耗尽 {net['net_give_up_count']} "
           f"溢出 {net['offset_overflow_count']} 解析拒绝 {net['parse_reject_count']}",
           flush=True)
+    # 🔴 2026-08-07 补:此前 zero_streak 算了、写了、打印了,**全仓库没有任何人读它**
+    # —— 回填清扫彻底扫不动时不会有任何通知,只有人手工翻日志才看得见。
+    # 这正是本项目反复发作的形状"记录事实与使用事实只接一头"(第 5 次)。
+    # 回填是**独立链路**(独立进程、独立节奏),故判定与主周期分开,计数不许相加。
+    if alerts.maybe_alert_backfill(counts):
+        print("已推送回填告警", flush=True)
     return counts
 
 
@@ -301,8 +312,9 @@ if __name__ == "__main__":
     a = ap.parse_args()
     if a.dry_run:
         t = load_targets()
-        b, c = select_batch(t, cycle_state.read_state(CURSOR_FILE, "cursor", ""), a.max_markets)
-        print(f"目标集 {len(t)} 个;本轮会取 {len(b)} 个;"
-              f"采集器在跑={collector_is_running()};游标→{c[-8:] if c else '(空)'}")
+        r = select_batch(t, cycle_state.read_state(CURSOR_FILE, "cursor", ""), a.max_markets)
+        head = r.batch[0]["condition_id"][-8:] if r.batch else "(空)"
+        print(f"目标集 {len(t)} 个;本轮会取 {len(r.batch)} 个(自 …{head} 起);"
+              f"采集器在跑={collector_is_running()}")
     else:
         run(max_markets=a.max_markets, time_budget_s=a.budget)

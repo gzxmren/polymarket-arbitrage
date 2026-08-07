@@ -47,12 +47,24 @@ def test_none_end_date_sorts_last():
         "None 必须排最后;排到队头就是 11 天 0 产出的根因"
 
 
+def _lap(rot) -> str | None:
+    """把一片全部做完并提交,返回新游标。
+
+    ⭐2026-08-07 起 `select_batch` 返回 `rotation.Rotation`:游标不再由"规划了哪些"给出,
+    而是由"真做完了哪些"给出(报一个 `done()` 才算一个)。本轮转的核心规则见 rotation.py。
+    这些判据关心的是"一圈能不能覆盖全部",故此处显式把整片做完 —— 与旧行为等价。
+    """
+    for r in rot.batch:
+        rot.done(r)
+    return rot.commit()
+
+
 def test_many_none_do_not_block_head():
     """复现实测形态:610 个 None + 真到期市场 → 首轮切片必须查到真到期的。"""
     pending = [_row(f"n{i}", None) for i in range(610)]
     pending += [_row(f"d{i}", f"2025-1{i%2}-01T00:00:00Z") for i in range(100)]
     pending.sort(key=sw._sort_key)
-    picked, _ = sw.select_batch(pending, cursor="", max_check=80)
+    picked = sw.select_batch(pending, cursor="", max_check=80).batch
     assert all(not r["condition_id"].startswith("n") for r in picked), \
         "首轮不该把名额全花在 end_date=None 上(原 bug 正是如此)"
 
@@ -65,8 +77,9 @@ def test_rotation_covers_everything():
                       for i in range(1000)], key=sw._sort_key)
     max_check, cursor, seen = 80, "", set()
     for _ in range((len(pending) // max_check) + 1):
-        picked, cursor = sw.select_batch(pending, cursor, max_check)
-        seen.update(r["condition_id"] for r in picked)
+        rot = sw.select_batch(pending, cursor, max_check)
+        seen.update(r["condition_id"] for r in rot.batch)
+        cursor = _lap(rot)
     assert len(seen) == len(pending), f"应覆盖全部 {len(pending)},实覆盖 {len(seen)}"
 
 
@@ -74,8 +87,9 @@ def test_rotation_advances_not_restart():
     """第二轮必须接着第一轮往后走,不能每轮都从头查同一批(原 bug 的本质)。"""
     pending = sorted([_row(f"c{i:05d}", f"2025-01-01T00:00:{i%60:02d}Z")
                       for i in range(500)], key=sw._sort_key)
-    first, cur = sw.select_batch(pending, "", 80)
-    second, _ = sw.select_batch(pending, cur, 80)
+    r1 = sw.select_batch(pending, "", 80)
+    first = r1.batch
+    second = sw.select_batch(pending, _lap(r1), 80).batch
     assert not ({r["condition_id"] for r in first} & {r["condition_id"] for r in second}), \
         "连续两轮不得重叠,否则就是原地打转"
 
@@ -84,7 +98,7 @@ def test_rotation_wraps_around():
     """游标走到末尾要回卷到开头,继续下一圈(持续复查:未结算的可能后来结算了)。"""
     pending = sorted([_row(f"c{i:03d}", f"2025-01-01T00:00:{i%60:02d}Z")
                       for i in range(100)], key=sw._sort_key)
-    picked, cur = sw.select_batch(pending, sw._sort_key(pending[-1]), 30)
+    picked = sw.select_batch(pending, sw._sort_key(pending[-1]), 30).batch
     assert len(picked) == 30, "越过末尾必须回卷,而不是返回空"
     assert picked[0]["condition_id"] == pending[0]["condition_id"]
 
@@ -93,16 +107,17 @@ def test_cursor_survives_list_growth():
     """pending 会持续变长(新市场注册)。游标基于排序键而非下标,新增元素不得导致重头开始。"""
     pending = sorted([_row(f"c{i:05d}", f"2025-06-{(i%28)+1:02d}T00:00:00Z")
                       for i in range(300)], key=sw._sort_key)
-    _, cur = sw.select_batch(pending, "", 80)
+    cur = _lap(sw.select_batch(pending, "", 80))
     grown = sorted(pending + [_row("newbie", "2025-06-01T00:00:00Z")], key=sw._sort_key)
-    picked, _ = sw.select_batch(grown, cur, 80)
+    picked = sw.select_batch(grown, cur, 80).batch
     assert all(sw._sort_key(r) > cur for r in picked), "新元素插入不得让游标倒退重查"
 
 
 def test_empty_pending_is_safe():
     """空 pending 不得崩,也不得让游标乱跳。"""
-    picked, cur = sw.select_batch([], "abc", 80)
-    assert picked == [] and cur == "abc"
+    rot = sw.select_batch([], "abc", 80)
+    # commit() 为 None ⇒ 调用方不写游标 ⇒ 文件里的 "abc" 原样留着(旧写法是原样写回)
+    assert rot.batch == [] and rot.commit() is None
 
 
 # ---------- 3. ⭐批量查询必须两遍,否则丢的就是已结算样本 ----------

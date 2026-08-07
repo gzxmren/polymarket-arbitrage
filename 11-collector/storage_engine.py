@@ -326,6 +326,11 @@ AUDIT_FIELDS = (
     "newly_resolved",          # ⭐正是 08-03 静默 11 天的那个量;修完之后它竟一直没进心跳
     "settlement_lookup_fail",  # 分子
     "settlement_checked",      # 分母 —— run_cycle 那行注释写着"须带上分母",而它就是被丢的那个
+    # --- 2026-08-07 新增:游标空洞(随 rotation.py 一同立)---
+    # 稳态恒 0;非 0 = 有市场被跳过而轮转不知道,或某个市场每轮都做不成把队伍卡住。
+    # 两处的**个数分开留痕**(处置方向不同:轮询查时间闸/网络,结算查 Gamma 批量查询),
+    # 连计数只有一条(布尔或,不是相加 —— 相加会稀释阈值)。
+    "poll_rotation_holes", "settlement_rotation_holes", "rotation_hole_streak",
 )
 
 
