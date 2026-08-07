@@ -7,7 +7,11 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
+
+import cycle_state
+import storage_engine as se
 
 # 复用项目毛细血管:06-tools/monitoring/telegram_notifier_v2
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "06-tools" / "monitoring"))
@@ -115,11 +119,17 @@ def _slow_cycle_hint(counts: dict) -> str:
     return "→ 网络计数干净:慢在本地(看各阶段耗时,尤其 compaction/registry 是否变大)"
 
 
-def _send(msg: str, max_retries: int = 2) -> bool:
+def _send(msg: str, max_retries: int = 1) -> bool:
     """推一条。发送失败一律吞掉 —— 告警发不出去不该反过来搞垮被监控的东西。
 
-    `max_retries` 直通 telegram_notifier_v2:单次 urlopen 超时 30s,故最坏阻塞
-    ≈ max_retries × 30s。调用方所在链路的时间预算紧时应调小(见 maybe_alert_backfill)。
+    ⭐默认只试 1 次(2026-08-07 从 2 改为 1):**待发队列已经取代了重试**。
+    单次 urlopen 超时 30s,故最坏阻塞 ~30s;试两次就是 ~61s,而回填那条链路
+    减去 300s 时间闸后只剩 90s 余量,且这条推送恰恰只在出事时才发 ——
+    "告警耗时"与"被告警的故障"是相关的,不能按平时的余量估。
+    发不出去不丢:进队列,下一轮(15 分钟后)整批补发,那才是正确的重试尺度。
+
+    ⚠️ 唯一调用方是 `dispatch`,且**不传第二个参数** ——
+    既有判据里的假发送是单参数的 `lambda m: ...`,显式传参会把它们全打翻。
     """
     if not TELEGRAM_ENABLED:
         print(f"[Telegram 未启用] {msg}", file=sys.stderr)
@@ -131,10 +141,102 @@ def _send(msg: str, max_retries: int = 2) -> bool:
         return False
 
 
+# ---------- 待发队列(2026-08-07)----------
+# 由来:08-07 08:00 断网 15 分钟,采集器**正确检测到** firehose 采样 0 笔、
+# **正确生成了**告警,然后发不出去 —— 而 `_send` 只往 stderr 打一行就吞掉,
+# 于是日志上看起来"今天 0 条告警",与真正的风平浪静一模一样。
+# 实测历史累计 25 条告警生成了但从没送到(采集器 23 + 看门狗 2),全仓库无人读这个失败。
+#
+# ⚠️ **这个机制解决不了的事,必须说清楚**:"告警通道坏了"没法用告警去通知。
+# 要真解决得有第二条独立通道(短信/邮件/本地弹窗),不在本次范围。
+# 本次做到的是两件较弱但真实的事:①通道恢复时补发,并写明曾中断多久、积压几条
+# ⇒ 人**事后**知道自己被蒙了多久;②队列深度进心跳 ⇒ 看门狗读得到 ——
+# 这条在"网络没坏、但 Telegram 令牌失效/接口变更/被限流"这类故障下是真管用的。
+#
+# ⭐关键约束:**每轮最多一次网络调用**。逐条补发 20 条 × 单条最坏 30s = 10 分钟,
+# 足以撑爆 900s 硬杀线。故队列**拼成一条**发出去 —— 即队列**取代**了重试,
+# 不是叠加在重试之上(所以下面 `_send` 一律 max_retries=1)。
+PENDING_MAX = 20
+_QUEUE_DIR = se.DATA_ROOT / "state"
+
+
+def _queue_path(link: str) -> Path:
+    """一条链路一个文件。采集器(:00/:15/:30/:45)与看门狗(:00/:30)会**同时**跑,
+    共用一个文件会在读-改-写之间丢条目 —— 而丢的正是告警本身。"""
+    return _QUEUE_DIR / f"pending_alerts_{link}.json"
+
+
+def _load_queue(link: str) -> tuple[list[dict], int]:
+    v = cycle_state.read_state(_queue_path(link), "pending", None)
+    if isinstance(v, dict) and isinstance(v.get("items"), list):
+        try:
+            return v["items"], int(v.get("dropped") or 0)
+        except (TypeError, ValueError):
+            pass
+    return [], 0            # 损坏/缺失一律降级为空:只影响节奏,不该让采集器崩
+
+
+def queue_stats(link: str = "cycle") -> dict:
+    items, dropped = _load_queue(link)
+    oldest = int(time.time() - items[0]["ts"]) if items else 0
+    return {"queue_depth": len(items), "dropped": dropped, "oldest_age_s": oldest}
+
+
+def _compose(items: list[dict], dropped: int) -> str:
+    """把队列拼成一条。
+
+    ⭐只有一条且没有丢弃时**原样返回** —— 稳态下发出去的正文必须与从前逐字相同,
+    否则这次改动会悄悄改掉所有既有告警的样子,而那些告警的内容判据验的正是正文。
+    """
+    if len(items) == 1 and not dropped:
+        return items[0]["body"]
+    mins = (time.time() - items[0]["ts"]) / 60
+    head = f"📮 <b>补发 {len(items)} 条告警</b>(推送通道中断约 {mins:.0f} 分钟)"
+    if dropped:
+        head += f"\n⚠️ 期间另有 {dropped} 条更早的因队列上限({PENDING_MAX})被丢弃"
+    return head + "\n\n" + "\n\n———\n\n".join(i["body"] for i in items)
+
+
+def dispatch(body: str | None, link: str = "cycle") -> dict:
+    """把本轮告警(可为 None)并入待发队列,并尝试**一次**把整个队列送出去。
+
+    返回 {delivered, queue_depth, dropped, oldest_age_s}。
+    `body` 为 None 且队列为空 ⇒ 一次网络调用都不发(防洪的另一头:稳态完全静默)。
+    ⭐但 `body` 为 None 而队列**非空**时仍要试 —— 否则一旦风平浪静积压就永远排不出去,
+    而"风平浪静"恰恰是故障结束后的常态。
+    """
+    items, dropped = _load_queue(link)
+    if body:
+        items.append({"ts": time.time(), "body": body})
+    if not items:
+        return {"delivered": True, "queue_depth": 0, "dropped": 0, "oldest_age_s": 0}
+    if len(items) > PENDING_MAX:
+        # 丢最老的:告警是状态描述,新的更能反映现状。但**必须出声** ——
+        # 静默丢样本是本项目的真凶,补发时会把丢弃数一并告诉人。
+        dropped += len(items) - PENDING_MAX
+        items = items[-PENDING_MAX:]
+    if _send(_compose(items, dropped)):
+        try:
+            _queue_path(link).unlink(missing_ok=True)   # 送达即清空,稳态不留垃圾文件
+        except OSError as e:
+            print(f"[待发队列清空失败] {e}(下轮会重发一次,不丢)", file=sys.stderr)
+        return {"delivered": True, "queue_depth": 0, "dropped": dropped,
+                "oldest_age_s": 0}
+    cycle_state.write_state(_queue_path(link), "pending",
+                            {"items": items, "dropped": dropped}, "待发告警队列")
+    return {"delivered": False, "queue_depth": len(items), "dropped": dropped,
+            "oldest_age_s": int(time.time() - items[0]["ts"])}
+
+
 def maybe_alert(counts: dict) -> bool:
-    """按阈值决定是否告警。返回是否真的推送了。"""
+    """按阈值决定是否告警。返回**本轮是否真的推出去一条**。
+
+    注意语义:队列里补发成功不算"本轮推了" —— 本轮没触发就该返回 False,
+    这是既有判据(test_alerts_*.py 等约 15 条)验的东西,不许因为加队列而改掉。
+    """
     body = build_alert(counts)
-    return _send(body) if body else False
+    delivered = dispatch(body, link="cycle")["delivered"]
+    return bool(body) and delivered
 
 
 def build_alert(counts: dict) -> str | None:
@@ -213,14 +315,15 @@ def build_alert(counts: dict) -> str | None:
 def maybe_alert_backfill(counts: dict) -> bool:
     """回填清扫链路的告警。返回是否真的推送了。
 
-    ⚠️ `max_retries=1`(最坏阻塞 ~30s 而非 ~61s):回填的 systemd 硬杀线是 420s,
-    时间闸已占 300s,余量只有 120s —— 而这条推送**恰恰只在出事时才发**,
+    ⚠️ 单次最坏阻塞 ~30s(`dispatch` 内一律 max_retries=1):回填的 systemd 硬杀线
+    是 420s,时间闸已占 300s,余量只有 90s —— 而这条推送**恰恰只在出事时才发**,
     出的事(网络/接口退化)又正是让 Telegram 也卡住的那类。
     即"告警耗时"与"被告警的故障"相关,不是独立事件,故不能按平时的余量估。
-    重试丢掉的那一次不心疼:防洪规则每 N 轮会复述,结构上自然补推。
+    发不出去也不丢:进本链路自己的待发队列,下一轮(15 分钟后)补发。
     """
     body = build_backfill_alert(counts)
-    return _send(body, max_retries=1) if body else False
+    delivered = dispatch(body, link="backfill")["delivered"]
+    return bool(body) and delivered
 
 
 def build_backfill_alert(counts: dict) -> str | None:

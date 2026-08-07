@@ -56,6 +56,25 @@ def _latest_heartbeat() -> dict | None:
     return rows[-1] if rows else None
 
 
+def _heartbeat_problems(hb: dict) -> list[str]:
+    """只看心跳**内容**的问题(不含新鲜度 —— 那个要拿当前时间比,单独在 check 里判)。
+
+    拆成纯函数是为了判据能直接喂一条心跳进来验,不必伪造文件系统和时钟。
+    """
+    problems = []
+    if hb.get("firehose_fail", 0) > 0:
+        problems.append("🟡 最近一轮 firehose 抽风（采样 0 笔），若持续须查接口/IP")
+    # ⭐告警送达盲区(2026-08-07 立):采集器自己发不出去的时候是喊不出来的,
+    # 只能由**别人**替它喊。本条在"网络没坏、但 Telegram 令牌失效/接口变更/被限流"
+    # 这类故障下真管用;若是整机断网,看门狗自己也喊不出去 —— 那一层解决不了,
+    # 需要第二条独立通道,已在 alerts.py 里写明不在范围内。
+    qd = hb.get("alert_queue_depth", 0)
+    if qd > 0:
+        problems.append(f"🟡 采集器有 {qd} 条告警**发不出去**(积压待发)。"
+                        f"含义:它可能正在出事而喊不出来 —— 须查 Telegram 令牌/网络")
+    return problems
+
+
 def check() -> list[str]:
     problems = []
     if not _timer_active():
@@ -68,8 +87,7 @@ def check() -> list[str]:
         if age_min > HEARTBEAT_STALE_MIN:
             problems.append(f"🔴 采集器 {age_min:.0f} 分钟无心跳"
                             f"（应每 {alerts.cycle_minutes()} 分钟一轮=停摆）")
-        if hb.get("firehose_fail", 0) > 0:
-            problems.append("🟡 最近一轮 firehose 抽风（采样 0 笔），若持续须查接口/IP")
+        problems += _heartbeat_problems(hb)
     return problems
 
 
@@ -95,7 +113,9 @@ def main() -> int:
     line = "🐕 <b>采集器看门狗告警</b>\n" + "\n".join(problems)
     print(line)
     if _cooldown_ok(sig):
-        alerts._send(line)
+        # 走待发队列:看门狗自己也栽过 —— 2026-08-07 早上它抓到了 firehose 抽风、
+        # 想推却因同一场断网推不出去,只在日志里留了两行没人读的 Error。
+        alerts.dispatch(line, link="watchdog")
     else:
         print("（冷却期内,未重复推送）")
     return 1

@@ -331,6 +331,12 @@ AUDIT_FIELDS = (
     # 两处的**个数分开留痕**(处置方向不同:轮询查时间闸/网络,结算查 Gamma 批量查询),
     # 连计数只有一条(布尔或,不是相加 —— 相加会稀释阈值)。
     "poll_rotation_holes", "settlement_rotation_holes", "rotation_hole_streak",
+    # --- 2026-08-07 新增:告警送达盲区 ---
+    # 实测 25 条告警生成了却从没送到,而"发不出去"这件事全仓库无人读 ⇒ 日志上
+    # 看起来"今天 0 条告警",与真正的风平浪静一模一样。队列深度落进心跳,
+    # 消费者是**看门狗**(collector_watchdog._heartbeat_problems)——
+    # 它在"网络没坏、但 Telegram 令牌失效/接口变更"这类故障下是唯一还活着的路。
+    "alert_queue_depth", "alert_dropped_count",
 )
 
 
