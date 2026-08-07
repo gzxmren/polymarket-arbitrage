@@ -7,7 +7,7 @@
   2. 最近有没有跑过周期?(审计心跳新鲜度 —— 每轮必写,故>25 分钟无心跳=停摆)
   3. firehose 是否持续抽风?(最近心跳 firehose_fail>0)
 
-任一红 → Telegram(复用 alerts._send)。带 4h 冷却防刷屏。
+任一红 → Telegram(复用 alerts.dispatch(走待发队列,发不出去不丢))。带 4h 冷却防刷屏。
 """
 from __future__ import annotations
 

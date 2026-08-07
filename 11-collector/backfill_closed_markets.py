@@ -299,8 +299,12 @@ def run(max_markets: int = DEFAULT_MAX_MARKETS,
     # —— 回填清扫彻底扫不动时不会有任何通知,只有人手工翻日志才看得见。
     # 这正是本项目反复发作的形状"记录事实与使用事实只接一头"(第 5 次)。
     # 回填是**独立链路**(独立进程、独立节奏),故判定与主周期分开,计数不许相加。
-    if alerts.maybe_alert_backfill(counts):
-        print("已推送回填告警", flush=True)
+    # ⚠️ 用共用的措辞函数,并且**成功失败都出声** —— 原来只有成功分支打印,
+    # 于是"发不出去、N 条待发"这件事在 backfill.log 里连一行都没有(评审抓出)。
+    ar = alerts.dispatch(alerts.build_backfill_alert(counts), link="backfill")
+    line = alerts.dispatch_log_line(ar)
+    if line:
+        print(f"[回填清扫] {line}", flush=True)
     return counts
 
 

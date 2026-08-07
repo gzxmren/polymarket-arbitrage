@@ -155,19 +155,23 @@ def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
     }
     # ⭐告警放在心跳**之前**发(2026-08-07 调整):告警送达与否是本轮的产出之一,
     # 发完才知道队列深度。心跳仍是整轮最后一件事,故"心跳新鲜 = 整轮真跑完了"不变。
-    delivered = alerts.maybe_alert(merged)
-    qs = alerts.queue_stats("cycle")
-    merged["alert_queue_depth"] = qs["queue_depth"]      # 消费者:看门狗读心跳
-    merged["alert_dropped_count"] = qs["dropped"]
+    ar = alerts.maybe_alert_with_counts(merged)
+    # ⚠️ 用返回值,**不许**在这里重新 queue_stats():送达成功时队列文件已被删,
+    # 重读恒为 0 —— 而"成功了"恰恰是 dropped 最不该沉默的时刻(2026-08-07 评审抓出)。
+    merged["alert_queue_depth"] = ar["queue_depth"]      # 消费者:看门狗读心跳
+    merged["alert_dropped_count"] = ar["dropped"]
+    # 告警最坏阻塞约 30s。它以前算在 cycle_seconds 之外 ⇒ 心跳系统性少算,
+    # 且恰好在网络最差、最该被准确记录的那些轮次。故耗时在告警之后定稿。
+    # ⚠️ `slow_cycle_streak` 仍用告警**之前**的耗时算:判定结果要拿去生成告警正文,
+    # 用告警之后的数就成了先有鸡还是先有蛋。两者差最多 ~30s,不影响 540s 那条线。
+    merged["cycle_seconds"] = time.monotonic() - t0
     # 心跳写在这里(而非 run_once 内)= "整轮真跑完了"的凭证,详见 collector_core 里的说明。
     se.write_audit_heartbeat(merged)
 
-    if delivered:
-        print("已推送告警", flush=True)
-    elif qs["queue_depth"]:
-        # 出声:否则"发不出去"这件事只剩 stderr 里一行,而那行没人读(本次要修的病)
-        print(f"⚠️ 告警推送失败,{qs['queue_depth']} 条待发(最早 "
-              f"{qs['oldest_age_s'] / 60:.0f} 分钟前),下轮补发", flush=True)
+    # 出声:否则"发不出去"或"补发成功"都只剩 stderr 里一行,而那行没人读(本次要修的病)
+    line = alerts.dispatch_log_line(ar)
+    if line:
+        print(line, flush=True)
 
     print(f"=== 周期结束 {dur:.0f}s "
           f"(发现 {merged['discovery_seconds']:.0f}s / 轮询 {merged['poll_seconds']:.0f}s / "

@@ -182,19 +182,69 @@ def queue_stats(link: str = "cycle") -> dict:
     return {"queue_depth": len(items), "dropped": dropped, "oldest_age_s": oldest}
 
 
-def _compose(items: list[dict], dropped: int) -> str:
-    """把队列拼成一条。
+_SEP = "\n\n———\n\n"
+# telegram_notifier_v2 的硬上限是 4000 字符,**且它是从尾部截断的**。
+# 而队列把最新的排在最后 ⇒ 若交给它截,被截掉的恰好是队列费劲保下来的"最新",
+# 与"溢出丢最老、留最新"这条设计意图正相反(2026-08-07 评审实测:
+# 真实告警一条约 770 字节,20 条拼起来约 15,000 字节,必被截)。
+# 故长度由**我们自己**控制:从最新往回收,收不下的出声报数,不交给下游默默砍。
+COMPOSE_MAX_CHARS = 3600      # 给页眉和 Telegram 侧留余量
 
-    ⭐只有一条且没有丢弃时**原样返回** —— 稳态下发出去的正文必须与从前逐字相同,
-    否则这次改动会悄悄改掉所有既有告警的样子,而那些告警的内容判据验的正是正文。
+
+def _compose(items: list[dict], dropped: int) -> tuple[str, int]:
+    """把队列拼成一条,返回 (正文, 因长度没带上的条数)。
+
+    ⚠️ 调用方保证 items 非空。**本函数永远加页眉** ——
+    "本轮触发本轮就发"的逐字原样那条路径在 `dispatch` 里直接短路,不进这里。
+    理由见 dispatch:只有一条但**被推迟过**的,也必须写明延迟了多久
+    (那是最高频的场景,以前它与"从没出过故障"逐字相同,承诺等于没兑现)。
     """
-    if len(items) == 1 and not dropped:
-        return items[0]["body"]
+    kept: list[dict] = []
+    total = 0
+    for it in reversed(items):            # 从最新往回收
+        need = len(it["body"]) + len(_SEP)
+        if kept and total + need > COMPOSE_MAX_CHARS:
+            break
+        kept.append(it)
+        total += need
+    kept.reverse()                        # 展示时仍按时间顺序,读起来才顺
+    omitted = len(items) - len(kept)
     mins = (time.time() - items[0]["ts"]) / 60
-    head = f"📮 <b>补发 {len(items)} 条告警</b>(推送通道中断约 {mins:.0f} 分钟)"
+    head = (f"📮 <b>补发 {len(kept)} 条告警</b>(推送通道中断约 {mins:.0f} 分钟)"
+            if not omitted else
+            f"📮 <b>补发告警:积压 {len(items)} 条,本条只带得下最新 {len(kept)} 条</b>"
+            f"(推送通道中断约 {mins:.0f} 分钟)")
     if dropped:
-        head += f"\n⚠️ 期间另有 {dropped} 条更早的因队列上限({PENDING_MAX})被丢弃"
-    return head + "\n\n" + "\n\n———\n\n".join(i["body"] for i in items)
+        head += f"\n⚠️ 另有 {dropped} 条更早的因队列上限({PENDING_MAX})被丢弃"
+    if omitted:
+        # ⭐为什么不把装不下的留到下轮再发:那样 `delivered=True` 却 `queue_depth>0`,
+        # 而看门狗把"队列非空"解读成**通道坏了** ⇒ 会推一条假告警。
+        # 宁可诚实地丢并说清楚,也不要造一个会误导排查方向的信号
+        # (指错方向的告警比不告警更贵 —— 见 _slow_cycle_hint 上方的说明)。
+        head += f"\n⚠️ 更早的 {omitted} 条因单条消息长度上限**未展示,内容已丢弃**"
+    return head + "\n\n" + _SEP.join(i["body"] for i in kept), omitted
+
+
+def dispatch_log_line(r: dict) -> str | None:
+    """把 dispatch 的返回值翻成一行人话;无事可说返回 None。
+
+    ⭐三条链路共用一份措辞 —— 回填那条以前连失败分支都没有,
+    而"照抄结构而不抽象"已经犯过 3 次,这里不许再抄第四份。
+    """
+    if r["sent"]:
+        if r["backlog_sent"]:
+            line = (f"✅ 已推送告警 {r['sent']} 条,其中**补发 {r['backlog_sent']} 条**"
+                    f"(推送通道曾中断约 {r['oldest_age_s'] / 60:.0f} 分钟)")
+            if r["dropped"]:
+                line += f";另有 {r['dropped']} 条因队列上限被丢弃"
+            if r["omitted"]:
+                line += f";另有 {r['omitted']} 条因长度上限未展示"
+            return line
+        return "已推送告警"
+    if r["queue_depth"]:
+        return (f"⚠️ 告警推送失败,{r['queue_depth']} 条待发"
+                f"(最早 {r['oldest_age_s'] / 60:.0f} 分钟前),下轮补发")
+    return None
 
 
 def dispatch(body: str | None, link: str = "cycle") -> dict:
@@ -206,26 +256,50 @@ def dispatch(body: str | None, link: str = "cycle") -> dict:
     而"风平浪静"恰恰是故障结束后的常态。
     """
     items, dropped = _load_queue(link)
+    backlog = len(items)                  # 本次调用**之前**就积压着的条数
     if body:
         items.append({"ts": time.time(), "body": body})
+    quiet = {"delivered": True, "queue_depth": 0, "dropped": 0, "oldest_age_s": 0,
+             "sent": 0, "backlog_sent": 0, "omitted": 0}
     if not items:
-        return {"delivered": True, "queue_depth": 0, "dropped": 0, "oldest_age_s": 0}
+        return quiet
     if len(items) > PENDING_MAX:
         # 丢最老的:告警是状态描述,新的更能反映现状。但**必须出声** ——
         # 静默丢样本是本项目的真凶,补发时会把丢弃数一并告诉人。
         dropped += len(items) - PENDING_MAX
+        backlog = max(0, backlog - (len(items) - PENDING_MAX))
         items = items[-PENDING_MAX:]
-    if _send(_compose(items, dropped)):
+    age = int(time.time() - items[0]["ts"])
+    # ⭐"本轮触发、本轮就发"这一条走逐字原样:稳态下的告警正文必须与从前一个字不差,
+    # 否则会悄悄改掉所有既有告警的样子(而那些告警的内容判据验的正是正文)。
+    # 注意条件里有 `not backlog` —— 只有一条但**被推迟过**的不走这里,
+    # 它必须带上"延迟了多久",那是最高频的场景。
+    if body and not backlog and not dropped:
+        msg, omitted = items[0]["body"], 0
+    else:
+        msg, omitted = _compose(items, dropped)
+    if _send(msg):
         try:
             _queue_path(link).unlink(missing_ok=True)   # 送达即清空,稳态不留垃圾文件
         except OSError as e:
-            print(f"[待发队列清空失败] {e}(下轮会重发一次,不丢)", file=sys.stderr)
+            # ⚠️ 删不掉就把内容清空(内容为准,不靠文件在不在)。两条都失败才会重复补发,
+            # 而且是**每轮**重复,不是"一次" —— 原注释低估了这个故障的持续性。
+            print(f"[待发队列清空失败] {e},改写空队列兜底", file=sys.stderr)
+            cycle_state.write_state(_queue_path(link), "pending",
+                                    {"items": [], "dropped": 0}, "待发告警队列")
         return {"delivered": True, "queue_depth": 0, "dropped": dropped,
-                "oldest_age_s": 0}
+                "oldest_age_s": age, "sent": len(items) - omitted,
+                "backlog_sent": min(backlog, len(items) - omitted), "omitted": omitted}
     cycle_state.write_state(_queue_path(link), "pending",
                             {"items": items, "dropped": dropped}, "待发告警队列")
-    return {"delivered": False, "queue_depth": len(items), "dropped": dropped,
-            "oldest_age_s": int(time.time() - items[0]["ts"])}
+    # ⚠️ 落盘可能失败(write_state 内部吞掉 OSError 只打一行)。照样返回 len(items)
+    # 等于**声称已存而实际没存** —— 又一次"记录了没记上"。故回读确认,以磁盘为准。
+    real = _load_queue(link)[0]
+    if len(real) != len(items):
+        print(f"[待发队列落盘失败] 本应存 {len(items)} 条,实存 {len(real)} 条 ——"
+              f" 这些告警已永久丢失", file=sys.stderr)
+    return {"delivered": False, "queue_depth": len(real), "dropped": dropped,
+            "oldest_age_s": age, "sent": 0, "backlog_sent": 0, "omitted": 0}
 
 
 def maybe_alert(counts: dict) -> bool:
@@ -234,9 +308,21 @@ def maybe_alert(counts: dict) -> bool:
     注意语义:队列里补发成功不算"本轮推了" —— 本轮没触发就该返回 False,
     这是既有判据(test_alerts_*.py 等约 15 条)验的东西,不许因为加队列而改掉。
     """
+    return bool(maybe_alert_with_counts(counts)["sent_fresh"])
+
+
+def maybe_alert_with_counts(counts: dict) -> dict:
+    """同 `maybe_alert`,但把 dispatch 的全部计数带出来给调用方写进心跳。
+
+    ⭐调用方**必须用这个返回值**,不许在 dispatch 之后重读磁盘:
+    送达成功时队列文件已被删,重读只会拿到 0 —— 而"成功了"恰恰是
+    `dropped`/`backlog_sent` 最不该沉默的时刻(2026-08-07 评审实测抓出)。
+    """
     body = build_alert(counts)
-    delivered = dispatch(body, link="cycle")["delivered"]
-    return bool(body) and delivered
+    r = dispatch(body, link="cycle")
+    # 本轮触发且送出去了 = 老语义的 True。补发成功不算(既有约 15 条判据验的是这个)。
+    r["sent_fresh"] = bool(body) and r["delivered"]
+    return r
 
 
 def build_alert(counts: dict) -> str | None:
