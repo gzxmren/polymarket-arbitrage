@@ -135,6 +135,18 @@ Explicitly verify every `except` clause:
 3. `requests.*()` raises `requests.exceptions.Timeout` (wraps `socket.timeout`) — and separately `requests.exceptions.ConnectionError`. Both must be caught. A bare `except Exception` that does `continue` or `pass` silently drops both.
 4. Confirm the retry / fallback logic still runs under each exception path — do not accept "has try/except" at face value.
 5. After writing exception handling, ask: "what happens if the network hangs for 60s mid-read?" and trace it through the code.
+6. **⭐注释里承诺的保护,必须实测它真的接得住**(2026-08-17 踩到)。
+   `except` 上方写着"单个坏文件不该让整份报表消失",而实际只捕了 `OSError` ——
+   实测 pyarrow 的异常分属**三个**家族:`ArrowInvalid`→`ValueError`、
+   `ArrowTypeError`→`TypeError`、`ArrowIOError`→`OSError`。
+   中途改成 `(OSError, ValueError)` **仍然漏** `ArrowTypeError`,最后用共同基类
+   `pa.lib.ArrowException` 才真覆盖。
+   ⇒ 做法:**造一个真的坏输入跑一遍**(不是内存里的假对象),把 `type(e).__mro__` 打出来,
+   再决定 `except` 写什么。凭"应该是 IO 错误"想当然,承诺的防线就是假的。
+7. **可选导入的 `except` 不许只写 `ImportError`**(2026-08-17 踩到)。
+   模块级的 `NameError` / `SyntaxError` 抛的都不是它 ⇒ 一个附加功能坏掉,
+   异常会一路冒出去把**调用方其余职责全部打断**(实例:看门狗的三项核心检查全不执行)。
+   本项目 `alerts.py` 对 telegram 的可选导入用的就是 `except Exception`,照它抄。
 
 When reviewing **existing code** (not just new additions), apply the same checklist to any `except` block you read.
 
@@ -157,6 +169,36 @@ When reviewing **existing code** (not just new additions), apply the same checkl
 6. **每条关键产出配一条"连续 N 轮为 0"守护**,且区分「有活没干成」(异常)与「没活可干」(正常)。
 7. **新增告警必须自带防洪判据。** 稳态完全静默 + 真异常必推,两头都要焊死 ——
    降噪不是体验优化,是可靠性工作(噪音会让真信号无处可显)。
+
+---
+
+### 2026-08-17 新增四条(同一天连踩四个,前 7 条都没盖住)
+
+8. **⭐已经写下的"保证/安慰话",工况变了之后必须重审。**
+   问句:*这句话是在什么前提下写的?那个前提现在还成立吗?*
+   实例:告警正文写着「本轮空转,**数据不丢(下轮自愈回填)**」—— 在**单轮抖动**下是真的,
+   而 08-13 连续 56 轮(14 小时)时它推了 **61 遍**,当天永久丢了约 1.4 万笔。
+   这不是"没有告警",是**告警响了 61 次、每次都说了假话**,比没有更糟(它主动让人放心)。
+   ⇒ 任何形如"没事/会自愈/不影响"的措辞,都要问"持续下去还成立吗",并按连计分档。
+
+9. **⭐判据的工况参数必须来自现网实测,否则它测的是一个不会发生的世界。**
+   (与第 5 条不同:第 5 条管**阈值取值**,这条管**判据跑在什么条件下**。)
+   实例:「不饿死」判据用涌入 30 / 预算 10 跑 40 轮,积压最多长到 800,
+   **永远碰不到 MAX_BACKLOG=2000** —— 而生产里恰恰是队列顶死的情形。
+   判据全绿三天,不变量已经破了。写完判据要问:*现网今天的数值代进去,它还绿吗?*
+
+10. **⭐新加的一步,要问「上游失败时它还跑不跑」。**
+    实例:systemd 里两条 `ExecStart` 串在一起,而语义是「前一条失败(且没有 `-` 前缀),
+    后面的都不执行」。日报"发不出去→进队列"是**预期内经常发生**的自愈行为却返回 1
+    ⇒ 每次网络抖一下,当天的趋势报表根本不会生成。
+    判据当时是绿的 —— 它只检查了 service 文件里**有没有那行字**,没检查它**会不会被执行**。
+    ⇒ 编排层(systemd/cron/流水线)也有静默失败,别只盯代码里面。
+
+11. **⭐我自己造的检查工具同样会静默坏掉,而且坏得跟"没问题"一模一样。**
+    实例(同一天两次):① 用日期过滤日志查告警,而 collector.log 的告警行**不带日期**、
+    watchdog.log 只有 `[HH:MM]` ⇒ 两次都返回空,差点得出"告警一条没响"的错误结论。
+    ② 判据里的假接口按**第几次调用**作答,而改动恰好让批数变了 ⇒ 错位,红绿都不可信。
+    ⇒ 查出"没有异常"时,先问*这个查法在真有异常时会返回什么*;能构造就构造一次坏输入验一下。
 
 ## Conventions
 - **Test isolation is enforced**: test code must run with a `--test` flag and write to `/tmp/`; production data dirs (`07-data/`) must never receive test fixtures. Honor this when adding scripts.

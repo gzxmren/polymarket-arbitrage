@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 import time
+from pathlib import Path
 
 import pyarrow.parquet as pq
 
@@ -33,6 +34,8 @@ HEARTBEAT_STALE_MIN = 40
 COOLDOWN_S = 4 * 3600             # 同一问题 4h 内不重复告警
 STATE_FILE = se.DATA_ROOT / ".watchdog_state.json"
 TIMER_UNIT = "polymarket-rebirth-collector.timer"
+# 判别「日报功能没装」与「日报模块坏了」靠文件在不在 —— 见 _digest_problems。
+DIGEST_MODULE_PATH = Path(__file__).resolve().parent / "daily_digest.py"
 
 
 def _timer_active() -> bool:
@@ -84,16 +87,35 @@ def _digest_problems(now: float | None = None) -> list[str]:
 
     ⚠️ 从没发过(刚上线)不报 —— 否则上线当天就是一条误报。
     """
+    # ⭐「装没装」与「坏没坏」是两件**相反**的事,不许用同一个返回值表达。
+    #
+    # alerts.py 对 telegram 的可选导入用 `except Exception` 是对的 —— 那是**真正可选**
+    # 的第三方集成,没装就关掉功能。但 daily_digest 是看门狗**要检查的对象本身**,
+    # 导入失败恰恰是它能遇到的**最坏**那种健康状况。
+    #
+    # 🔴 初版(2026-08-17 上午)把两者混为一谈,后果致命:service 的两条 ExecStart
+    # 都带 `-` 前缀 ⇒ daily_digest 崩溃时 systemd 照样报 success;而这里遇到同一个崩溃
+    # 也返回 [] ⇒ **产出端和检测端同时失明**,26 小时超时告警永远发不出来。
+    # 更糟的是当时那条判据**断言的就是这个错行为**。(第二轮 code review 抓出。)
+    #
+    # 判别靠**文件在不在**,不靠异常类型:缺的可能是它的某个依赖(同样抛
+    # ModuleNotFoundError),那属于"坏了"而不是"没装"。
     try:
         import daily_digest as dd
-    except Exception:
-        # ⚠️ 不能只捕 ImportError:模块级的 NameError / SyntaxError 抛的都不是它,
-        # 异常会一路冒出去,让排在后面的三项核心检查(timer active / 心跳新鲜 /
-        # firehose 抽风)**全部不执行** —— 一个附加功能坏掉打穿了整个看门狗。
-        # 同一份代码库里 alerts.py 对 telegram 的可选导入用的就是 `except Exception`,
-        # 该抄的教训没抄过来。(2026-08-17 code review 抓出。)
-        return []
-    age = dd.last_sent_age_s(now=now)
+    except Exception as e:
+        if not DIGEST_MODULE_PATH.exists():
+            return []        # 文件真的不在 = 功能没装,静默(否则装之前天天误报)
+        return [f"🔴 日报模块存在却**导入失败**({type(e).__name__}: {e})。"
+                f"含义:看门狗对日报的健康检查已经瞎了,而 service 因为 `-` 前缀"
+                f"仍会报 success —— 产出端和检测端同时失明。须查 daily_digest.py"]
+    # ⚠️ 这一句也必须在保护里:状态文件被写坏(非数字 / 非 UTF-8)时抛的
+    # ValueError / UnicodeDecodeError 不在 cycle_state.read_state 的捕获范围内,
+    # 会一路冒出去把 check() 剩下三项打断 —— 与上面那条是同一个后果、不同触发点。
+    try:
+        age = dd.last_sent_age_s(now=now)
+    except Exception as e:
+        return [f"🔴 读不了日报的发送时间戳({type(e).__name__}: {e})—— "
+                f"「日报多久没发」这个问题现在没人答得了。须查 {dd.STATE_FILE}"]
     if age is None or age <= dd.STALE_AFTER_S:
         return []
     return [f"🔴 每日日报已 {age / 3600:.1f} 小时没发出来(阈值 "

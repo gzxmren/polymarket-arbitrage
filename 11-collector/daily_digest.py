@@ -115,6 +115,11 @@ def _num(hb: dict, key: str, default=0):
 # ---------- 数据源:心跳 ----------
 
 def load_day(day: str | None = None) -> list[dict]:
+    """兼容入口:只要行,不要跳过数。新代码请用 `load_day_counted`。"""
+    return load_day_counted(day)[0]
+
+
+def load_day_counted(day: str | None = None) -> tuple[list[dict], int]:
     """读某一天(UTC)的全部心跳。默认昨天。
 
     只读采集器自己写的审计分区 —— 不碰 SQLite、不碰 07-data(那两条都已废弃)。
@@ -122,7 +127,7 @@ def load_day(day: str | None = None) -> list[dict]:
     day = day or (dt.datetime.now(dt.UTC).date() - dt.timedelta(days=1)).isoformat()
     files = sorted(glob.glob(str(se.AUDIT_DIR / f"dt={day}" / "*.parquet")))
     if not files:
-        return []
+        return [], 0
     import pyarrow as pa
     import pyarrow.parquet as pq
     rows: list[dict] = []
@@ -134,14 +139,17 @@ def load_day(day: str | None = None) -> list[dict]:
             # ⚠️ pyarrow 的异常分属**三个**家族:ArrowInvalid→ValueError、
             # ArrowTypeError→TypeError、ArrowIOError→OSError。只捕其中一两个都会漏
             # (初版只捕 OSError,改成 (OSError, ValueError) 仍漏 ArrowTypeError)。
-            # 共同基类是 ArrowException,用它才真的覆盖。
+            # ⚠️ 更正:`ArrowIOError` 其实**不**继承 ArrowException(它直接是 OSError),
+            # 真正起作用的是 (OSError, ArrowException) 这个**二元组合力**。(第二轮 review 实测指出。)
             # (2026-08-17 code review 抓出 + 实测逐个复现 MRO。)
             skipped += 1        # ⭐跳过必须出声:静默少一块和"那天本来就少"无法区分
             continue
-    if skipped:
-        print(f"⚠️ 有 {skipped} 个心跳文件读不了,已跳过(当日数据不完整)", flush=True)
     rows.sort(key=lambda r: r.get("ts") or 0)
-    return rows
+    # ⭐跳过数**返回给调用方**,不只是 print。只 print 的话它落在 digest.log 里,
+    # 而那正是"需要人主动打开"的东西 —— 本文件开头自己写着这类东西在本项目存活率 0/1。
+    # 「任何剔除必须出声计数」的"计数"要有人看得到才算数,print 只做了前半句。
+    # (2026-08-17 第二轮 code review 抓出:我一边写着这句话,一边又造了个孤儿计数。)
+    return rows, skipped
 
 
 def _backfill_remaining() -> int | None:
@@ -227,7 +235,7 @@ def _leg_backfill() -> tuple[str, bool]:
     return f"腿4 回填     ✅ 当前剩 {left:,} 个(该腿无按日留痕,读的是日志尾巴)", False
 
 
-def render(hbs: list[dict], day: str | None = None) -> str:
+def render(hbs: list[dict], day: str | None = None, skipped: int = 0) -> str:
     """把一天的心跳渲染成日报正文。空输入必须响亮,不许渲染成漂亮的全 0 报表。"""
     day = day or (hbs[0].get("dt") if hbs else "?")
     head = f"📊 采集器日报 {day}"
@@ -242,6 +250,8 @@ def render(hbs: list[dict], day: str | None = None) -> str:
         if bad:
             bads.append(text.split()[0] + text.split()[1])
 
+    if skipped:
+        lines.append(f"⚠️ 有 {skipped} 个心跳文件**读不了**,已跳过 —— 当日数字偏低,不是真的少")
     n = len(hbs)
     if n < EXPECTED_CYCLES:
         lines.append(f"⚠️ 本日只有 {n} 轮心跳(该有 {EXPECTED_CYCLES} 轮)—— 采集器被杀过或漏跑")
@@ -280,8 +290,10 @@ def last_sent_age_s(now: int | None = None) -> int | None:
 
 
 def run(hbs: list[dict] | None = None, day: str | None = None) -> int:
-    hbs = load_day(day) if hbs is None else hbs
-    body = render(hbs, day)
+    skipped = 0
+    if hbs is None:
+        hbs, skipped = load_day_counted(day)
+    body = render(hbs, day, skipped=skipped)
     ok = _send(body)
     print(body, flush=True)
     if ok:

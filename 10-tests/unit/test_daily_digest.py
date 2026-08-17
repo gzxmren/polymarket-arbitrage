@@ -319,30 +319,106 @@ def test_digest_never_raises_on_a_corrupt_heartbeat():
     assert body
 
 
-def test_a_broken_digest_module_does_not_disable_the_rest_of_the_watchdog(monkeypatch):
-    """⭐日报模块坏了只该关掉"日报健康"这一项,不许打穿整个看门狗。
+def test_a_broken_digest_module_is_reported_red_not_silently_ignored(monkeypatch):
+    """⭐⭐日报模块**坏掉**必须报红,不许当成"没问题"。
 
-    `_digest_problems()` 是 `check()` 的第一步。初版只捕 `ImportError` ——
-    而模块级的 NameError / SyntaxError / 依赖问题抛的都不是它,异常会一路冒出去,
-    让排在后面的三项核心检查(timer active / 心跳新鲜 / firehose 抽风)**全部不执行**。
-    同一份代码库里 `alerts.py` 对 telegram 的可选导入用的就是 `except Exception` ——
-    该抄的教训没抄过来。
+    ## 这条判据的上一版是错的,而且错得正是它要防的那个病
+
+    上一版断言 `_digest_problems() == []` —— 即"模块坏了就静默"。把它和另一处改动
+    连起来看就致命:service 的两条 ExecStart 都加了 `-` 前缀(为了日报进队列时
+    不掐掉报表),于是 daily_digest.py 崩溃时 **systemd 照样报 success**;
+    而负责兜底的 `_digest_problems()` 遇到同一个崩溃**也返回 []**。
+    ⇒ 产出端和检测端**同时失明**,26 小时超时告警永远不会发出来 ——
+    因为发这条告警的函数自己把"看不了"等同于"没问题"了。
+
+    「如果它现在就是坏的,我看到的会有什么不同?」——完全没有不同。
+
+    ## 「装没装」和「坏没坏」是两件相反的事
+
+    `alerts.py` 对 telegram 的可选导入用 `except Exception` 是对的 ——
+    那是**真正可选**的第三方集成,没装就关掉功能。
+    但 `daily_digest` 是看门狗**要检查的对象本身**,导入失败恰恰是它能遇到的
+    **最坏**那种健康状况。两者不该用同一个返回值表达。
+    判别靠**文件在不在**,不靠异常类型(缺的可能是它的某个依赖,同样抛
+    ModuleNotFoundError,却属于"坏了"而不是"没装")。
     """
     import builtins, collector_watchdog as cw
     real = builtins.__import__
 
     def boom(name, *a, **k):
         if name == "daily_digest":
-            raise NameError("模块级炸了,而且不是 ImportError")
+            raise NameError("模块级炸了(比如一次坏部署带来的语法错误)")
         return real(name, *a, **k)
 
     monkeypatch.delitem(sys.modules, "daily_digest", raising=False)
     monkeypatch.setattr(builtins, "__import__", boom)
-    assert cw._digest_problems() == []          # 不许把异常放出去
+
+    problems = cw._digest_problems()
+    assert problems and any("🔴" in p for p in problems), (
+        f"日报模块坏掉却被当成没问题:{problems}")
+
+    # 而且不许把异常放出去 —— 看门狗其余职责必须照常跑完
     monkeypatch.setattr(cw, "_timer_active", lambda: False)
     monkeypatch.setattr(cw, "_latest_heartbeat", lambda: None)
-    problems = cw.check()                        # 其余职责必须照常跑完
-    assert any("timer" in p for p in problems), f"看门狗其余检查没跑:{problems}"
+    all_problems = cw.check()
+    assert any("timer" in p for p in all_problems), f"看门狗其余检查没跑:{all_problems}"
+
+
+def test_a_genuinely_absent_module_stays_silent(monkeypatch, tmp_path):
+    """反面:文件真的不在(功能没装)才允许静默 —— 否则装之前天天误报。"""
+    import collector_watchdog as cw
+    monkeypatch.setattr(cw, "DIGEST_MODULE_PATH", tmp_path / "not_here.py")
+    monkeypatch.delitem(sys.modules, "daily_digest", raising=False)
+    import builtins
+    real = builtins.__import__
+
+    def boom(name, *a, **k):
+        if name == "daily_digest":
+            raise ModuleNotFoundError("No module named 'daily_digest'")
+        return real(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", boom)
+    assert cw._digest_problems() == []
+
+
+def test_a_runtime_error_reading_the_stamp_is_also_reported(monkeypatch):
+    """⭐时间戳读取本身抛错也要报红,不许把 check() 整个打断。
+
+    上一版把 `except` 只包住 import,而 `dd.last_sent_age_s()` 在 try 之外 ——
+    状态文件被写坏(非数字 / 非 UTF-8)时抛的 ValueError / UnicodeDecodeError
+    会一路冒出去,让排在后面的三项核心检查全部不执行。
+    这正是这次修复**声称**要解决的后果,只是触发点换了一个。
+    """
+    import collector_watchdog as cw, daily_digest as dd
+
+    def boom(now=None):
+        raise ValueError("状态文件坏了")
+    monkeypatch.setattr(dd, "last_sent_age_s", boom)
+
+    problems = cw._digest_problems()
+    assert problems and any("🔴" in p for p in problems), f"读不了时间戳却不出声:{problems}"
+
+
+def test_unreadable_heartbeat_files_are_counted_into_the_digest_body(tmp_path, monkeypatch):
+    """⭐跳过的文件数必须进**日报正文**,不能只 print 到日志。
+
+    只 print 的话它落在 digest.log 里,而那正是"需要人主动打开"的东西 ——
+    本文件开头自己写着这类东西在本项目存活率 0/1。
+    「任何剔除必须出声计数」的"计数"要有人看得到才算数,print 只做了前半句。
+    """
+    import pyarrow as pa, pyarrow.parquet as pq
+    import storage_engine as se
+    day = "2026-08-17"
+    d = tmp_path / f"dt={day}"; d.mkdir(parents=True)
+    good = {k: v for k, v in _hb().items() if k != "dt"}
+    pq.write_table(pa.Table.from_pylist([good]), d / "good.parquet")
+    (d / "bad.parquet").write_bytes(b"garbage")
+    monkeypatch.setattr(se, "AUDIT_DIR", tmp_path)
+    monkeypatch.setattr(dd.se, "AUDIT_DIR", tmp_path)
+
+    rows, skipped = dd.load_day_counted(day)
+    assert skipped == 1 and len(rows) == 1
+    body = dd.render(rows, day, skipped=skipped)
+    assert "读不了" in body and "1" in body, f"跳过数没进日报正文:\n{body}"
 
 
 if __name__ == "__main__":

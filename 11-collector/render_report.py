@@ -49,6 +49,11 @@ def _esc(s) -> str:
 
 
 def load_days(days: int = DEFAULT_DAYS) -> list[dict]:
+    """兼容入口:只要行。新代码请用 `load_days_counted`。"""
+    return load_days_counted(days)[0]
+
+
+def load_days_counted(days: int = DEFAULT_DAYS) -> tuple[list[dict], int]:
     """读最近 N 个日分区的心跳。只碰采集器自己写的审计目录。"""
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -63,14 +68,14 @@ def load_days(days: int = DEFAULT_DAYS) -> list[dict]:
                 # ⚠️ pyarrow 的异常分属**三个**家族:ArrowInvalid→ValueError、
                 # ArrowTypeError→TypeError、ArrowIOError→OSError。只捕其中一两个都会漏
                 # (初版只捕 OSError;改成 (OSError, ValueError) 仍漏 ArrowTypeError)。
-                # 共同基类是 ArrowException,用它才真覆盖。
+                # ⚠️ 更正:`ArrowIOError` 其实**不**继承 ArrowException(它直接是 OSError),
+                # 真正起作用的是 (OSError, ArrowException) 这个**二元组合力**。(第二轮 review 实测指出。)
                 # (2026-08-17 code review 抓出 + 实测逐个复现 MRO。)
                 skipped += 1     # ⭐跳过必须出声:静默少一块和"那天本来就少"无法区分
                 continue
-    if skipped:
-        print(f"⚠️ 有 {skipped} 个心跳文件读不了,已跳过(趋势不完整)", flush=True)
     rows.sort(key=lambda r: r.get("ts") or 0)
-    return rows
+    # ⭐跳过数返回给调用方并渲染进页面 —— 只 print 的话没有读者(见 daily_digest 同处注释)。
+    return rows, skipped
 
 
 def daily_rows(hbs: list[dict]) -> list[dict]:
@@ -117,7 +122,7 @@ def _bars(rows: list[dict], key: str, *, bad=lambda r: False, fmt="{:,.0f}") -> 
     return "\n".join(out)
 
 
-def render(hbs: list[dict], now: float | None = None) -> str:
+def render(hbs: list[dict], now: float | None = None, skipped: int = 0) -> str:
     now = time.time() if now is None else now
     gen = dt.datetime.fromtimestamp(now, dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -137,6 +142,9 @@ def render(hbs: list[dict], now: float | None = None) -> str:
     warn = (f' · <b>🔴 数据已过期 {age / 3600:.0f} 小时</b>' if stale else "")
     freshness = (f'<p class="{fresh_cls}">数据最新:<b>{_esc(last_str)}</b>'
                  f'(最后一天 {_esc(rows[-1]["day"])},共 {len(rows)} 天){warn}</p>')
+    if skipped:
+        freshness += (f'<p class="stamp bad">⚠️ 有 <b>{skipped}</b> 个心跳文件读不了,'
+                      f'已跳过 —— 下面的数字偏低,不是真的少</p>')
 
     body = f"""
 <section><h2>腿1 · 成交流</h2>
@@ -232,7 +240,8 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=DEFAULT_DAYS)
     ap.add_argument("--out", type=Path, default=OUT_DEFAULT)
     a = ap.parse_args()
-    html = render(load_days(a.days))
+    rows, skipped = load_days_counted(a.days)
+    html = render(rows, skipped=skipped)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     tmp = a.out.with_suffix(".html.tmp")
     tmp.write_text(html, encoding="utf-8")

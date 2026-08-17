@@ -194,5 +194,27 @@ def test_a_truly_corrupt_parquet_does_not_kill_the_page(tmp_path, monkeypatch):
     assert len(rows) == 1, f"坏文件把好文件也拖没了(拿到 {len(rows)} 行)"
 
 
+def test_unreadable_files_are_surfaced_on_the_page(tmp_path, monkeypatch):
+    """⭐读不了的文件数必须显示在**页面上**,不能只 print 到日志。
+
+    页面数字偏低和"那几天本来就少"长得一模一样 —— 不说出来,读的人会把
+    一次读取故障当成一次真实的业务下滑。
+    「任何剔除必须出声计数」的"计数"要有人看得到才算数。
+    """
+    import pyarrow as pa, pyarrow.parquet as pq
+    import storage_engine as se
+    d = tmp_path / "dt=2026-08-17"; d.mkdir(parents=True)
+    good = {k: v for k, v in _hb(1_786_000_000, "2026-08-17").items() if k != "dt"}
+    pq.write_table(pa.Table.from_pylist([good]), d / "ok.parquet")
+    (d / "bad.parquet").write_bytes(b"garbage not parquet")
+    monkeypatch.setattr(se, "AUDIT_DIR", tmp_path)
+    monkeypatch.setattr(rr.se, "AUDIT_DIR", tmp_path)
+
+    rows, skipped = rr.load_days_counted(5)
+    assert skipped == 1 and len(rows) == 1
+    html = rr.render(rows, skipped=skipped)
+    assert "读不了" in html, "跳过数没进页面 ⇒ 又一个只写不读的孤儿信号"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
