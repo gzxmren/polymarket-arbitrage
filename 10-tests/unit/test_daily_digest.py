@@ -204,6 +204,45 @@ def test_a_failed_send_does_not_stamp_success(tmp_path, monkeypatch):
     assert dd.last_sent_age_s(now=dd._now()) is None, "发失败却盖了已发送的戳"
 
 
+
+def test_a_truly_corrupt_parquet_file_does_not_kill_the_whole_day(tmp_path, monkeypatch):
+    """⭐一个坏文件只该少那一块,不该让整份日报消失。
+
+    ⚠️ 这条与 `test_digest_never_raises_on_a_corrupt_heartbeat` 测的**不是同一件事**:
+    那条喂的是内存里字段缺失的 dict(走 render 那条路),这条喂的是磁盘上真的坏掉的
+    parquet 文件(走 load_day 那条路)。初版只捕 `OSError`,而实测 pyarrow 对损坏文件抛的是
+    `pyarrow.lib.ArrowInvalid`,它是 **ValueError** 的子类、**不是** OSError ——
+    于是"跳过坏文件"这道防线是假的,而注释里白纸黑字写着它存在。
+    """
+    import pyarrow as pa, pyarrow.parquet as pq
+    import storage_engine as se
+    day = "2026-08-17"
+    d = tmp_path / f"dt={day}"; d.mkdir(parents=True)
+    good = {k: v for k, v in _hb().items() if k != "dt"}   # dt 由分区目录提供
+    pq.write_table(pa.Table.from_pylist([good]), d / "good.parquet")
+    (d / "bad.parquet").write_bytes(b"not a parquet file, just garbage")
+    monkeypatch.setattr(se, "AUDIT_DIR", tmp_path)
+    monkeypatch.setattr(dd.se, "AUDIT_DIR", tmp_path)
+
+    rows = dd.load_day(day)
+    assert len(rows) == 1, f"坏文件把好文件也拖没了(拿到 {len(rows)} 行)"
+    assert dd.render(rows)
+
+
+def test_a_queued_send_is_not_a_process_failure(tmp_path, monkeypatch):
+    """⭐发不出去→进队列是**预期内会经常发生**的自愈行为,退出码不该报失败。
+
+    由来(2026-08-17 code review 实测抓出):service 里两条 ExecStart 串在一起,
+    而 systemd 的语义是「前一条失败,后面的都不执行」。日报一旦进队列就返回 1,
+    当天的趋势报表**根本不会被生成** —— 而那正是这次要立起来的下钻能力。
+    投递成功与否由 STATE_FILE + 看门狗独立追踪,不该再借退出码表达一遍。
+    """
+    monkeypatch.setattr(dd, "STATE_FILE", tmp_path / "digest.json")
+    monkeypatch.setattr(dd, "_send", lambda msg: False)
+    assert dd.run(_day()) == 0, "进队列被当成进程失败 ⇒ 会连坐掐掉后面的 ExecStart"
+    assert dd.last_sent_age_s(now=dd._now()) is None, "但仍然不许盖已发送的戳"
+
+
 def test_watchdog_reports_red_when_the_digest_goes_stale(tmp_path, monkeypatch):
     """⭐接线的另一头:看门狗必须真的读这个时间戳并报红。
 
@@ -278,6 +317,32 @@ def test_digest_never_raises_on_a_corrupt_heartbeat():
     """心跳缺字段/类型不对时降级出报,不许崩 —— 崩了就等于当天没有日报。"""
     body = dd.render([{"ts": 1, "dt": "2026-08-17"}, {"ts": 2}])
     assert body
+
+
+def test_a_broken_digest_module_does_not_disable_the_rest_of_the_watchdog(monkeypatch):
+    """⭐日报模块坏了只该关掉"日报健康"这一项,不许打穿整个看门狗。
+
+    `_digest_problems()` 是 `check()` 的第一步。初版只捕 `ImportError` ——
+    而模块级的 NameError / SyntaxError / 依赖问题抛的都不是它,异常会一路冒出去,
+    让排在后面的三项核心检查(timer active / 心跳新鲜 / firehose 抽风)**全部不执行**。
+    同一份代码库里 `alerts.py` 对 telegram 的可选导入用的就是 `except Exception` ——
+    该抄的教训没抄过来。
+    """
+    import builtins, collector_watchdog as cw
+    real = builtins.__import__
+
+    def boom(name, *a, **k):
+        if name == "daily_digest":
+            raise NameError("模块级炸了,而且不是 ImportError")
+        return real(name, *a, **k)
+
+    monkeypatch.delitem(sys.modules, "daily_digest", raising=False)
+    monkeypatch.setattr(builtins, "__import__", boom)
+    assert cw._digest_problems() == []          # 不许把异常放出去
+    monkeypatch.setattr(cw, "_timer_active", lambda: False)
+    monkeypatch.setattr(cw, "_latest_heartbeat", lambda: None)
+    problems = cw.check()                        # 其余职责必须照常跑完
+    assert any("timer" in p for p in problems), f"看门狗其余检查没跑:{problems}"
 
 
 if __name__ == "__main__":

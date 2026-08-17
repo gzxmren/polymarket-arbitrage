@@ -123,13 +123,23 @@ def load_day(day: str | None = None) -> list[dict]:
     files = sorted(glob.glob(str(se.AUDIT_DIR / f"dt={day}" / "*.parquet")))
     if not files:
         return []
+    import pyarrow as pa
     import pyarrow.parquet as pq
     rows: list[dict] = []
+    skipped = 0
     for f in files:
         try:
             rows += pq.read_table(f).to_pylist()
-        except OSError:
-            continue        # 单个文件坏掉不该让整份日报消失;少的那部分由轮次数暴露
+        except (OSError, pa.lib.ArrowException):
+            # ⚠️ pyarrow 的异常分属**三个**家族:ArrowInvalid→ValueError、
+            # ArrowTypeError→TypeError、ArrowIOError→OSError。只捕其中一两个都会漏
+            # (初版只捕 OSError,改成 (OSError, ValueError) 仍漏 ArrowTypeError)。
+            # 共同基类是 ArrowException,用它才真的覆盖。
+            # (2026-08-17 code review 抓出 + 实测逐个复现 MRO。)
+            skipped += 1        # ⭐跳过必须出声:静默少一块和"那天本来就少"无法区分
+            continue
+    if skipped:
+        print(f"⚠️ 有 {skipped} 个心跳文件读不了,已跳过(当日数据不完整)", flush=True)
     rows.sort(key=lambda r: r.get("ts") or 0)
     return rows
 
@@ -279,7 +289,12 @@ def run(hbs: list[dict] | None = None, day: str | None = None) -> int:
         cycle_state.write_state(STATE_FILE, "last_sent_ts", _now(), "日报发送时间")
     else:
         print("⚠️ 日报没发出去(已进待发队列,下次补发);**未**更新时间戳", flush=True)
-    return 0 if ok else 1
+    # ⭐返回 0 —— 「进队列」是预期内会经常发生的**自愈**行为,不是进程失败。
+    # 由来(2026-08-17 code review 实测抓出):service 里两条 ExecStart 串在一起,
+    # 而 systemd 的语义是「前一条失败(且没有 `-` 前缀),后面的都不执行」
+    # ⇒ 日报一进队列,当天的趋势报表就根本不会生成,而那正是本次要立起来的下钻能力。
+    # 投递成功与否由 STATE_FILE + 看门狗独立追踪,不必再借退出码表达一遍。
+    return 0
 
 
 if __name__ == "__main__":

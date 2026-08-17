@@ -86,7 +86,12 @@ def _digest_problems(now: float | None = None) -> list[str]:
     """
     try:
         import daily_digest as dd
-    except ImportError:      # 保持本项目的可选导入惯例:缺模块=关掉该功能,不崩
+    except Exception:
+        # ⚠️ 不能只捕 ImportError:模块级的 NameError / SyntaxError 抛的都不是它,
+        # 异常会一路冒出去,让排在后面的三项核心检查(timer active / 心跳新鲜 /
+        # firehose 抽风)**全部不执行** —— 一个附加功能坏掉打穿了整个看门狗。
+        # 同一份代码库里 alerts.py 对 telegram 的可选导入用的就是 `except Exception`,
+        # 该抄的教训没抄过来。(2026-08-17 code review 抓出。)
         return []
     age = dd.last_sent_age_s(now=now)
     if age is None or age <= dd.STALE_AFTER_S:
