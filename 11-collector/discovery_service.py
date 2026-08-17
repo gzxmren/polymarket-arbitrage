@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import socket
 import time
@@ -216,6 +217,105 @@ def _get(url: str, tries: int = TRIES, net: dict | None = None,
         rate_limit_sleep_s=RATE_LIMIT_SLEEP_S, deadline=deadline,
         count_4xx=False)     # ⚠️ 本链路历史上不计 4xx;开始计是行为增强,须单独做
     return data if failure is None else {"__http__": failure}
+
+
+# ---------- Gamma 批量查(注册层 + 结算守望共用,2026-08-16)----------
+#
+# 由来:注册层逐个查 slug 实测 950~2350 ms/个,180s 闸下只做得了 76~100 个;
+# 而**同一份代码库里**的结算守望早就在批量查(实测 800 个 / 22 秒)。一个模块
+# 学会了,另一个从来没拿到这个教训 —— 「照抄结构而不抽象」的反面:该抄的没抄。
+# 后果见 test_registration_backlog.py 里那条容量闸饿死判据(实测采不到的比例 8.5% → 35.7%)。
+
+# 实测边界(2026-08-16,对生产 Gamma 实发请求):
+#   100 个 cid → URL 8150 字节 → 200 OK
+#   110 个     → URL 8960 字节 → HTTP 422(120 / 130 / 150 同样 422)
+# ⇒ 服务端硬限是 8192。**按字节打包,不按个数**:写死 100 个时余量只有 42 字节,
+#   谁再加一个查询参数就全线 422,而 422 的表现是"整批查不到" —— 静默且致命。
+GAMMA_URL_BUDGET_BYTES = 7000
+
+# 🔴 必须两遍:`condition_ids=` 默认只返回**未关闭**市场。
+# 实测请求 100 个:默认回 52(未关闭)/ 加 `&closed=true` 回 48(已关闭),并集才 100。
+# 只查一遍 = 静默丢掉全部已结算样本 = **与结果相关地丢样本**(2026-08-03 那场事故)。
+GAMMA_CLOSED_SUFFIXES = ("", "&closed=true")
+
+# 🔴 `limit=` **承重,不是摆设**。实测(2026-08-16):同样请求 85 个 cid,
+#    不给 limit → 只回 **20 个**(接口默认分页,静默截断);给 limit=500 → 回全。
+#    即"看着数字差不多、其实丢了四分之三",且丢的那批没有任何出声。
+#    ⇒ 它必须 ≥ 单批最大 cid 数,由 test_gamma_batch_lookup.py 焊死;谁想清理掉它,
+#    判据会先红。(2026-08-16 code review 曾建议删掉它,实测证明方向反了。)
+GAMMA_BATCH_LIMIT = 500
+
+# 铁律「改共享引擎必须默认关闭 + 回归证明」:新查法做成开关,代码里默认**关**,
+# 由部署侧显式打开(deploy/systemd/polymarket-rebirth-collector.service 的 Environment=)。
+# 这样回滚 = 删一行环境变量,不必改代码、不必等发版。
+# 回归证明:test_gamma_batch_lookup.py::test_batch_and_per_slug_produce_identical_rows
+# (同一份数据两条路径逐字段相同),以及 2026-08-16 在 8 个生产市场上的实测 8/8 一致。
+BATCH_REGISTER = os.environ.get("REGISTER_BATCH", "0") == "1"
+
+
+def build_gamma_batch_url(cids, suffix: str = "") -> str:
+    """拼一次批量查的 URL。全项目只此一处拼 `condition_ids=`(判据焊死)。"""
+    q = "&".join(f"condition_ids={c}" for c in cids)
+    return f"{GAMMA}?{q}{suffix}&limit={GAMMA_BATCH_LIMIT}"
+
+
+def pack_condition_ids(cids, budget: int = GAMMA_URL_BUDGET_BYTES):
+    """按 URL 字节把 cid 切成若干批,顺序不变、不重不漏。
+
+    ⚠️ 按**最长的那个后缀**算,不按当前这一遍算 —— 否则第一遍刚好卡线、
+    第二遍加上 `&closed=true` 就越界,而越界的表现是整批 422(= 整批查不到)。
+    """
+    longest = max(GAMMA_CLOSED_SUFFIXES, key=len)
+    batch: list[str] = []
+    for cid in cids:
+        if batch and len(build_gamma_batch_url(batch + [cid], longest)) > budget:
+            yield batch
+            batch = [cid]
+        else:
+            batch.append(cid)
+    if batch:
+        yield batch
+
+
+def batch_lookup_gamma(cids, net: dict | None = None,
+                       deadline: float | None = None) -> tuple[dict[str, dict], set[str]]:
+    """批量查 Gamma。返回 `({cid: market}, 没问到答案的 cid 集合)`。
+
+    ## 三种归宿必须分得开(不变量 C4)
+
+    - 在 `found` 里 → 查到了
+    - 不在 `found`、也不在返回的集合里 → **确认查不到**(两遍都查成了、两遍都没有它)
+    - 在返回的集合里 → **没问到答案**(该批至少一遍 HTTP 失败,而它没在成功那遍出现)
+
+    ⭐最容易写错的是第三格:第一遍成功、第二遍(`&closed=true`)失败时,
+    第一遍没找到的那些**可能正躺在挂掉的那一遍里**。判成"确认查不到"就是把
+    网络故障翻译成"这市场不存在",而且专门错杀**已关闭**的那批 —— 与结果相关。
+
+    ## 对账在调用方做,不在这里
+
+    「请求数 vs 返回数」必须出声(静默失败清单第 1 条),但**本函数不自己计数** ——
+    调用方各有一套已经进了心跳、且真有人读的计数器(注册层 `register_fail` /
+    `register_inconclusive_count`,结算层 `settlement_lookup_fail` / `settlement_checked`)。
+    在这里再记一份只会多出四个没人读的心跳字段,那正是本项目反复发作的
+    「记录事实 vs 使用事实,只接一头」。返回值把三种归宿分开,对账所需的料就齐了。
+    """
+    found: dict[str, dict] = {}
+    inconclusive: set[str] = set()
+    for batch in pack_condition_ids(cids):
+        a_pass_failed = False
+        for suf in GAMMA_CLOSED_SUFFIXES:
+            d = _get(build_gamma_batch_url(batch, suf), net=net, deadline=deadline)
+            if not isinstance(d, list):
+                a_pass_failed = True   # 网络/限流/预算/422 —— 都没资格宣判"不存在"
+                continue
+            for m in d:
+                cid = m.get("conditionId")
+                if cid and cid not in found:
+                    found[cid] = m
+        if a_pass_failed:
+            # 已经找到的不受影响(答案拿到手了);没找到的只能算没问到。
+            inconclusive |= {c for c in batch if c not in found}
+    return found, inconclusive
 
 
 # ---------- 发现层 ----------
@@ -469,37 +569,68 @@ def register_new_markets(stubs: dict[str, dict], max_new: int | None = None,
     t0 = time.monotonic()
     deadline = t0 + time_budget_s if time_budget_s is not None else None
     items = list(stubs.items())
-    for cid, stub in items:
-        # 两道闸都必须在**发起查询之前**判。查完再判必然超出预算一整个请求的时长,
-        # 而代理退化时单次就是 6s+ —— "多做一个"正是被杀那 12 轮的构成方式。
-        if max_new is not None and attempted >= max_new:
-            break
-        if deadline is not None and time.monotonic() >= deadline:
-            break
-        attempted += 1     # 闸管的是**成本**(发出去的查询),不是成果 ——
-                           # 否则失败的市场不占额度,接口挂掉时会一直查到超时
-        slug = stub.get("slug")
-        m = _lookup_gamma(slug, net=net, deadline=deadline) if slug else None
-        if m is INCONCLUSIVE:
-            # ⭐**没查成 ≠ 查不到**,故不进 tried_cids → 积压里 attempts 不变。
-            # 混为一谈的后果:被限流/网络抖动几轮 → 积压把它当"这东西有问题"逐格沉底 →
-            # 攒够 MAX_ATTEMPTS 就**永久丢弃一个真实存在的市场**。
-            # 这与 registration_backlog 里「被预算跳过 ≠ 尝试失败」是同一条原则,
-            # 只是当初只堵了"预算跳过"这一个入口,限流从旁边绕了过去。
-            inconclusive += 1
-            continue
+
+    def _take(cid, m) -> bool:
+        """收下一个**已经问到答案**的市场(`m is None` = 确认查不到)。登记成功返回 True。
+
+        两条查法共用这一段 —— 不许各写一份,否则只有一份会拿到日后的修正
+        (项目里"两份实现并存、只改了一份"已经发生过:两个 `_get` 的 429 归因)。
+        """
+        nonlocal fail
         tried_cids.append(cid)   # 真问到答案了(不论答案是"有"还是"没有")
         if not m:
             fail += 1
-            continue
+            return False
         row = parse_market(m)
         if not row or not row["condition_id"]:
             fail += 1
-            continue
+            return False
         row["snapshot_at"] = now
         rows.append(row)
         ok_cids.append(cid)
-        time.sleep(0.15)
+        return True
+
+    if BATCH_REGISTER:
+        # 计数闸在打包**之前**切,于是"额度"数的是市场数而不是批数 —— 与旧路同义。
+        # ⚠️ `max_new=0` 必须真的是零:`cids[:0] == []` → 一批都不发。
+        cids = [cid for cid, _ in items]
+        if max_new is not None:
+            cids = cids[:max_new]
+        for batch in pack_condition_ids(cids):
+            # 时间闸在**发出请求之前**判(查完再判必然超预算一整批)。
+            # 一批 ≈ 2.7s(实测),粒度比整段闸细得多,够用。
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            attempted += len(batch)
+            found, inconc = batch_lookup_gamma(batch, net=net, deadline=deadline)
+            inconclusive += len(inconc)
+            for cid in batch:
+                if cid in inconc:
+                    continue   # ⭐没查成 ≠ 查不到 → 不进 tried_cids → attempts 不变
+                _take(cid, found.get(cid))
+            time.sleep(0.15)   # 礼貌间隔按**批**给,不按市场 —— 按市场会加出 300s
+    else:
+        for cid, stub in items:
+            # 两道闸都必须在**发起查询之前**判。查完再判必然超出预算一整个请求的时长,
+            # 而代理退化时单次就是 6s+ —— "多做一个"正是被杀那 12 轮的构成方式。
+            if max_new is not None and attempted >= max_new:
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            attempted += 1     # 闸管的是**成本**(发出去的查询),不是成果 ——
+                               # 否则失败的市场不占额度,接口挂掉时会一直查到超时
+            slug = stub.get("slug")
+            m = _lookup_gamma(slug, net=net, deadline=deadline) if slug else None
+            if m is INCONCLUSIVE:
+                # ⭐**没查成 ≠ 查不到**,故不进 tried_cids → 积压里 attempts 不变。
+                # 混为一谈的后果:被限流/网络抖动几轮 → 积压把它当"这东西有问题"逐格沉底 →
+                # 攒够 MAX_ATTEMPTS 就**永久丢弃一个真实存在的市场**。
+                # 这与 registration_backlog 里「被预算跳过 ≠ 尝试失败」是同一条原则,
+                # 只是当初只堵了"预算跳过"这一个入口,限流从旁边绕了过去。
+                inconclusive += 1
+                continue
+            if _take(cid, m):
+                time.sleep(0.15)   # 旧路原样:只在**登记成功**后歇一下
     if outcome is not None:
         outcome["attempted"] = tried_cids
         outcome["registered"] = ok_cids

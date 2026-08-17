@@ -50,6 +50,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "11-collector"))
 
 import discovery_service as ds  # noqa: E402
 
+@pytest.fixture(autouse=True)
+def _pin_per_slug_path(monkeypatch):
+    """本文件是**逐个查 slug** 那条路的判据 —— 显式钉住,不随环境变量漂。
+
+    批量那条路满足同样这些要求,由 `test_gamma_batch_lookup.py` 的
+    「跨路对照组」用同一批场景两条路各跑一遍、断言结果逐项相同来证明
+    (CLAUDE.md 铁律 4:改共享引擎必须默认关闭 + 回归证明)。
+    """
+    monkeypatch.setattr(ds, "BATCH_REGISTER", False)
+
+
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch, tmp_path):

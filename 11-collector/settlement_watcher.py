@@ -31,14 +31,17 @@ import rotation
 
 from discovery_service import (
     GAMMA, MARKETS_SCHEMA, REGISTRY_DIR, _atomic_write_parquet, _get,
+    batch_lookup_gamma, pack_condition_ids,
     load_registry, parse_market,
 )
 import pyarrow as pa
 
 from storage_engine import DATA_ROOT
 
-# Gamma condition_ids 每批条数(实测 100 稳定:两遍并集 100/100,单遍 ~1.1s)
-SETTLEMENT_BATCH = 100
+# 批量条数不再由本模块决定 —— 2026-08-16 起改为按 URL 字节打包
+# (`discovery_service.pack_condition_ids`)。原因:写死 100 个时 URL 长 8150 字节,
+# 而服务端硬限 8192(实测 110 个 = 8960 → HTTP 422)⇒ **余量只有 42 字节**,
+# 谁再加一个查询参数就整条链路 422,且 422 长得像"这批市场全查不到"。
 # 每轮检查市场数(8 批 × 2 遍 ≈ 18s,10 分钟周期内绰绰有余)。
 # 37,782 存量按此速度 ~4.7 轮/圈… 实为 ~47 轮 ≈ 5 小时轮完一圈,可接受;
 # 存量另有 backfill_settlements.py 一次性扫完。
@@ -118,27 +121,18 @@ def _save_streak(n: int) -> None:
 
 def _batch_lookup_gamma(cids: list[str], net: dict | None = None,
                         deadline: float | None = None) -> dict[str, dict]:
-    """批量查 Gamma,返回 {condition_id: market}。查不到的**不出现在返回里**(调用方计数)。
+    """薄适配层:走公用的 `batch_lookup_gamma`,只保留本模块历史上的返回形状。
 
-    🔴 必须两遍:`condition_ids=` 默认只返回未关闭市场,已结算的只有加 &closed=true 才拿得到。
-    只查一遍 = 静默丢掉全部已结算样本 = 与结果相关的丢样本(实测 100 丢 28,全是已结算)。
+    ⚠️ **不是第二份实现** —— 打包/两遍查/C4 语义全在公用那份里,这里只丢掉
+    `inconclusive` 那一半。丢它是有意的:本模块的 `lookup_fail` 历史上把
+    「确认查不到」和「没问到」算作同一类,而那个计数是真值断供守护的分母。
+    改这个语义会同时动到守护的判定,是**另一个自变量**,该单独一步单独验证。
 
-    `deadline` 是**绝对时刻**,原样交给 `_get`(它在重试之间和 socket 超时上都看钟)。
-    批次之间看钟挡不住单次重试风暴 —— 一次 `_get` 最坏 ~130s,比整段的闸(80s)还大。
+    保留这个名字还有一个作用:结算侧十几条既有判据(轮转/时间闸/计数)
+    都钉在它上面,它们是这次改动的**回归基线**,不该因为换了个调用路径而失效。
     """
-    out: dict[str, dict] = {}
-    if not cids:
-        return out
-    q = "&".join(f"condition_ids={c}" for c in cids)
-    for suf in ("", "&closed=true"):
-        d = _get(f"{GAMMA}?{q}{suf}&limit=500", net=net, deadline=deadline)
-        if not isinstance(d, list):
-            continue  # 该遍失败(_get 返回 {"__http__": ...});缺的市场由调用方计入 lookup_fail
-        for m in d:
-            cid = m.get("conditionId")
-            if cid and cid not in out:
-                out[cid] = m
-    return out
+    found, _inconclusive = batch_lookup_gamma(cids, net=net, deadline=deadline)
+    return found
 
 
 def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK,
@@ -166,13 +160,13 @@ def watch_settlements(max_check: int | None = DEFAULT_MAX_CHECK,
     deadline = None if time_budget_s is None else t0 + time_budget_s
     now = int(dt.datetime.now(dt.UTC).timestamp())
     rows, fail, checked = [], 0, 0
-    for i in range(0, len(picked), SETTLEMENT_BATCH):
+    by_cid = {r["condition_id"]: r for r in picked}   # 注册表按 cid 唯一,顺序=轮转顺序
+    for chunk_cids in pack_condition_ids(list(by_cid)):
         # 钟看在**发起这一批之前**:查完再看必然超出一整批的耗时。
         if deadline is not None and time.monotonic() >= deadline:
             break
-        chunk = picked[i:i + SETTLEMENT_BATCH]
-        found = _batch_lookup_gamma([r["condition_id"] for r in chunk],
-                                    net=net, deadline=deadline)
+        chunk = [by_cid[c] for c in chunk_cids]
+        found = _batch_lookup_gamma(chunk_cids, net=net, deadline=deadline)
         for r in chunk:
             m = found.get(r["condition_id"])
             if not m:

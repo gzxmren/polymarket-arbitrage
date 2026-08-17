@@ -54,6 +54,7 @@ import pytest
 COLLECTOR_DIR = Path(__file__).resolve().parents[2] / "11-collector"
 sys.path.insert(0, str(COLLECTOR_DIR))
 
+import discovery_service as ds  # noqa: E402
 import settlement_watcher as sw  # noqa: E402
 
 
@@ -61,7 +62,7 @@ import settlement_watcher as sw  # noqa: E402
 # 有人能一眼看到它当初是拿什么撑起来的,而不是回去 grep 日志。
 MEASURED_P50_S, MEASURED_P90_S, MEASURED_MAX_S = 25, 57, 441
 
-N_MARKETS = 800          # = DEFAULT_MAX_CHECK,8 个批次
+N_MARKETS = 800          # = DEFAULT_MAX_CHECK
 SECONDS_PER_CHUNK = 30.0  # 退化态的每批耗时(实测 441s / 8 批 ≈ 55s,取 30 便于算)
 
 
@@ -109,6 +110,23 @@ def sealed(monkeypatch):
     return state
 
 
+
+def _pack_sizes(n=N_MARKETS):
+    """当前打包规则下 n 个 cid 切成的各批大小。
+
+    ⚠️ 2026-08-16 起批量由 **URL 字节** 决定(`discovery_service.pack_condition_ids`),
+    不再是固定 100 个。故本文件里凡涉及"一批多少个"的算术一律从这里推 ——
+    写死数字的话,以后调预算这些判据会红在算术上,而它们要验的是**闸的行为**,
+    人会因此去改数字而不是去想闸对不对。
+    """
+    return [len(b) for b in ds.pack_condition_ids([f"0x{i:064x}" for i in range(n)])]
+
+
+def _checked_under_gate(n_chunks):
+    """闸只放行 n_chunks 批时,应该查过多少个。"""
+    return sum(_pack_sizes()[:n_chunks])
+
+
 def _checked_cids(state):
     return [c for chunk in state["chunks"] for c in chunk]
 
@@ -123,7 +141,7 @@ def test_gate_stops_before_starting_a_chunk_past_the_deadline(sealed):
     out = sw.watch_settlements(max_check=N_MARKETS, time_budget_s=80.0)
     assert len(sealed["chunks"]) == 3, (
         f"应只做 3 批,实际 {len(sealed['chunks'])} 批 —— 闸没咬住,或钟看在了批次之后")
-    assert out["checked"] == 300
+    assert out["checked"] == _checked_under_gate(3)
 
 
 def test_no_budget_means_unchanged_behaviour(sealed):
@@ -132,7 +150,7 @@ def test_no_budget_means_unchanged_behaviour(sealed):
     改共享引擎必须默认关闭 + 回归证明(CLAUDE.md 铁律 4)。
     """
     out = sw.watch_settlements(max_check=N_MARKETS)
-    assert len(sealed["chunks"]) == 8
+    assert len(sealed["chunks"]) == len(_pack_sizes())
     assert out["checked"] == N_MARKETS
     assert out["timegate_skipped"] == 0
     assert sealed["cursor"] == sw._sort_key(sealed["rows"][-1])
@@ -187,7 +205,7 @@ def test_cursor_unchanged_when_the_gate_cuts_everything(sealed):
 def test_skipped_is_counted_out_loud(sealed):
     """任何降级/剔除必须出声计数(CLAUDE.md 铁律 3)。静默丢样本是真凶。"""
     out = sw.watch_settlements(max_check=N_MARKETS, time_budget_s=80.0)
-    assert out["timegate_skipped"] == N_MARKETS - out["checked"] == 500
+    assert out["timegate_skipped"] == N_MARKETS - out["checked"] == N_MARKETS - _checked_under_gate(3)
 
 
 def test_checked_reports_reality_not_the_plan(sealed):
@@ -196,7 +214,7 @@ def test_checked_reports_reality_not_the_plan(sealed):
     报计划数会让"结算吞吐掉了一半"完全隐形 —— 心跳里的数字纹丝不动。
     """
     out = sw.watch_settlements(max_check=N_MARKETS, time_budget_s=80.0)
-    assert out["checked"] == len(_checked_cids(sealed)) == 300
+    assert out["checked"] == len(_checked_cids(sealed)) == _checked_under_gate(3)
 
 
 def test_zero_streak_does_not_advance_when_nothing_was_attempted(sealed):
@@ -246,7 +264,7 @@ def test_batch_lookup_passes_deadline_to_get(monkeypatch):
         seen.append(deadline)
         return []
 
-    monkeypatch.setattr(sw, "_get", fake_get)
+    monkeypatch.setattr(ds, "_get", fake_get)
     sw._batch_lookup_gamma(["0xabc"], net=None, deadline=1234.5)
     assert seen == [1234.5, 1234.5], f"两遍查询都要带 deadline,实际 {seen}"
 
@@ -254,7 +272,7 @@ def test_batch_lookup_passes_deadline_to_get(monkeypatch):
 def test_gate_bounds_the_segment_when_every_get_is_slow(sealed, monkeypatch):
     """端到端:每批都慢到 130s(重试风暴的量级)时,整段仍在一个可写下来的界内。
 
-    没有闸的时候是 8 批 × 130s = 1040s —— 直接越过 systemd 硬杀线。
+    没有闸的时候是 每批 130s × 全部批次 —— 直接越过 systemd 硬杀线。
     """
     monkeypatch.setattr(sw, "_batch_lookup_gamma", lambda cids, net=None, deadline=None:
                         (sealed["chunks"].append(list(cids)),
@@ -265,7 +283,7 @@ def test_gate_bounds_the_segment_when_every_get_is_slow(sealed, monkeypatch):
     assert len(sealed["chunks"]) == 1, "越过预算后不该再发起新批次"
     # 上界 = 预算 + 一批的最坏耗时(闸只在批次之间看钟;批内由 _get 的 deadline 兜)
     assert elapsed <= 80.0 + 130.0, f"整段 {elapsed}s 超出可声明的上界"
-    assert elapsed < 1040.0, "无闸时的量级(8 批 × 130s)——闸没起作用"
+    assert elapsed < 130.0 * len(_pack_sizes()), "无闸时的量级(全部批次 × 130s)——闸没起作用"
 
 
 # ---------- 5. ⭐闸砍在"两遍查询之间"时,丢的恰是唯一想要的那一类 ----------
@@ -280,8 +298,7 @@ def test_deadline_hit_on_the_closed_pass_must_not_fabricate_a_result(monkeypatch
     所以这些市场必须表现为**查不到**:调用方计 lookup_fail、它们留在 pending 里
     等轮转回来。绝不能当成"查过了,它没结算" —— 那会把它们从 pending 除名 = 永久丢。
     """
-    import discovery_service as ds
-    monkeypatch.setattr(sw, "_get", lambda url, **kw:
+    monkeypatch.setattr(ds, "_get", lambda url, **kw:
                         {"__http__": ds.DEADLINE_HIT} if "closed=true" in url
                         else [{"conditionId": "c-open", "closed": False}])
     got = sw._batch_lookup_gamma(["c-open", "c-closed"], deadline=1.0)
@@ -301,7 +318,7 @@ def test_half_checked_chunk_is_counted_as_lookup_fail(sealed, monkeypatch):
                         (sealed["chunks"].append(list(cids)),
                          sealed["clock"].__setattr__("t", sealed["clock"].t + 30.0), {})[-1])
     out = sw.watch_settlements(max_check=N_MARKETS, time_budget_s=80.0)
-    assert out["lookup_fail"] == out["checked"] == 300, \
+    assert out["lookup_fail"] == out["checked"] == _checked_under_gate(3), \
         "一个都没查到却没计 lookup_fail → 真值断供在心跳上看不出来"
 
 

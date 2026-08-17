@@ -7,6 +7,11 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
 Environment=PYTHONPATH=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+# 2026-08-16:打开批量注册。逐个查 slug 实测 950~2350ms/个 → 180s 闸只做得了 ~76 个,
+# 而实测到达率 p50=247 / max=657/轮 ⇒ 积压顶死 2000、每轮丢弃、35.7% 在成交的市场采不到。
+# 批量查 condition_ids 实测 34ms/个 ⇒ 配额随之 100→2000(run_cycle.BATCH_MAX_NEW)。
+# ⚠️ 回滚 = 删掉下面这一行(代码里默认是关的)。
+Environment=REGISTER_BATCH=1
 # 幂等(watermark 驱动),超时保护:单周期最长 15 分钟(= timer 间隔,不排队重叠)。
 # 2026-08-04 从 480s 上调:当天 12 轮撞 480s 被 SIGTERM 杀,而被杀的是**已干完大半活**
 # 的周期(块缓冲未 flush → 日志只剩一行空周期头,诊断信息全丢),纯亏。

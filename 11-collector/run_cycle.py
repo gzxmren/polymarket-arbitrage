@@ -23,6 +23,7 @@ import time
 import alerts
 import collector_core
 import cycle_state
+import discovery_service
 import settlement_watcher
 import storage_engine as se
 
@@ -32,7 +33,24 @@ import storage_engine as se
 # ---------- 发现层配额(2026-08-04 晚重定,全部有实测支撑)----------
 # 实测每轮涌入 ~90 个新市场,而旧上限是 40 → new_registered 逐轮恒在 33~38
 # (「恒定不变的计数」= 被上限削平,不是自然产出)。注册滞后实测 p50=94 分钟 / p90=17.8 小时。
-DEFAULT_MAX_NEW = 100     # 上限必须够得着实测到达率(~90/轮),否则积压永远清不掉
+#
+# --- 2026-08-16 重定:100 已经**够不着**到达率了 ---
+# 实测(08-14~08-16 共 275 轮)每轮涌入 p50=247 / p90=360 / p99=472 / max=657,
+# 而预算 100 ⇒ 积压顶死 MAX_BACKLOG=2000 并每轮丢弃 82~169 个;
+# 在成交的市场里因没登记而采不到的比例从 8.5% 涨到 **35.7%**。
+# 丢法实测是按 condition_id 哈希裁(随机、非结果相关)⇒ 是噪声不是偏差,
+# 但它把不变量 A1「不需要再成交一次才回得来」直接打破了。
+# 判据:test_registration_backlog.py::test_capacity_cap_must_not_starve_anyone_at_the_measured_arrival_rate
+#
+# ⚠️ 预算与查法**绑死**:2000 个逐个查要 78 分钟(必然打穿一切闸),只有批量查
+# (实测 34 ms/个 ⇒ 2000 个 ≈ 68s < REGISTER_TIME_BUDGET_S=180)才撑得住。
+# 故两者共用同一个开关,不许分开走。
+#
+# 两档分开命名,是为了判据能钉在**固定常量**上而不是钉在 `DEFAULT_MAX_NEW` ——
+# 后者随环境变量漂,判据钉上去就会"跟着环境变红/变绿",而它要验的是配额本身够不够。
+BATCH_MAX_NEW = 2000      # 批量查法下的配额(≈68s,装得进 180s 闸)
+PER_SLUG_MAX_NEW = 100    # 逐个查法下的配额(实测 2.35s/个,180s 闸只做得了 ~76 个)
+DEFAULT_MAX_NEW = BATCH_MAX_NEW if discovery_service.BATCH_REGISTER else PER_SLUG_MAX_NEW
 # ⚠️ 接口硬顶(实测):offset > 10000 一律 HTTP 400
 #    {"error":"max historical trades offset of 10000 exceeded"}
 # → 最多拿到 11000 笔 ≈ **8.4 分钟**(按实测峰值 1316 笔/分钟 = 5000 笔 / 3.8 分钟)。

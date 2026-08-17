@@ -28,6 +28,7 @@ import pytest
 COLLECTOR_DIR = Path(__file__).resolve().parents[2] / "11-collector"
 sys.path.insert(0, str(COLLECTOR_DIR))
 
+import discovery_service as ds  # noqa: E402
 import settlement_watcher as sw  # noqa: E402
 
 
@@ -137,7 +138,7 @@ def fake_gamma(monkeypatch):
         calls.append(url)
         return [closed_m] if "closed=true" in url else [open_m]
 
-    monkeypatch.setattr(sw, "_get", fake_get)
+    monkeypatch.setattr(ds, "_get", fake_get)
     return calls
 
 
@@ -151,14 +152,24 @@ def test_batch_lookup_must_do_both_passes(fake_gamma):
 
 def test_batch_lookup_reports_missing_loudly(monkeypatch):
     """查不到的必须计数返回给调用方,不得静默吞掉(铁律 §3:任何剔除都要出声)。"""
-    monkeypatch.setattr(sw, "_get", lambda url, **kw: [])
+    monkeypatch.setattr(ds, "_get", lambda url, **kw: [])
     got = sw._batch_lookup_gamma(["a", "b", "c"])
     assert got == {}, "查不到就是查不到,不得伪造"
 
 
 def test_batch_size_within_probed_limit():
-    """批量条数不得超过实测验证过的上限(100 实测稳定:两遍并集 100/100)。"""
-    assert sw.SETTLEMENT_BATCH <= 100
+    """批量不得超过实测验证过的上限。
+
+    2026-08-16 起判据从"条数 ≤ 100"改成"**URL 字节 ≤ 预算**",因为真正的硬限
+    是 URL 长度不是条数:实测 100 个 = 8150 字节可过,110 个 = 8960 字节 → 422。
+    写死 100 条时余量只剩 42 字节 —— 加一个查询参数就全线 422。
+    新判据严格更强(条数变了它照样管用),完整一组见 test_gamma_batch_lookup.py。
+    """
+    cids = [f"0x{i:064x}" for i in range(1000)]
+    for batch in ds.pack_condition_ids(cids):
+        longest = max(ds.build_gamma_batch_url(batch, suf)
+                      for suf in ds.GAMMA_CLOSED_SUFFIXES)
+        assert len(longest) <= ds.GAMMA_URL_BUDGET_BYTES
 
 
 # ---------- 4. 计数不静默 ----------

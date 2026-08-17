@@ -57,7 +57,20 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "11-collector"))
 
+import discovery_service as ds  # noqa: E402
 import registration_backlog as rb  # noqa: E402
+import run_cycle  # noqa: E402
+
+@pytest.fixture(autouse=True)
+def _pin_per_slug_path(monkeypatch):
+    """本文件是**逐个查 slug** 那条路的判据 —— 显式钉住,不随环境变量漂。
+
+    批量那条路满足同样这些要求,由 `test_gamma_batch_lookup.py` 的
+    「跨路对照组」用同一批场景两条路各跑一遍、断言结果逐项相同来证明
+    (CLAUDE.md 铁律 4:改共享引擎必须默认关闭 + 回归证明)。
+    """
+    monkeypatch.setattr(ds, "BATCH_REGISTER", False)
+
 
 
 def _stub(i):
@@ -193,6 +206,120 @@ def test_nobody_starves_under_sustained_overload():
     # 30 个 / 每轮 10 个 = 至少 3 轮;放宽到 5 轮以内,松了就抓不住"轻微插队"
     assert rounds_to_cover <= 5, f"第一批花了 {rounds_to_cover} 轮才轮完,存在插队"
 
+
+# ⭐实测到达率(2026-08-16 从 collector.log 量出来,08-14~08-16 共 275 轮):
+#   p50=247 / p75=300 / p90=360 / p95=399 / p99=472 / max=657 个/轮
+# ⚠️ 这是**上界**:`new_discovered` 拿「活跃 − 注册表」算,**没有减掉积压**,
+#    所以还在排队的市场只要这轮又成交就被重算一次。用上界定预算是保守方向。
+MEASURED_INFLOW_P99 = 472
+MEASURED_INFLOW_MAX = 657
+
+
+def _simulate_overload(inflow, budget, rounds, probe_round, max_size=rb.MAX_BACKLOG):
+    """跑 `rounds` 轮:每轮涌入 `inflow` 个**只出现这一次**的新市场,预算 `budget`。
+
+    返回 (第 `probe_round` 轮那批里从没被尝试过的个数, 累计丢弃数)。
+    「只出现一次」是最恶劣也最真实的情形 —— A1 承诺的正是"不必再成交一次"。
+    """
+    bl, now, ever, dropped, probe = {}, 1_000, set(), 0, set()
+    for r in range(rounds):
+        batch = _fresh(inflow, start=r * inflow)
+        if r == probe_round:
+            probe = set(batch)
+        bl = rb.merge(bl, batch, now)
+        attempted = list(rb.order(bl))[:budget]
+        ever |= set(attempted)
+        counts = {}
+        # 全部注册成功 —— 把"失败重试"这个变量排除掉,单测容量闸这一件事
+        bl = rb.settle(bl, attempted=attempted, registered=attempted,
+                       now=now, counts=counts, max_size=max_size)
+        dropped += counts["pending_registration_dropped_count"]
+        now += 900
+    return len(probe - ever), dropped
+
+
+def test_capacity_cap_must_not_starve_anyone_at_the_measured_arrival_rate():
+    """⭐⭐焊的是 A1 的原话:「不需要再成交一次才回得来」。
+
+    ## 为什么要单独立一条(2026-08-16)
+
+    上面那条 `test_nobody_starves_under_sustained_overload` 用 30/10 跑 40 轮,
+    积压最多长到 800 —— **永远碰不到 `MAX_BACKLOG`**。于是它证明的是
+    「队列能无限长时不会饿死」,而生产里恰恰是队列顶死上限的情形。
+
+    2026-08-13 起现网实测:积压恒为 2000,且**全部 attempts=0**
+    (⇒ 丢弃全部来自容量闸,不是"注册不上"),每轮丢 82~169 个;
+    在成交的市场里因没登记而采不到的比例从 8.5% 涨到 35.7%。
+    **判据全绿,而 A1 已经破了。**
+
+    拿核心问句对准老判据:「如果饿死现在就在发生,它会变红吗?」——不会。
+
+    ## 为什么必须同时看两头
+
+    只看 probe 批的覆盖不够:被容量闸丢掉的市场压根没进过 `ever`,
+    和"排队还没轮到、下轮就到"长得**一模一样**。丢弃数是把这两者分开的那个量。
+    """
+    starved, dropped = _simulate_overload(
+        inflow=MEASURED_INFLOW_MAX, budget=run_cycle.BATCH_MAX_NEW,
+        rounds=40, probe_round=20)
+    assert dropped == 0, (
+        f"实测峰值到达率 {MEASURED_INFLOW_MAX}/轮 vs 注册预算 "
+        f"{run_cycle.BATCH_MAX_NEW}/轮 → 40 轮共丢弃 {dropped} 个。"
+        f"容量闸丢掉的市场**只能靠再成交一次才回得来** ⇒ A1 破了")
+    assert starved == 0, (
+        f"第 20 轮那批 {MEASURED_INFLOW_MAX} 个里,有 {starved} 个从没被尝试过")
+
+
+def test_the_old_budget_really_was_too_small():
+    """反面对照:旧配额(逐个查那档)在实测到达率下**必然**丢弃。
+
+    没有这一条的话,上面那条绿了也说明不了什么 —— 可能是仿真本身就丢不出东西来。
+    这是"判据先在坏数据上跑确认会红"的固化版:坏配额喂进去必须出丢弃。
+    """
+    _, dropped = _simulate_overload(
+        inflow=MEASURED_INFLOW_MAX, budget=run_cycle.PER_SLUG_MAX_NEW,
+        rounds=40, probe_round=20)
+    assert dropped > 0, (
+        f"旧配额 {run_cycle.PER_SLUG_MAX_NEW} 喂实测到达率 {MEASURED_INFLOW_MAX} "
+        f"却一个都没丢 —— 仿真没有分辨力,上面那条绿灯不可信")
+
+
+def test_the_deployed_unit_actually_turns_the_capability_on():
+    """⭐⭐「记录事实 vs 使用事实,只接一头」—— 这次接的是"谁去打开开关"那一头。
+
+    ## 由来(2026-08-16 code review 抓出)
+
+    批量查法做成了开关且代码里默认关(铁律 4:改共享引擎必须默认关闭)。
+    但如果**没有任何地方把它打开**,合并之后 `DEFAULT_MAX_NEW` 仍是 100,
+    A1 仍然是破的 —— 能力造好了、判据也写了,而"接线"这一步没人认领。
+    这正是本项目犯过四次的同一形状,只是这次的"事实"是一行环境变量。
+
+    ## 为什么查仓库那份而不是本机那份
+
+    本机 `~/.config/systemd/user/` 那份重装就会被仓库覆盖 ——
+    只改本机 = 下次重装静默复原(2026-08-05 的教训)。仓库那份是权威。
+    ⚠️ 本条**只保证仓库声明了**;声明与本机是否一致是另一条判据的事。
+
+    本条红 = "能力已就绪,但生产还没切过去",是个明确的待办,不是故障。
+    """
+    unit = (Path(__file__).resolve().parents[2]
+            / "deploy" / "systemd" / "polymarket-rebirth-collector.service")
+    text = unit.read_text(encoding="utf-8")
+    assert "Environment=REGISTER_BATCH=1" in text, (
+        f"{unit.name} 没有打开 REGISTER_BATCH ⇒ 生产仍走逐个查、配额仍是 "
+        f"{run_cycle.PER_SLUG_MAX_NEW},而实测到达率峰值是 {MEASURED_INFLOW_MAX}/轮。"
+        f"即:批量能力造好了但没接上线,A1 仍然是破的")
+
+
+def test_registration_budget_covers_the_measured_arrival_rate():
+    """预算必须够得着实测到达率,否则积压必然顶死上限 —— 回到上一条那个病。
+
+    红线取 max 而不是 p99:丢弃**不可逆**(等于宣布"这个市场我们不采了"),
+    而预算留多了只是"这轮闲着"。代价不对称 ⇒ 往贵的那头留余量。
+    """
+    assert run_cycle.BATCH_MAX_NEW >= MEASURED_INFLOW_MAX, (
+        f"注册预算 {run_cycle.BATCH_MAX_NEW} < 实测峰值到达率 "
+        f"{MEASURED_INFLOW_MAX}/轮 ⇒ 积压必然顶死 {rb.MAX_BACKLOG} 并开始丢弃")
 
 def test_order_is_deterministic():
     """同样的积压必须给出同样的顺序 —— 否则"谁先谁后"随 dict 遍历顺序漂,不可复现。"""
