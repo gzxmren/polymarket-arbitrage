@@ -75,8 +75,31 @@ def _heartbeat_problems(hb: dict) -> list[str]:
     return problems
 
 
+def _digest_problems(now: float | None = None) -> list[str]:
+    """⭐日报的"死人开关":日报自己不会喊"我死了",只能由别人替它喊。
+
+    为什么挂在看门狗身上而不是新起一个盯梢的:再建一个就要问"那谁盯它",无限套娃。
+    看门狗已经每 30 分钟跑一次、有 systemd timer 兜底、今天验证过健康 ——
+    加一个字段一个判断,不加新组件。
+
+    ⚠️ 从没发过(刚上线)不报 —— 否则上线当天就是一条误报。
+    """
+    try:
+        import daily_digest as dd
+    except ImportError:      # 保持本项目的可选导入惯例:缺模块=关掉该功能,不崩
+        return []
+    age = dd.last_sent_age_s(now=now)
+    if age is None or age <= dd.STALE_AFTER_S:
+        return []
+    return [f"🔴 每日日报已 {age / 3600:.1f} 小时没发出来(阈值 "
+            f"{dd.STALE_AFTER_S / 3600:.0f} 小时)。含义:**看板本身死了** —— "
+            f"心跳里那些没人读的字段又回到没人读的状态。须查 "
+            f"polymarket-daily-digest.timer 与 Telegram 通道"]
+
+
 def check() -> list[str]:
     problems = []
+    problems += _digest_problems()
     if not _timer_active():
         problems.append(f"🔴 采集器 timer 不在 active（{TIMER_UNIT} 已停摆）")
     hb = _latest_heartbeat()

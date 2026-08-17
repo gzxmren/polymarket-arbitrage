@@ -1,0 +1,13 @@
+[Unit]
+Description=Polymarket 每日日报 · 每天 01:10 UTC(=10:10 JST)一次
+
+[Timer]
+# 01:10 UTC:此时"昨天(UTC)"已经完整,不会报到半天的数。
+# ⚠️ Persistent=true 防 suspend 漏跑 —— 机器睡过去一整天的话醒来补一次,
+#    否则漏跑那天恰恰是最该看日报的那天(2026-07-06 那次 cron 漏跑的教训)。
+OnCalendar=*-*-* 01:10:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
