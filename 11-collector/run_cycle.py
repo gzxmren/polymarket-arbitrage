@@ -112,6 +112,10 @@ SLOW_STREAK_FILE = se.DATA_ROOT / "state" / "slow_cycle_streak.json"
 # ⚠️ 是**布尔或**不是相加 —— 相加会稀释阈值,而 CLAUDE.md 禁止把独立链路的计数相加。
 # 各自的个数仍分别进心跳(poll_rotation_holes / settlement_rotation_holes),不合并。
 HOLE_STREAK_FILE = se.DATA_ROOT / "state" / "rotation_hole_streak.json"
+# 成交流持续断供连计(2026-08-17)。08-13 那次连续 56 轮 firehose 一笔没抓到,
+# 而告警是**无状态的每轮一条**,推了 61 遍"数据不丢" —— 而那天永久丢了约 1.4 万笔。
+# 有了连计,正文才能分清「单轮抖动」与「持续断供」,也才推得出恢复总结。
+TRADE_FLOW_STREAK_FILE = se.DATA_ROOT / "state" / "trade_flow_outage_streak.json"
 
 
 def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
@@ -153,6 +157,15 @@ def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
         cycle_state.read_state(HOLE_STREAK_FILE, "streak", 0), hit=hit_hole)
     cycle_state.write_state(HOLE_STREAK_FILE, "streak", hole_streak, "游标空洞连计")
 
+    # 成交流断供:命中条件与告警同源(firehose 一笔没抓到)。
+    # `prev` 要留着 —— 恢复总结报的就是"这次断了多久",而 next_hit_streak 归零后就没了。
+    tf_prev = cycle_state.read_state(TRADE_FLOW_STREAK_FILE, "streak", 0)
+    tf_hit = counts.get("firehose_fail", 0) > 0
+    tf_streak = cycle_state.next_hit_streak(tf_prev, hit=tf_hit)
+    cycle_state.write_state(TRADE_FLOW_STREAK_FILE, "streak", tf_streak, "成交流断供连计")
+    # 只在"上一轮还断着、这一轮好了"那一刻非零 ⇒ 恢复总结天然只推一次。
+    tf_recovered = tf_prev if (tf_prev > 0 and not tf_hit) else 0
+
     merged = {
         **counts,
         "newly_resolved": settle["newly_resolved"],
@@ -170,6 +183,8 @@ def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
         "settlement_seconds": t_settle,
         "compaction_seconds": t_compact,
         "slow_cycle_streak": slow_streak,
+        "trade_flow_outage_streak": tf_streak,       # 消费者:alerts(分单轮抖动/持续断供)
+        "trade_flow_outage_recovered": tf_recovered,  # 消费者:alerts(恢复总结,只非零一轮)
     }
     # ⭐告警放在心跳**之前**发(2026-08-07 调整):告警送达与否是本轮的产出之一,
     # 发完才知道队列深度。心跳仍是整轮最后一件事,故"心跳新鲜 = 整轮真跑完了"不变。

@@ -48,6 +48,10 @@ ASSEMBLED_BY_RUN_CYCLE = {
     "cycle_seconds", "discovery_seconds", "poll_seconds",
     "settlement_seconds", "compaction_seconds",
     "register_zero_streak", "truth_supply_zero_streak", "slow_cycle_streak",
+    # 成交流断供连计与恢复时长(2026-08-17):与上面三个连计同一形状 ——
+    # 由 run_cycle 在主干上算好、只出现在 `merged` 字典字面量里,故不匹配"赋值/累加"模式。
+    # 读取者:alerts(分「单轮抖动」与「持续断供」,并推恢复总结)。
+    "trade_flow_outage_streak", "trade_flow_outage_recovered",
     "newly_resolved", "settlement_lookup_fail", "settlement_checked",
     "settlement_timegate_skipped_count",
     # 结算守望里叫 rotation_holes,run_cycle 组装时加前缀区分于轮询那一个

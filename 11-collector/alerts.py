@@ -69,6 +69,21 @@ ROTATION_HOLE_CYCLES = 3
 # ⚠️ 样本仅约 15 小时,属**保守初值**;streak 已逐轮入日志,攒够一周应回来校准。
 BACKFILL_ZERO_CYCLES = 8
 
+# ⭐成交流持续断供(2026-08-17 立)。实测分布(心跳 parquet,2026-08-05 ~ 08-17,
+# `firehose_fail > 0` 的连续段全表):
+#     56 轮 (14.0h)  ← 2026-08-13 那次事故(永久丢约 1.4 万笔)
+#      3 轮 (0.8h)   ← 08-06 / 08-08 / 08-12 各一次(良性,自愈)
+#      1 轮 (0.2h)   ← 08-09 一次、08-14 五次
+# ⇒ 良性最长 3 轮,事故 56 轮,中间空档极大。取 6 = 良性最大值 ×2(1.5 小时):
+#   稳态永不触发,而那次事故会在 1.5 小时内升级。判据把这个分布焊进断言。
+# ⚠️ 判据钉在 `firehose_fail` 而不是 `new_trades == 0`:实测同期有 5 轮是
+#   「抓到了但没有新成交」(没活可干,正常),用后者会把它们一起误报。
+TRADE_FLOW_OUTAGE_CYCLES = 6
+
+# 轮转一圈的红线:OFFSET_CAP(10,000)除以 p99.9 成交率。超过它,两轮之间攒爆
+# 分页上限 ⇒ 序列**中间**出永久空洞。与 test_poll_rotation.py 里那条同源。
+LAP_RED_LINE_HOURS = 11.6
+
 # ---------- 慢周期守护(2026-08-04)----------
 # 由来:当天 12 轮撞 systemd 超时被 SIGTERM 杀,吞吐可见下滑,而**所有既有告警一条没响**
 # —— 心跳里根本没有"耗时"这个量,故"如果它现在就是坏的,我看到的会有什么不同?"答案是没有。
@@ -333,9 +348,33 @@ def build_alert(counts: dict) -> str | None:
     """
     triggers = []
     ov = counts.get("offset_overflow_count", 0)
+    # ⭐2026-08-17:这一条原先只有下面那句"单轮"版本,而它在**持续故障**下说的是假话。
+    # 08-13 那次连续 56 轮(14.0 小时)一笔没抓到,它推了 61 遍"数据不丢(下轮自愈回填)",
+    # 而当天用相邻天同小时基线对照测算,**永久丢了约 1.4 万笔**。
+    # 「数据不丢」只在单轮抖动下成立;一圈超过 OFFSET_CAP/p99.9 成交率(≈11.6 小时)
+    # 最活跃的市场就出永久空洞。故按连计分成两档,且升级档**不再**给那句保证。
+    tfs = counts.get("trade_flow_outage_streak", 0)
     if counts.get("firehose_fail", 0) > 0:
-        triggers.append("🔴 firehose 抽风:采样 0 笔成交(Polymarket 恒有成交=抓取失败),本轮空转;"
-                        "数据不丢(下轮自愈回填),但接口若持续失败须查 IP/限流")
+        if tfs >= TRADE_FLOW_OUTAGE_CYCLES:
+            # 防洪:不许每轮一条(那次真事故会推 61 条)。按整数倍复述 ⇒ 14 小时推 9 条。
+            if tfs % TRADE_FLOW_OUTAGE_CYCLES == 0:
+                triggers.append(
+                    f"🔴 成交流持续断供:连续 {tfs} 轮"
+                    f"(约 {tfs * cycle_minutes() / 60:.1f} 小时)firehose 一笔都没抓到。"
+                    f"⚠️ 这已经不是「下轮自愈」那种抖动 —— 轮转一圈超过约 {LAP_RED_LINE_HOURS} 小时后,"
+                    f"最活跃的市场会出**永久**空洞(翻页够不回去,补不回来)。"
+                    f"须立刻查网络/代理/IP,不要等它自己好")
+        else:
+            triggers.append("🔴 firehose 抽风:采样 0 笔成交(Polymarket 恒有成交=抓取失败),本轮空转;"
+                            "数据不丢(下轮自愈回填),但接口若持续失败须查 IP/限流")
+    # 恢复总结:只推一次(靠 run_cycle 只在"上一轮还断着、这一轮好了"时填这个键),
+    # 且短暂抽风的恢复不推 —— 否则每天几条"已恢复"又是噪音。
+    rec = counts.get("trade_flow_outage_recovered", 0)
+    if rec >= TRADE_FLOW_OUTAGE_CYCLES:
+        triggers.append(
+            f"🟢 成交流已恢复:本次断供共 {rec} 轮(约 {rec * cycle_minutes() / 60:.1f} 小时)。"
+            f"⚠️ 断供期最**前**段的成交可能已永久缺失(恢复后翻页只补得回后半段),"
+            f"请用相邻日同时段做基线对照核一次缺口 —— 本条不给损失量,那只能实测")
     # 稳态截断(ov 低于阈值)不推:自愈事件,靠汇总日志 + 心跳留痕即可。
     # 只有尖峰(≥阈值)才异常——意味轮询系统性追不上,值得人工看一眼。
     if ov >= OFFSET_OVERFLOW_ALERT_THRESHOLD:

@@ -286,6 +286,9 @@ AUDIT_FIELDS = (
     # 三条「连零/连坏」守护的当前计数。不持久化 = 一周后校准阈值时只能去 grep 日志文本,
     # 而 alerts.py 里那几条 TODO 明写了要靠心跳历史校准 —— 故必须落到 parquet。
     "register_zero_streak", "truth_supply_zero_streak", "slow_cycle_streak",
+    # 成交流断供连计与恢复时长(2026-08-17):消费者 alerts。留痕是为了事后能复核
+    # "当时到底断了多久" —— 08-13 那次只能靠翻文本日志重建。
+    "trade_flow_outage_streak", "trade_flow_outage_recovered",
     "new_registered",         # 成功登记数:注册断供守护关心的是"成功了几个",不是"失败几个"
     # --- 2026-08-04 新增:发现层预算与覆盖。补的是"每轮取前 N 个而第 N+1 个永远轮不到"
     #     和"采样只盖 25% 时间而无人知晓"两个盲区 ---
