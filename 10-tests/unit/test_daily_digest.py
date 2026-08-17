@@ -421,5 +421,38 @@ def test_unreadable_heartbeat_files_are_counted_into_the_digest_body(tmp_path, m
     assert "读不了" in body and "1" in body, f"跳过数没进日报正文:\n{body}"
 
 
+def test_the_other_counters_line_is_silent_for_routine_nonzero_fields(monkeypatch):
+    """⭐防洪一头:平时就非零的计数,今天非零**不许**报。
+
+    实测(2026-08-01~08-17,17 天):23 个"其它"字段里有 14 个在 12~16 天都非零
+    —— 它们本来就该非零。初版写的是"非零就报",并在注释里断言"稳态这行不出现",
+    那是**没验过的推断**:实跑出来一行列了 17 个字段,纯噪音。
+    """
+    monkeypatch.setattr(dd, "_baseline_zero_fields", lambda day, fields: set())
+    line = dd._other_counters(_day(net_retry_count=5), "2026-08-17")
+    assert line == "", f"平时就非零的字段被报了出来:{line}"
+
+
+def test_the_other_counters_line_fires_when_a_quiet_field_wakes_up(monkeypatch):
+    """⭐防洪另一头:平时是 0 的计数今天冒头,必须报。
+
+    没有这一条,上面那条一绿,整行就可能是个永不触发的摆设 ——
+    今天已经栽过一次"判据永远不会红"。
+    """
+    monkeypatch.setattr(dd, "_baseline_zero_fields",
+                        lambda day, fields: {"firehose_http_error_count"})
+    hbs = _day(firehose_http_error_count=7)          # 96 轮 × 7 = 672
+    line = dd._other_counters(hbs, "2026-08-17")
+    assert "firehose_http_error_count=672" in line, f"平时为 0 的字段冒头却没报:{line}"
+
+
+def test_the_baseline_falls_back_to_reporting_everything(monkeypatch, tmp_path):
+    """读不到历史(刚上线/目录空)时宁可多报,不可漏报。"""
+    import storage_engine as se
+    monkeypatch.setattr(dd.se, "AUDIT_DIR", tmp_path)
+    fields = ["a", "b"]
+    assert dd._baseline_zero_fields("2026-08-17", fields) == set(fields)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

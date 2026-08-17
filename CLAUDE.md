@@ -129,13 +129,16 @@ For files whose names include any of: `monitor`, `notif`, `telegram`, `sync`, `f
 
 ### Exception handling checklist (every network/IO/subprocess edit)
 
+⚠️ 2026-08-17 删掉了原第 1 条(「列出被调库能抛的每一种异常」)与原第 4 条
+(「不许把'有 try/except'当数」):两条都是**劝诫**,没有可当场执行的动作 ——
+今天写 `except OSError` 时它们一次都没触发。现在的第 4 条是它们的可执行版本
+(造真坏输入、把 `__mro__` 打出来),严格更强,故不保留弱版本。
+
 Explicitly verify every `except` clause:
-1. List every exception type the called library can raise (not just the obvious ones).
-2. For `urllib.request.urlopen`: `TimeoutError` / `socket.timeout` propagates directly from `resp.read()` — it is **not** wrapped in `URLError`. Must catch `(URLError, TimeoutError, OSError)`.
-3. `requests.*()` raises `requests.exceptions.Timeout` (wraps `socket.timeout`) — and separately `requests.exceptions.ConnectionError`. Both must be caught. A bare `except Exception` that does `continue` or `pass` silently drops both.
-4. Confirm the retry / fallback logic still runs under each exception path — do not accept "has try/except" at face value.
-5. After writing exception handling, ask: "what happens if the network hangs for 60s mid-read?" and trace it through the code.
-6. **⭐注释里承诺的保护,必须实测它真的接得住**(2026-08-17 踩到)。
+1. For `urllib.request.urlopen`: `TimeoutError` / `socket.timeout` propagates directly from `resp.read()` — it is **not** wrapped in `URLError`. Must catch `(URLError, TimeoutError, OSError)`.
+2. `requests.*()` raises `requests.exceptions.Timeout` (wraps `socket.timeout`) — and separately `requests.exceptions.ConnectionError`. Both must be caught. A bare `except Exception` that does `continue` or `pass` silently drops both.
+3. After writing exception handling, ask: "what happens if the network hangs for 60s mid-read?" and trace it through the code.
+4. **⭐注释里承诺的保护,必须实测它真的接得住**(2026-08-17 踩到)。
    `except` 上方写着"单个坏文件不该让整份报表消失",而实际只捕了 `OSError` ——
    实测 pyarrow 的异常分属**三个**家族:`ArrowInvalid`→`ValueError`、
    `ArrowTypeError`→`TypeError`、`ArrowIOError`→`OSError`。
@@ -143,7 +146,7 @@ Explicitly verify every `except` clause:
    `pa.lib.ArrowException` 才真覆盖。
    ⇒ 做法:**造一个真的坏输入跑一遍**(不是内存里的假对象),把 `type(e).__mro__` 打出来,
    再决定 `except` 写什么。凭"应该是 IO 错误"想当然,承诺的防线就是假的。
-7. **可选导入的 `except` 不许只写 `ImportError`**(2026-08-17 踩到)。
+5. **可选导入的 `except` 不许只写 `ImportError`**(2026-08-17 踩到)。
    模块级的 `NameError` / `SyntaxError` 抛的都不是它 ⇒ 一个附加功能坏掉,
    异常会一路冒出去把**调用方其余职责全部打断**(实例:看门狗的三项核心检查全不执行)。
    本项目 `alerts.py` 对 telegram 的可选导入用的就是 `except Exception`,照它抄。
@@ -199,6 +202,41 @@ When reviewing **existing code** (not just new additions), apply the same checkl
     watchdog.log 只有 `[HH:MM]` ⇒ 两次都返回空,差点得出"告警一条没响"的错误结论。
     ② 判据里的假接口按**第几次调用**作答,而改动恰好让批数变了 ⇒ 错位,红绿都不可信。
     ⇒ 查出"没有异常"时,先问*这个查法在真有异常时会返回什么*;能构造就构造一次坏输入验一下。
+
+---
+
+## ⏰ 规则复核台账(2026-08-17 立)
+
+**规则本身也要有实测支撑 —— 写下来不等于有效。**
+
+由来:2026-08-17 用户问「规则都写了你为什么还犯错」。审计发现两类东西混在一起 ——
+**问句/动作/事实**(当天全部触发过,痕迹可查:核心问句逐字出现在 6 个判据文件里、
+`MEASURED_` 常量 24 处、对账习惯挖出了 `limit=` 那个雷)与**原则复述**
+(当天一条都没触发)。后者已删两条(异常清单原第 1、4 条)。
+
+还发现一条**正在无声腐烂**的规则:三问要求进提交信息,实测 12 个提交里漏了 4 个,
+且今天最后两个都漏 —— 会话越长漏得越多。**已改由 commit-msg 钩子强制**
+(`deploy/githooks/commit-msg`,判据 `test_commit_msg_hook.py`)。
+
+### 待复核:2026-08-31
+
+下列条目全部写于 2026-08-17,**一次都还没触发过**。到期按同一把尺子量:
+*它有没有真的在写代码/做判断的那一刻改变过我的动作?* 答不出实例的,
+按本文件标准**删掉或转成判据**,不许因为"话说得对"就留着。
+
+| 条目 | 位置 | 到期要回答 |
+|---|---|---|
+| 静默失败 8:保证在新工况下变假话 | 本文件 | 有没有拦下过一句"没事/会自愈"的措辞 |
+| 静默失败 9:判据工况参数要用实测值 | 本文件 | 有没有让我把现网数值代进判据重跑 |
+| 静默失败 10:上游失败时它还跑不跑 | 本文件 | 有没有在编排层(systemd/cron)拦下过一次 |
+| 静默失败 11:我自己的检查工具会静默坏掉 | 本文件 | 有没有让我拿已知坏数据先验一次查法 |
+| 异常清单 4:注释承诺的保护要实测 | 本文件 | 有没有让我真去打 `__mro__` |
+| 异常清单 5:可选导入不许只写 ImportError | 本文件 | 有没有拦下过一次 |
+| 全局第 4 条:旧保证在新工况下变假话 | `~/.claude/CLAUDE.md` | 有没有在别的项目里也拦下过一句过期的保证 |
+
+**⚠️ 这张表本身也会腐烂** —— 若 2026-08-31 过去而没人复核,它就变成又一条
+"写下来没人读"的东西,正是本文件通篇在讲的那个病。
+故复核结果(删了哪些/留了哪些/依据是什么)必须写回这里,不许只在对话里说。
 
 ## Conventions
 - **Test isolation is enforced**: test code must run with a `--test` flag and write to `/tmp/`; production data dirs (`07-data/`) must never receive test fixtures. Honor this when adding scripts.

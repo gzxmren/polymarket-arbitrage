@@ -186,6 +186,108 @@ def _longest_outage_run(hbs: list[dict]) -> int:
     return best
 
 
+# ⭐"其它计数":心跳里**其余全部**字段的兜底读取者(2026-08-17 立)。
+#
+# 由来:注册积压那个 bug 的证据在心跳里躺了 9 天没人读。逐个给字段找位置太慢,
+# 也挡不住下次新加的字段又成孤儿。故这里做一个**兜底**:
+# 凡是没被上面四条腿明确消费的字段,只要当天**非零**就在日报里列出来。
+#
+# 为什么不怕吵:稳态下这些量绝大多数恒 0(它们本来就是"出事才非零"的计数),
+# 所以稳态日报里这一行根本不出现 —— 稳态静默 + 真异常必推,两头都焊死。
+# 判据 test_no_dead_counters.py::test_every_heartbeat_field_has_a_reader 焊住
+# "每个字段都要有读取者",而这一行让新加的字段**默认就有**。
+STAGE_SECONDS = ("discovery_seconds", "poll_seconds",
+                 "settlement_seconds", "compaction_seconds")
+
+
+def other_fields() -> tuple[str, ...]:
+    """兜底读取者覆盖的字段 = 心跳全集 − 四条腿已明确消费的。
+
+    ⭐**按需计算,不是启动时算死的常量**:这样"新字段自动落进兜底"这条派生关系
+    本身可被判据验证(往 AUDIT_FIELDS 里塞一个字段,看它进不进来)。
+    写成常量的话,判据只能扫出"当前没有孤儿"——而那在派生关系下永远成立,
+    是一条**不可能变红**的判据,正是本项目要消灭的那种假绿灯。
+    """
+    return tuple(f for f in se.AUDIT_FIELDS
+                 if f not in CONSUMED_FIELDS and f not in STAGE_SECONDS)
+
+
+OTHER_FIELDS = other_fields()   # 兼容既有引用;判据一律用 other_fields()
+# (STAGE_SECONDS 定义见下,other_fields 依赖它)
+# 耗时类单独处理:它们**永远非零**,塞进"非零才显示"会让那一行天天出现。
+# 它们的读取者是下面的"分段耗时"行(回答"慢在哪一段" —— 2026-08-04 那次事故
+# 花了半天手工定位,就是因为日志里没有分段耗时)。
+
+
+# 一个字段要进"其它"那一行,得满足:今天非零 **且** 它平时是 0。
+# ⚠️ 初版写的是"非零就报",注释里还断言"稳态下这一行根本不出现" —— 那是**没验过的推断**。
+# 实测(2026-08-01~08-17,17 天):23 个字段里有 14 个在 12~16 天都非零,
+# 即它们**本来就该非零**(net_attempt_count、excluded_parlay_count 之类);
+# 照初版那样报,这一行会天天列 17 个字段 = 纯噪音,而噪音会让真信号无处可显。
+BASELINE_DAYS = 14          # 跟自己的历史比,不跟拍脑袋的名单比
+BASELINE_ZERO_RATIO = 0.8   # 过去 ≥80% 的天数为 0,才算"平时是 0"
+
+
+def _baseline_zero_fields(day: str | None, fields) -> set:
+    """过去 BASELINE_DAYS 天里,哪些字段**大多数天为 0**。
+
+    自己算,不维护手工名单 —— 手工名单必然漏,而漏掉的那个就是下一个 9 天没人读。
+    读不到历史(刚上线/目录空)时返回全集:宁可第一天多报几个,不可漏报。
+    """
+    import glob as _g
+    parts = sorted(_g.glob(str(se.AUDIT_DIR / "dt=*")))
+    parts = [p for p in parts if not day or p.split("dt=")[-1] < day][-BASELINE_DAYS:]
+    if not parts:
+        return set(fields)
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    zero_days = {f: 0 for f in fields}
+    n = 0
+    for part in parts:
+        tot = {f: 0 for f in fields}
+        got = False
+        for fp in sorted(_g.glob(f"{part}/*.parquet")):
+            try:
+                rows = pq.read_table(fp).to_pylist()
+            except (OSError, pa.lib.ArrowException):
+                continue
+            got = True
+            for r in rows:
+                for f in fields:
+                    tot[f] += _num(r, f)
+        if not got:
+            continue
+        n += 1
+        for f in fields:
+            if not tot[f]:
+                zero_days[f] += 1
+    if not n:
+        return set(fields)
+    return {f for f in fields if zero_days[f] / n >= BASELINE_ZERO_RATIO}
+
+
+def _other_counters(hbs: list[dict], day: str | None = None) -> str:
+    """今天非零、而**平时是 0** 的计数。都正常则返回空串(稳态静默)。"""
+    fields = [f for f in other_fields() if f not in STAGE_SECONDS]
+    quiet = _baseline_zero_fields(day, fields)
+    hits = []
+    for f in fields:
+        total = sum(_num(h, f) for h in hbs)
+        if total and f in quiet:
+            hits.append(f"{f}={total:,.0f}")
+    return ("⚠️ 平时为 0 的计数今天冒头了:" + " / ".join(hits)) if hits else ""
+
+
+def _stage_seconds(hbs: list[dict]) -> str:
+    """分段耗时中位数 —— 回答"慢在哪一段"。"""
+    parts = []
+    for f in STAGE_SECONDS:
+        v = sorted(_num(h, f) for h in hbs if _num(h, f))
+        if v:
+            parts.append(f"{f.replace('_seconds', '')} {v[len(v) // 2]:.0f}s")
+    return ("分段中位:" + " / ".join(parts)) if parts else ""
+
+
 def _leg_trade_flow(hbs: list[dict]) -> tuple[str, bool]:
     trades = sum(_num(h, "new_trades") for h in hbs)
     polled = sum(_num(h, "total_markets_polled") for h in hbs)
@@ -264,6 +366,12 @@ def render(hbs: list[dict], day: str | None = None, skipped: int = 0) -> str:
     secs.sort()
     p50 = secs[len(secs) // 2] if secs else 0
     worst = secs[-1] if secs else 0
+    stage = _stage_seconds(hbs)
+    if stage:
+        lines.append(stage)
+    other = _other_counters(hbs, day)
+    if other:
+        lines.append(other)
     lines.append(f"周期 中位 {p50:.0f}s / 最慢 {worst:.0f}s"
                  + (f" / 慢周期连计 {slow}" if slow else "")
                  + (f" / 游标空洞连计 {holes}" if holes else ""))

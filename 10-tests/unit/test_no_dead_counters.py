@@ -127,3 +127,109 @@ def test_the_exemption_list_does_not_rot():
     """
     stale = [k for k in ASSEMBLED_BY_RUN_CYCLE if k not in se.AUDIT_FIELDS]
     assert not stale, f"豁免名单里有心跳中已不存在的字段(名单烂了):{stale}"
+
+
+# ---------- 反方向之二:算了但**没人读**(2026-08-17 立) ----------
+#
+# 由来:注册积压顶死那个 bug,证据(`pending_registration_dropped_count` /
+# `pending_registration_count`)在心跳里躺了 **9 天**、每 15 分钟写一条,零个读取者;
+# 最后是靠 grep 文本日志偶然发现的。同期粗筛:55 个字段里 25 个找不到任何读取者。
+#
+# 上面两条判据焊的是"声明了要有人算"和"落盘的要有人算";这条焊的是**再往前一步**:
+# 算了、落盘了,**得有人真的看**。这三条合起来才是「记录事实 vs 使用事实」那条
+# 项目铁律(标着"犯过 4 次",2026-08-17 是第 5 次)的可执行版本。
+#
+# ⚠️ "有人读"的定义**只算会做决定或会给人看的地方**:
+#   alerts.py(决定推不推告警)/ collector_watchdog.py(同)/
+#   daily_digest.py(推给人看)/ render_report.py(给人看)。
+# 别的模块把某个键写进自己的 counts 不算读 —— 那是产出端,不是消费端。
+
+CONSUMER_FILES = ("alerts.py", "collector_watchdog.py",
+                  "daily_digest.py", "render_report.py")
+
+# 明确豁免:必须写清**为什么**这个字段不需要读取者。空理由不许过。
+# 这份名单是**棘轮**:新字段要么有读取者,要么在这里留下一句话,没有第三条路。
+# 2026-08-17 当前为空 —— 日报的 `OTHER_FIELDS` 兜底读取者把 `AUDIT_FIELDS` 全覆盖了,
+# 一个都不需要豁免。这是**目标状态**,不是巧合:新加字段默认就落进兜底那一行,
+# 除非有人显式把它排除掉,那时才需要在这里留一句话。
+# (`ts` / `dt` 不在 AUDIT_FIELDS 里 —— 前者由写入路径单独写,后者由分区目录合成,
+#  故它们压根不进这条判据的射程,不该出现在豁免名单里。)
+READER_EXEMPT: dict[str, str] = {}
+
+
+def _reader_files(field: str) -> list[str]:
+    q = "[\"']"
+    pat = re.compile(rf"(get\(\s*{q}{re.escape(field)}{q}|\[{q}{re.escape(field)}{q}\])")
+    out = []
+    for name in CONSUMER_FILES:
+        f = COLLECTOR_DIR / name
+        if f.exists() and pat.search(f.read_text(encoding="utf-8")):
+            out.append(name)
+    return out
+
+
+def _declared_consumed() -> set:
+    """日报/报表用常量声明的消费清单(它们是遍历取用,不是逐个字面量取)。"""
+    import sys as _s
+    _s.path.insert(0, str(COLLECTOR_DIR))
+    import daily_digest as dd
+    import render_report as rr
+    # STAGE_SECONDS 的读取者是 `_stage_seconds`(分段耗时那一行),不走兜底 ——
+    # 它们永远非零,塞进"非零才显示"会让那行天天出现。
+    return (set(dd.CONSUMED_FIELDS) | set(rr.CONSUMED_FIELDS)
+            | set(dd.other_fields()) | set(dd.STAGE_SECONDS))
+
+
+def test_every_heartbeat_field_has_a_reader():
+    """⭐心跳里的每个字段,要么有人读,要么在豁免名单里写明为什么不用读。
+
+    「如果这个字段现在恒为 0 是个故障,我会看到什么不同?」——
+    没有读取者时答案是"完全没有不同"。那 9 天就是这么过去的。
+    """
+    consumed = _declared_consumed()
+    orphans = [f for f in se.AUDIT_FIELDS
+               if f not in consumed and f not in READER_EXEMPT and not _reader_files(f)]
+    assert not orphans, (
+        f"这些心跳字段算了、落盘了,但**没有任何地方读它**:{orphans}\n"
+        f"给它一个读取者(进日报/页面/告警),或在 READER_EXEMPT 里写明为什么不用。\n"
+        f"「记录事实 vs 使用事实,只接一头」——本项目已犯 5 次。")
+
+
+def test_reader_exemptions_carry_a_real_reason():
+    """豁免必须有理由,且理由不许是空话 —— 否则名单会变成静默的垃圾场。"""
+    for field, why in READER_EXEMPT.items():
+        assert field in se.AUDIT_FIELDS, f"豁免名单里的 {field} 已不在心跳里(名单烂了)"
+        assert why and len(why) >= 8, f"{field} 的豁免理由太短,等于没写:{why!r}"
+
+
+def test_a_new_field_is_automatically_covered_by_the_catch_all(monkeypatch):
+    """⭐焊的是**机制**,不是当前状态。
+
+    ## 这条判据的上一版是空的
+
+    上一版扫"当前有没有孤儿"。但兜底读取者是 `AUDIT_FIELDS − 已消费` 派生出来的
+    ⇒ 任何新字段自动落进兜底 ⇒ **孤儿在结构上不可能存在** ⇒ 那条判据永远不会红。
+    我跑自检(往心跳里塞一个没人读的新字段)才发现它是空的 —— 一条永远绿的判据,
+    正是本项目反复要消灭的假绿灯。
+
+    所以改成焊那条**派生关系**本身:往 `AUDIT_FIELDS` 里塞一个字段,
+    兜底必须自动把它收进去。谁哪天把它换成手工维护的清单,本条当场红。
+    """
+    import daily_digest as dd
+    fake = "totally_fabricated_counter_xyz"
+    assert fake not in dd.other_fields()
+    monkeypatch.setattr(se, "AUDIT_FIELDS", tuple(se.AUDIT_FIELDS) + (fake,))
+    monkeypatch.setattr(dd.se, "AUDIT_FIELDS", tuple(dd.se.AUDIT_FIELDS) + (fake,))
+    assert fake in dd.other_fields(), (
+        "新字段没有被兜底读取者自动收进去 ⇒ 有人把派生关系换成了手工清单,"
+        "而手工清单必然漏 —— 那正是 9 天没人读那个 bug 的成因")
+
+
+def test_the_reader_regex_actually_matches(monkeypatch):
+    """⭐第二个自检:`_reader_files` 的正则本身没写坏。
+
+    它若失效,上面那条"有读取者"的判据会靠豁免/兜底蒙混过关而不自知。
+    """
+    assert not _reader_files("totally_fabricated_counter_xyz")
+    assert _reader_files("firehose_fail"), "已知有读取者的字段都匹配不到 ⇒ 正则坏了"
+
