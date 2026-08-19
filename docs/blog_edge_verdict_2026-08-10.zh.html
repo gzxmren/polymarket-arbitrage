@@ -1,0 +1,961 @@
+<title>三条赚钱路径的拆解 —— 2026-08-10 判决与方法论</title>
+<style>
+  :root {
+    /* 沿用本项目既有 blog 的令牌系统;按要求只保留亮色一套 */
+    --bg: #ECEFF3;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --surface-3: #E7EBF0;
+    --ink: #16202B;
+    --ink-soft: #4A5763;
+    --ink-faint: #78848F;
+    --line: #D4DBE2;
+    --line-soft: #E3E8ED;
+    --accent: #B0740F;
+    --accent-tint: #F3E9D6;
+    --good: #2E7A57;
+    --good-tint: #E1EFE7;
+    --bad: #B24C2C;
+    --bad-tint: #F3E3DC;
+    --warn: #8A6D1F;
+    --warn-tint: #F5EEDC;
+    --serif: "Charter", "Bitstream Charter", "Iowan Old Style", Georgia, "Songti SC", "Noto Serif CJK SC", STSong, serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --measure: 40rem;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1.0625rem;
+    line-height: 1.78;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: var(--measure);
+    margin: 0 auto;
+    padding: clamp(2rem, 6vw, 5rem) 1.25rem 7rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2.75rem;
+  }
+
+  /* ---------- 页眉 ---------- */
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    padding-bottom: 2rem;
+    border-bottom: 2px solid var(--ink);
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-size: clamp(1.85rem, 5.5vw, 2.6rem);
+    line-height: 1.24;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: -0.012em;
+    text-wrap: balance;
+  }
+  .standfirst {
+    margin: 0;
+    font-size: 1.14rem;
+    color: var(--ink-soft);
+    line-height: 1.7;
+  }
+  .byline {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.03em;
+  }
+
+  /* ---------- 通用排版 ---------- */
+  section { display: flex; flex-direction: column; gap: 1.1rem; }
+  h2 {
+    font-size: 1.5rem;
+    line-height: 1.32;
+    margin: 1.5rem 0 0;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 1.09rem;
+    margin: 0.7rem 0 0;
+    font-weight: 600;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+  p { margin: 0; }
+  strong { font-weight: 600; }
+  a { color: var(--accent); }
+  a:focus-visible, .dir:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+  ul, ol { margin: 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.55rem; }
+  li::marker { color: var(--ink-faint); }
+  code {
+    font-family: var(--mono);
+    font-size: 0.87em;
+    background: var(--surface-3);
+    padding: 0.08em 0.34em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+
+  /* ---------- 证据等级标签 ---------- */
+  .ev {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    padding: 0.14em 0.46em;
+    border-radius: 3px;
+    white-space: nowrap;
+    vertical-align: 0.12em;
+  }
+  .ev-m { background: var(--good-tint); color: var(--good); }
+  .ev-i { background: var(--warn-tint); color: var(--warn); }
+  .ev-u { background: var(--bad-tint); color: var(--bad); }
+
+  /* ---------- 关键框 ---------- */
+  .key {
+    background: var(--surface);
+    border-left: 3px solid var(--accent);
+    padding: 1.35rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+  .key .q {
+    font-size: 1.2rem;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+
+  .analogy {
+    background: var(--surface-2);
+    border: 1px solid var(--line-soft);
+    padding: 1.15rem 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    font-size: 1rem;
+  }
+  .analogy .tag {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ---------- 容易混的地方 ---------- */
+  .fix {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--accent);
+    padding: 1.25rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.95rem;
+  }
+  .fix > .lbl {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: 5.4rem 1fr;
+    gap: 0.9rem;
+    align-items: start;
+  }
+  .pair > .side {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    padding-top: 0.45em;
+    white-space: nowrap;
+  }
+  .pair > .side.a { color: var(--bad); }
+  .pair > .side.b { color: var(--good); }
+  .pair > .txt { font-size: 1rem; line-height: 1.68; }
+  @media (max-width: 34rem) {
+    .pair { grid-template-columns: 1fr; gap: 0.15rem; }
+    .pair > .side { padding-top: 0; }
+  }
+
+  /* ---------- 三个方向 ---------- */
+  .dir {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 1.05rem;
+    padding: 1.6rem;
+  }
+  .dir-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.7rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .dir-n {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+  }
+  .dir-t { font-size: 1.28rem; font-weight: 600; margin: 0; letter-spacing: -0.006em; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+    padding: 0.2em 0.55em;
+    border-radius: 999px;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  .chip-closed { background: var(--bad-tint); color: var(--bad); }
+  .chip-open { background: var(--good-tint); color: var(--good); }
+  .chip-long { background: var(--warn-tint); color: var(--warn); }
+
+  .anat { display: flex; flex-direction: column; gap: 0.75rem; }
+  .row {
+    display: grid;
+    grid-template-columns: 6.5rem 1fr;
+    gap: 0.9rem;
+    align-items: start;
+  }
+  .row .k {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+    padding-top: 0.42em;
+    text-transform: uppercase;
+  }
+  .row .v { font-size: 1rem; line-height: 1.68; }
+  @media (max-width: 34rem) {
+    .row { grid-template-columns: 1fr; gap: 0.2rem; }
+    .row .k { padding-top: 0; }
+  }
+
+  /* ---------- 数据表 ---------- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+  caption {
+    caption-side: top;
+    text-align: left;
+    padding: 0.85rem 1rem 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+  th, td { padding: 0.55rem 1rem; text-align: left; border-bottom: 1px solid var(--line-soft); }
+  th {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+    font-weight: 500;
+    background: var(--surface-2);
+  }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* ---------- 教训条目 ---------- */
+  .lesson {
+    display: grid;
+    grid-template-columns: 1.6rem 1fr;
+    gap: 0.85rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .lesson:last-child { border-bottom: none; }
+  .lesson .n {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--bad);
+    padding-top: 0.16em;
+  }
+  .lesson .body { display: flex; flex-direction: column; gap: 0.4rem; }
+  .lesson .h { font-weight: 600; }
+  .lesson .d { color: var(--ink-soft); font-size: 0.97rem; }
+
+  .callout {
+    background: var(--accent-tint);
+    border: 1px solid #E3D2AE;
+    padding: 1.25rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+  .callout .t {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  footer {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.88rem;
+    color: var(--ink-faint);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  footer code { background: var(--surface-2); }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Polymarket 项目 · 判决与方法论</div>
+    <h1>三条赚钱路径的拆解</h1>
+    <p class="standfirst">
+      第一条今天被实测关掉了。剩下两条一条最便宜、一条天花板最高。
+      这份文档记下三者各自「钱从谁口袋里来」、各自的杀手、以及验证它们要花多少代价。
+    </p>
+    <div class="byline">2026-08-10 · 发掘窗 81,955 个已结算市场 / 1,780 万笔成交</div>
+  </header>
+
+  <section>
+    <p>
+      读之前先说清证据等级，全文每个数字都带标：
+      <span class="ev ev-m">跑出来的</span> 本轮实测；
+      <span class="ev ev-i">推的</span> 由实测数字推断；
+      <span class="ev ev-u">待核实</span> 我的训练知识（截止 2026-01），项目内未验证。
+    </p>
+  </section>
+
+  <section>
+    <h2>钥匙：这笔钱到底从谁口袋里来</h2>
+    <div class="key">
+      <p>预测市场是零和的。你赚的每一块，都是某个具体的人亏的。所以判断一个策略靠不靠谱，只要问一句：</p>
+      <p class="q">谁在付钱给我？他为什么会一直付下去？</p>
+      <p>
+        答不出「谁」，多半是回测里的幻觉。
+        答得出「谁」但答不出「他为什么不学乖」，这条路会随着对手变聪明而消失。
+      </p>
+    </div>
+    <p>三个方向的区别，本质上就是这个问题的三种答案。下面每一条都按同一套解剖来讲。</p>
+  </section>
+
+  <section>
+    <h2>方向一：赌市场把价标错了</h2>
+
+    <article class="dir" tabindex="0">
+      <div class="dir-head">
+        <span class="dir-n">路径 A</span>
+        <p class="dir-t">价格层面的系统性偏差</p>
+        <span class="chip chip-closed">已证伪 · 关闭</span>
+      </div>
+
+      <div class="anat">
+        <div class="row">
+          <div class="k">是什么</div>
+          <div class="v">
+            市场给「湖人夺冠」标 30 分，意思是它认为这事有 30% 概率。你赌的是市场<strong>系统性标错</strong>——
+            凡是标 30 分的，实际只有 25% 发生。那就反复卖出所有 30 分的东西，长期每次赚 5 分。
+            赌马研究里叫「长热偏差」：冷门被系统性高估，因为人爱买彩票。这是博彩文献里重复验证最多的现象之一，
+            所以它值得一试，不是异想天开。
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">钱从谁来</div>
+          <div class="v">从爱买冷门的散户口袋里来。他们持续高估小概率事件，你持续跟他们对赌。</div>
+        </div>
+        <div class="row">
+          <div class="k">怎么死的</div>
+          <div class="v">
+            在能交易的市场里，<strong>这个偏差根本量不到</strong>。<span class="ev ev-m">跑出来的</span>
+            三千多个有流动性的市场（累计成交额过 5 万美元）按价位切九档，
+            显著性 z 值全在 0.1 到 1.0 之间，门槛是 2.77。不是差一点没过，是点估计和零分不开。
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">深层原因</div>
+          <div class="v">
+            这是<strong>唯一一个不需要任何私有信息的策略</strong>。标价挂在网站上，
+            全世界拿一样的公开数据都能算出同样结论。所以一旦它真存在又真能交易，会被抢到消失为止。
+            它能活下来的地方，只剩下<strong>没人愿意去做</strong>的薄盘——正是我们量到的结果。
+            不是运气不好，是「人人都能算」这个性质本身决定了它活不下来。
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <div class="fix">
+      <div class="lbl">容易混的地方</div>
+      <div class="pair">
+        <div class="side a">容易这么想</div>
+        <div class="txt">方向一就是「捡漏」——找出那些标错价的市场。</div>
+      </div>
+      <div class="pair">
+        <div class="side b">实际上</div>
+        <div class="txt">
+          方向一是一条<strong>不看内容的死规则</strong>：不管这市场赌的是总统大选还是某场西甲的角球数，
+          只要标价 30 分我就一律卖。<strong>我完全不需要知道它在赌什么。</strong>
+          而「这一个市场标错了」需要你对这件事本身有判断——那已经是方向三的地盘。
+          <br><br>
+          这个区分要紧：<strong>被关掉的是那条死规则，不是「捡漏」这件事本身。</strong>
+          逐个市场找错价完全没被证伪，它只是需要信息，而不需要公式。
+        </div>
+      </div>
+      <div class="pair">
+        <div class="side a">容易这么想</div>
+        <div class="txt">有机会，但被别人先捡走了。</div>
+      </div>
+      <div class="pair">
+        <div class="side b">实际上</div>
+        <div class="txt">
+          比这更别扭一点。流动的市场里我们<strong>根本量不到偏差</strong>——不是「曾经有、被抢了」，
+          是现在看就是准的。薄盘里可能确实有，但那些盘一天成交几百美元，
+          <strong>别人也没捡，因为捡了不够塞牙缝</strong>。
+          <br><br>
+          准确的说法不是「有肉但别人先吃了」，而是
+          <strong>「有肉的地方没肉；可能有肉的地方，那块肉太小，谁去都不划算」</strong>。
+        </div>
+      </div>
+    </div>
+
+    <h3>一个必须说的诚实边界</h3>
+    <p>
+      以现在的样本量，能看见的最小效应是<strong>十个点以上</strong>。
+      一个三到五个点的真实偏差，我们看不见，也<strong>不能宣称它不存在</strong>。
+      <span class="ev ev-i">推的</span> 要能看见三个点，五万美元那个宇宙得再攒约七个月。
+      而七个月后最好的结果，是三个点的偏差去对上一到三个点的成本——赢面很薄，还要等大半年。
+    </p>
+    <p>
+      所以关掉它的理由<strong>不是</strong>「证明了它不存在」，而是「就算存在也太小、确认成本太高」。
+      这个区别很重要，别记成前者。
+    </p>
+  </section>
+
+  <section>
+    <h2>方向二：不猜谁赢，改当庄家收过路费</h2>
+
+    <article class="dir" tabindex="0">
+      <div class="dir-head">
+        <span class="dir-n">路径 B</span>
+        <p class="dir-t">做市 · 赚买卖价差</p>
+        <span class="chip chip-long">未证伪 · 路最长</span>
+      </div>
+
+      <div class="anat">
+        <div class="row">
+          <div class="k">是什么</div>
+          <div class="v">
+            彻底换角色。你不再是赌客，你是<strong>兑换柜台</strong>。同一个市场你同时挂两个价：
+            47 分我买，49 分我卖。谁着急进场就 49 分从你手里买，谁着急离场就 47 分卖给你。
+            一进一出你赚 2 分。<strong>你完全不关心最后谁赢。</strong>
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">钱从谁来</div>
+          <div class="v">
+            <strong>从着急的人口袋里来。</strong>有人开场前五分钟才想起要下注，有人落后了想赶紧割肉——
+            他们愿意付一点钱换「立刻成交」。这是一个真实的服务，付费天经地义，
+            所以这个来源<strong>不会因为对手变聪明就消失</strong>。这是它比方向一强的地方。
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">已知数字</div>
+          <div class="v">
+            <span class="ev ev-m">跑出来的</span> 买卖价差的一半，中位数 <strong>0.5 个百分点</strong>。
+            一个来回约 1 个点。听着小，但周转频繁就可观。
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">杀手 A</div>
+          <div class="v"><strong>逆向选择</strong>——见下面那个比方，这是整个做市生意的核心难题。</div>
+        </div>
+        <div class="row">
+          <div class="k">杀手 B</div>
+          <div class="v">
+            <strong>库存风险</strong>——成交是不对称的。坏消息一来，所有人都砸你的买价、没人碰你的卖价，
+            一轮下来你手里<strong>被塞满了正在变得不值钱的那一边</strong>。你没选它，但它就在你账上，
+            最后还要跟着结算。
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <div class="analogy">
+      <div class="tag">逆向选择</div>
+      <p>
+        你开了个外币兑换柜台，明码标价。一整天一百个游客来换钱，你每人赚十块，赚了一千。
+      </p>
+      <p>
+        然后来了第十一个人——他刚好知道央行今晚要宣布贬值。他把你柜台上的外币一次买光。
+        消息出来，你亏三千。
+      </p>
+      <p><strong>你赚一百个人的小钱，一次性赔给一个知情的人。</strong></p>
+    </div>
+
+    <p>
+      预测市场里这个问题<strong>特别严重</strong>，因为消息是跳变的：球进了、法院判了、选举唱票了。
+      价格不是慢慢滑过去，是「啪」一下跳过去。而你挂在那儿的旧报价，在跳变那一瞬间就是免费午餐。
+      做市能不能成，几乎全看一件事：<strong>你更新报价的速度，能不能快过知道消息的人。</strong>
+    </p>
+
+    <div class="fix">
+      <div class="lbl">容易混的地方</div>
+      <div class="pair">
+        <div class="side a">容易这么想</div>
+        <div class="txt">只要没有内幕消息，做市就是积少成多。</div>
+      </div>
+      <div class="pair">
+        <div class="side b">实际上</div>
+        <div class="txt">
+          这个前提永远不成立，而且「内幕」这个词把问题想小了。
+          真正吃掉你的<strong>不是罕见的内幕人士，是所有比你更新得快的人</strong>，而且这不违法，就是速度：
+          有人在看直播、球已经进了而你的报价还停在三秒前；有人刷到了判决推送，你还没刷到；有人在现场，你在屏幕前。
+          <br><br>
+          这些人<strong>每时每刻都在</strong>。所以做市的账不是「平时赚钱、偶尔碰上内幕就亏」，而是
+          <strong>「我收的价差，减去所有比我快的人拿走的，还剩多少」</strong>——
+          这是一笔<strong>持续的税</strong>，不是意外事件。整门生意就是管理这个减法。
+          如果你的速度排在后半段，价差再宽也是替别人保管钱。
+        </div>
+      </div>
+      <div class="pair">
+        <div class="side a">容易这么想</div>
+        <div class="txt">做市不在乎最后谁赢。</div>
+      </div>
+      <div class="pair">
+        <div class="side b">实际上</div>
+        <div class="txt">
+          「不在乎」是你的<strong>设计意图</strong>，但你会<strong>被迫在乎</strong>——就是上面那条库存风险。
+          做市不是「永远中性」，是<strong>「被动接下别人不要的东西，然后想办法处理掉」</strong>。
+        </div>
+      </div>
+    </div>
+
+    <h3>还有一个现实障碍，而且是我们自己造成的</h3>
+    <p>
+      要检验做市，需要知道当时<strong>盘口</strong>长什么样——谁挂了单、挂在什么价位、多少量、我排第几位。
+      <strong>我们没有这个数据。三周只采了「成交」，没采「报价」。</strong>
+    </p>
+    <div class="analogy">
+      <div class="tag">流水账 vs 柜台</div>
+      <p>
+        我们手上是一本流水账，记着「几点几分，某笔生意以 47 分成交」。
+        而做市需要知道的是「当时柜台上摆着哪几个价、每个价后面排了多少人」。
+        <strong>流水账里没有柜台。</strong>
+      </p>
+    </div>
+    <p>
+      所以这条路第一步不是写策略，是<strong>新开一条采集腿去采盘口快照</strong>，
+      再等几周攒够数据才谈得上回测。而且做市回测出了名的不可靠——
+      你自己的报价会改变市场，历史却不会因为你而改变。
+    </p>
+
+    <div class="callout">
+      <div class="t">一条待核实、但可能改写整笔账的线索</div>
+      <p>
+        <span class="ev ev-u">待核实</span>
+        据我所知，Polymarket 跑过<strong>给挂单方发流动性奖励</strong>的项目——
+        你光是挂在那儿提供报价，平台就付你钱。
+      </p>
+      <p>
+        如果成立，做市的账会完全改写：成本不是负的，是正的。
+        <strong>这一条值得花半小时去官网核实</strong>，
+        因为它可能是三个方向里唯一能让账立刻变好看的东西。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>方向三：不猜价格，改找出谁真的懂</h2>
+
+    <article class="dir" tabindex="0">
+      <div class="dir-head">
+        <span class="dir-n">路径 C</span>
+        <p class="dir-t">钱包层面的信息优势</p>
+        <span class="chip chip-open">未证伪 · 最便宜</span>
+      </div>
+
+      <div class="anat">
+        <div class="row">
+          <div class="k">是什么</div>
+          <div class="v">
+            那 1,780 万笔成交<strong>每一笔都带钱包地址</strong>，同时我们有八万多个市场的最终输赢。
+            两样一 join，就能给每个地址算出真实成绩单：买过什么、什么价买的、最后赢没赢。
+            如果有一小撮地址<strong>持续大幅正确</strong>，跟着他们走就是 edge。
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">钱从谁来</div>
+          <div class="v">
+            从<strong>信息比你差的人</strong>口袋里来。你不需要自己聪明，只需要认出谁聪明，然后搭便车。
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">前科</div>
+          <div class="v">
+            跟鲸鱼在旧数据上被判死过（资金加权 −4~−5%，胜率 19.5%）。
+            <strong>但那次证伪建在坏地基上</strong>：当时判断「市场是否已结算」的自制标准
+            静默丢掉了 80% 样本，而且<strong>专挑亏损的案例丢</strong>。真值来源是坏的，值得用干净数据重测一次。
+          </div>
+        </div>
+        <div class="row">
+          <div class="k">检验成本</div>
+          <div class="v">
+            <strong>不需要新采任何数据</strong>，东西全在硬盘上。几个小时的查询，不是几周的采集。
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <div class="fix">
+      <div class="lbl">容易混的地方</div>
+      <div class="pair">
+        <div class="side a">容易这么想</div>
+        <div class="txt">这就是把「跟鲸鱼」用干净数据重测一遍。</div>
+      </div>
+      <div class="pair">
+        <div class="side b">实际上</div>
+        <div class="txt">
+          上次<strong>不只是数据坏了，筛选变量本身也可能选错了</strong>。
+          「鲸鱼」的定义是<strong>钱多、单子大</strong>——可钱多不等于会赢，
+          一个有钱的赌徒下的单也很大。上次那个测试等于在跟着「手笔大的人」走，
+          而不是跟着「算得对的人」走。
+          <br><br>
+          而这批数据真正解锁的，恰恰是<strong>「算得对」第一次可以被直接量出来</strong>。所以更准确的说法是：
+          <strong>换一个自变量——从「谁下的单大」改成「谁的历史战绩真的好」，再测这个新变量有没有预测力。</strong>
+          这是两个不同的自变量，上次否掉的是前者。
+        </div>
+      </div>
+      <div class="pair">
+        <div class="side a">容易这么想</div>
+        <div class="txt">上次的判决作废了，所以这条路大概率是通的。</div>
+      </div>
+      <div class="pair">
+        <div class="side b">实际上</div>
+        <div class="txt">
+          <strong>作废只意味着我们赢得了一次干净的重测机会，不意味着这次会通过。</strong>
+          历史上的分层归因显示，当时那些看着为正的格子，后来查明<strong>全是分母效应造成的幻觉</strong>。
+          先验依然不好。按项目铁律第五条，如果这次是绿灯，要受<strong>更严</strong>的审视，不是更松。
+        </div>
+      </div>
+    </div>
+
+    <h3>它跟方向一的本质区别</h3>
+    <div class="analogy">
+      <div class="tag">标价牌 vs 账本</div>
+      <p>
+        <strong>方向一</strong>好比站在菜市场看着标价牌说「我觉得这西红柿标贵了」——
+        所有人看的是同一块牌子，你凭什么比别人准？
+      </p>
+      <p>
+        <strong>方向三</strong>好比你手上有一本账，记着过去三周<strong>每个买家买了什么、后来证明买对了没有</strong>。
+        你从这本账里挑出总是买对的人。<strong>这本账，别人手上没有。</strong>
+      </p>
+    </div>
+    <p>
+      这就是三周采集工作真正的价值所在——不是「数据更全」这种空话，
+      而是它构成了一道别人不容易复制的护城河。公开标价是零门槛的，完整的交易归属账本不是。
+    </p>
+
+    <h3>它最容易死在哪 —— 而这正是它便宜的原因</h3>
+    <div class="analogy">
+      <div class="tag">头号杀手 · 事后诸葛亮</div>
+      <p>一万个人各扔十次硬币，必然有几个人十次全是正面。</p>
+      <p>
+        你事后把这几位挑出来说「这几位有神力」，再回头看他们那十次——当然全对，
+        因为你就是<strong>按这十次的结果挑的他们</strong>。
+      </p>
+      <p><strong>真正的检验只有一个：让他们再扔十次。</strong></p>
+    </div>
+    <p>
+      放到这儿就是：绝不能用「整个三周表现好」挑钱包，又在「整个三周」上验证他们。
+      必须<strong>前半段挑人、后半段验人</strong>。这恰恰给了一枪毙命的机会——
+      把 19 天砍成两半，前半段排名、取最前面一批，看他们在后半段的真实收益。
+      如果前半段的赢家在后半段毫无优势，这个方向当场死掉，一个查询搞定。
+    </p>
+    <p>另外两个杀手：</p>
+    <ul>
+      <li><strong>跟不跟得上</strong>：就算某地址真有本事，等他的成交出现在公开数据里，价格是不是已经动完了？这个能量——我们有每笔成交的时间戳。</li>
+      <li><strong>装不装得下钱</strong>：一个高手在薄盘里买了 500 块，你没法跟着放大到有意义的仓位。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>把三条串起来看</h2>
+    <p>
+      方向一和方向三其实是<strong>同一件事的两个信息层级</strong>——都是在预测结果，
+      区别只在于你手上有多少别人没有的东西。
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <caption>信息层级 · 越独家越可能有钱赚</caption>
+        <thead>
+          <tr><th>用到的信息</th><th>谁有</th><th>结果</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>只有价格这一个数字</td>
+            <td>所有人</td>
+            <td>没有 edge <span class="ev ev-m">跑出来的</span></td>
+          </tr>
+          <tr>
+            <td>加上「是谁在买」</td>
+            <td>少数人</td>
+            <td>可能有 edge · 待检验</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="key">
+      <p class="q">信息越独家，越可能有钱赚。</p>
+      <p>
+        这就是那本账（1,780 万笔带钱包地址的成交 + 八万个结算真值）
+        为什么是三周里唯一攒下来的真资产——
+        <strong>不是因为数据多，是因为别人不容易有。</strong>
+        公开标价是零门槛的，完整的交易归属账本不是。
+      </p>
+    </div>
+
+    <p>
+      <strong>方向二完全不在这条线上。</strong>它根本不预测——它是开店卖服务，赚的是别人的着急。
+      所以它的风险也是另一类：<strong>不怕自己判断错，只怕自己反应慢。</strong>
+      这也解释了为什么它需要的数据（盘口）和另外两条（成交）不是一种东西。
+    </p>
+  </section>
+
+  <section>
+    <h2>支撑判决的实测数字</h2>
+
+    <div class="tablewrap">
+      <table>
+        <caption>数据家底 · 本轮实测</caption>
+        <thead>
+          <tr><th>项</th><th class="num">数值</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>已结算市场</td><td class="num">81,955</td><td>带官方结算真值</td></tr>
+          <tr><td>成交笔数</td><td class="num">17,802,615</td><td>每笔带钱包地址</td></tr>
+          <tr><td>成交覆盖率</td><td class="num">100.00%</td><td>08-07 记的「30% 结果相关缺口」是测量假象</td></tr>
+          <tr><td>关闭后完整采集</td><td class="num">99.7%</td><td>不变量 A4</td></tr>
+          <tr><td>市场一生成交额中位数</td><td class="num">$513</td><td>59.3% 不到 $1k，是极薄的体育小盘</td></tr>
+          <tr><td>可交易宇宙</td><td class="num">9,824</td><td>累计成交额越过 $1 万且越过后仍可入场</td></tr>
+          <tr><td>可交易宇宙攒样速度</td><td class="num">~500 / 天</td><td>远超母单 ≥400/窗 的闸</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <caption>成本曲线 · 单位换成概率百分点之后</caption>
+        <thead>
+          <tr><th>日成交额</th><th class="num">$200 扫单 p50</th><th class="num">p75</th><th class="num">半价差 p50</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1–2 万</td><td class="num">2.50</td><td class="num">14.09</td><td class="num">1.00</td></tr>
+          <tr><td>2–4 万</td><td class="num">1.23</td><td class="num">4.56</td><td class="num">0.50</td></tr>
+          <tr><td>4–7 万</td><td class="num">1.00</td><td class="num">3.05</td><td class="num">0.50</td></tr>
+          <tr><td>7–12 万</td><td class="num">0.82</td><td class="num">2.43</td><td class="num">0.50</td></tr>
+          <tr><td>12–20 万</td><td class="num">0.50</td><td class="num">1.96</td><td class="num">0.50</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      两件事要从这张表里读出来。一是<strong>成本随流动性单调下降</strong>，而探针脚本把上界硬编码在
+      20 万——最活跃的市场从来没被测过。二是<strong>真正无法回避的只有半价差 0.5 个点</strong>，
+      我一度引用的那些吓人数字，是 $200 单子平均吃掉 4.3 档盘口打出来的冲击成本，
+      在薄簿子里下 200 块等于用推土机买菜。
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <caption>分层检验 · 可交易宇宙（累计成交额过 $5 万，3,024 个市场 / 2,122 个独立比赛组）</caption>
+        <thead>
+          <tr><th>价位</th><th class="num">市场数</th><th class="num">实际兑现 − 价格</th><th class="num">z</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>0.20–0.30</td><td class="num">196</td><td class="num">−4.74</td><td class="num">1.0</td></tr>
+          <tr><td>0.30–0.40</td><td class="num">255</td><td class="num">+3.85</td><td class="num">0.8</td></tr>
+          <tr><td>0.40–0.50</td><td class="num">480</td><td class="num">−1.27</td><td class="num">0.3</td></tr>
+          <tr><td>0.50–0.60</td><td class="num">448</td><td class="num">−0.70</td><td class="num">0.2</td></tr>
+          <tr><td>0.60–0.70</td><td class="num">272</td><td class="num">−4.63</td><td class="num">1.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      九个价带 z 值全在 0.1–1.0，门槛 2.77（九个价带的 Bonferroni 校正）。
+      置信区间已按「同场比赛」聚类放大 1.61 倍——实测同一场欧冠底下最多挂着 86 个盘口，
+      它们同生共死，不是 86 次独立抽样。
+    </p>
+  </section>
+
+  <section>
+    <h2>本轮方法论教训 —— 我自己犯的错</h2>
+    <p>
+      这一节可能比结论更值钱。当天我在自己的分析代码里连续犯了几个错，它们<strong>形状完全相同</strong>。
+    </p>
+
+    <div class="lesson">
+      <div class="n">1</div>
+      <div class="body">
+        <div class="h">前视偏差：用未来信息定入场点</div>
+        <div class="d">
+          我把入场点锚在「最后一笔成交往前推 24 小时」。可「最后一笔成交在什么时候」，
+          在你真要下单那一刻根本不知道——那是未来。这个筛法等于只留下「下单后又活了 24 小时」的市场，
+          把提前收摊的全扔了。实测入选组和被扔那组的兑现率差 <strong>11.99 个点</strong>。
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="n">2</div>
+      <div class="body">
+        <div class="h">算了判据，没接到判决上</div>
+        <div class="d">
+          红线写好了、脚本算出了 11.99、也打印了「结论作废」——
+          然后下面<strong>照样打印了绿灯候选</strong>。判据算了，但没有人使用它。
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="n">3</div>
+      <div class="body">
+        <div class="h">写了个没有分辨力的检查</div>
+        <div class="d">
+          事件聚类检查用了 <code>event_slug</code>，而这个字段取不到时会退化成 <code>slug</code>（实测 100% 退化），
+          <code>slug</code> 天生唯一 ⇒ <strong>不管真实聚类多严重，都必然量出「每组 1.00 条腿」</strong>。
+          换成按比赛日期前缀归组后，真相是平均 2.6 条腿、最大一组 86 条。
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="n">4</div>
+      <div class="body">
+        <div class="h">硬编码的「判读」结论</div>
+        <div class="d">
+          结算延迟的结果相关性检查，判读句是写死的字符串「两组延迟中位数接近 ⇒ 与胜负无关」，
+          <strong>根本不读数字</strong>。实际是 9.33 小时对 14.20 小时，差了五成。
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="n">5</div>
+      <div class="body">
+        <div class="h">口径错配：拿 A 宇宙的成本套到 B 宇宙</div>
+        <div class="d">
+          我引用的成本曲线来自一个把 <code>VOL24H_MAX = 200_000</code> 硬编码的探针——
+          它<strong>刻意排除了最活跃的市场</strong>（那是当初 H6 假设的一部分）。
+          我把这条为 H6 量身定做的曲线套到了全体市场上，还特意选了 p75 说「这是加严」，
+          结果是在一个选错的宇宙上加严，把错误放大了。
+        </div>
+      </div>
+    </div>
+
+    <div class="lesson">
+      <div class="n">6</div>
+      <div class="body">
+        <div class="h">量早了：把大盘也量成薄盘</div>
+        <div class="d">
+          第一版分层检验量出「98% 的市场低于流动性下界」。那是假的——
+          我把入场点定在「开盘满 24 小时」，那时候连大盘都还没攒起量。
+          <strong>是入场规则的缺陷，不是市场的性质。</strong>这次在下结论之前自己抓住了。
+        </div>
+      </div>
+    </div>
+
+    <div class="key">
+      <p class="q">六个错，同一个形状：算了一个数，却没有人读它。</p>
+      <p>
+        这正是这个项目 CLAUDE.md 里记了很多次的那个反复发作的病
+        （水位线前进却没记截断、计数器算了没进心跳、时间闸定义了调用方没传……）。
+        它不挑人，也不因为「这次我会注意」而消失。
+      </p>
+      <p>所以现在的规矩是——</p>
+      <ul>
+        <li>红线在代码里必须是 <code>raise</code>，<strong>不是 <code>print</code></strong>。红线红了就没有下文。</li>
+        <li>任何「判读」结论必须由<strong>数值比较</strong>产生，禁止硬编码判读字符串。</li>
+        <li>每个检查跑之前先答：<strong>「如果这东西现在就是坏的，这个检查的输出会有什么不同？」</strong>答「没有不同」的一律重写。</li>
+        <li>判据要先在<strong>人为构造的坏数据</strong>上跑一遍，确认它会红。<strong>绿灯没被证明能变红 = 绿灯无效。</strong></li>
+      </ul>
+      <p>
+        最后这条当天就见效了：把结果随机化之后，校准判据确实变红，说明它有分辨力，不是在放水盖章。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>还有第四种可能，必须摆出来</h2>
+    <p>
+      <strong>三条都不成立。</strong>这是真实存在的结局，而且概率不低。
+      这个项目已经证伪了五个候选（跟鲸鱼、长热偏差、H6、H7、跨市场套利），今天又加一个。
+    </p>
+    <p>
+      如果方向三死了、方向二核实下来奖励也没有，那诚实的结论就是：
+      <strong>我们没有能赚钱的 edge，采集器再健康也不改变这一点。</strong>
+      那时候正确的动作是停，不是再修一轮基础设施。
+    </p>
+    <div class="callout">
+      <div class="t">项目自己写下、而我们没照着走的那条规矩</div>
+      <p>
+        「<strong>先证伪比先建设便宜。任何新方向，先找那个最可能一枪打死它的检验，别先修基础设施。</strong>」
+      </p>
+      <p>
+        今天那个成本换算，从查到算完不到半天。它本来可以在三周前做——
+        那时候做，会直接告诉我们「先别修采集器，先去量过路费」。
+        <strong>不是缺规矩，是缺在动手前对着规矩问一遍。</strong>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>下一步</h2>
+    <ol>
+      <li>
+        <strong>打方向三那一枪</strong>：前半段挑人、后半段验人。数据现成，几小时出结果。
+        死了砍掉一个方向，活了它就是主线。
+      </li>
+      <li>
+        <strong>半小时的功课</strong>：核实平台到底有没有给挂单方付流动性奖励。
+        它是唯一可能让方向二从「路最长」变成「账最好看」的东西。
+      </li>
+    </ol>
+  </section>
+
+  <footer>
+    <div>相关文档：<code>docs/PREREG_EDGE_CALIB_2026-08-10.md</code>（子单）、<code>docs/PREREG_EDGE_DISCOVERY_FRAMEWORK_2026-07-23.md</code>（母单）</div>
+    <div>成本曲线来源：<code>07-data/slippage_probe.db</code>，7,049 次探针，2026-07-06 至 2026-08-10</div>
+    <div>本文所有「跑出来的」数字均为 2026-08-10 当日只读实测，未改动任何生产代码。</div>
+  </footer>
+
+</div>
