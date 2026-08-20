@@ -15,6 +15,7 @@ import datetime as dt
 import glob
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -66,16 +67,58 @@ def _heartbeat_problems(hb: dict) -> list[str]:
     """
     problems = []
     if hb.get("firehose_fail", 0) > 0:
-        problems.append("🟡 最近一轮 firehose 抽风（采样 0 笔），若持续须查接口/IP")
+        # ⭐2026-08-20:此处原先只说一句「可能要查接口/IP」的软话 ——
+        #   **一句永远不会自己变严重的话**(原文逐字保留在
+        #   10-tests/unit/test_collector_watchdog.py 的 docstring 与判据断言里)。
+        # 08-19 那次连续 14 小时(110 轮里 63 轮空转)它推了 118 条一模一样的 🟡,
+        # 而「持续」从来没有被数出来过。可笑的是计数一直就在手上这条心跳里:
+        # `trade_flow_outage_streak` 由 run_cycle 每轮持久化、在 AUDIT_FIELDS 白名单内、
+        # alerts.py 也早就在用它分档 —— 只有本函数没读。
+        # 形状:「记录事实 vs 使用事实,只接一头」。
+        # ⛔ 红线一律 import alerts 的那一份,不在这里复制(照抄结构而不抽象,已犯 3 次)。
+        #
+        # 老心跳(本次改动之前写的)没有该字段 ⇒ 取 0;而 firehose_fail>0 至少意味着
+        # 本轮失手,故下限取 1,不说「已连续 0 轮」这种自相矛盾的话。
+        try:
+            tfs = max(1, int(hb.get("trade_flow_outage_streak", 0) or 0))
+        except (ValueError, TypeError) as e:
+            # 异常家族按【造真坏输入实测】决定,不凭想当然(2026-08-20):
+            #   'corrupt' -> ValueError | [1] / {} -> TypeError | None / 3.7 -> 不抛。
+            # ⛔ 绝不许让它冒出去:本函数是 check() 的【最后一步】,异常会把前面已经
+            #    攒好的 timer/心跳新鲜度等问题**整体丢掉** ⇒ 看门狗整轮零告警。
+            #    CLAUDE.md 铁律「一个附加功能坏掉不许打断调用方其余职责」;
+            #    2026-08-17 daily_digest 已栽过同一形状。
+            problems.append(
+                f"🔴 看门狗读不了心跳的 trade_flow_outage_streak"
+                f"({type(e).__name__}: {e})—— 本轮 firehose 分档已跳过,"
+                f"须查心跳写入端;其余检查不受影响")
+            return problems + _queue_problems(hb)
+        hours = tfs * alerts.cycle_minutes() / 60
+        if tfs >= alerts.TRADE_FLOW_OUTAGE_CYCLES:
+            problems.append(
+                f"🔴 成交流持续断供:已连续 {tfs} 轮(约 {hours:.1f} 小时)"
+                f"firehose 一笔都没抓到。⚠️ 这已不是会自愈的抖动 —— 轮转一圈超过约 "
+                f"{alerts.LAP_RED_LINE_HOURS} 小时后,最活跃的市场会出**永久**空洞"
+                f"(翻页够不回去)。须立刻查网络/代理/IP,不要等它自己好")
+        else:
+            problems.append(
+                f"🟡 firehose 抽风:本轮采样 0 笔,已连续 {tfs} 轮(约 {hours:.1f} 小时)。"
+                f"多数是单轮抖动、下轮自愈;连续 {alerts.TRADE_FLOW_OUTAGE_CYCLES} 轮起升级为 🔴")
     # ⭐告警送达盲区(2026-08-07 立):采集器自己发不出去的时候是喊不出来的,
     # 只能由**别人**替它喊。本条在"网络没坏、但 Telegram 令牌失效/接口变更/被限流"
     # 这类故障下真管用;若是整机断网,看门狗自己也喊不出去 —— 那一层解决不了,
     # 需要第二条独立通道,已在 alerts.py 里写明不在范围内。
+    return problems + _queue_problems(hb)
+
+
+def _queue_problems(hb: dict) -> list[str]:
+    """告警送达盲区。单独拆出来,是为了 firehose 分档降级时也带得上它 ——
+    否则「一个附加功能坏掉」又会顺手把这条职责一起吞掉。"""
     qd = hb.get("alert_queue_depth", 0)
     if qd > 0:
-        problems.append(f"🟡 采集器有 {qd} 条告警**发不出去**(积压待发)。"
-                        f"含义:它可能正在出事而喊不出来 —— 须查 Telegram 令牌/网络")
-    return problems
+        return [f"🟡 采集器有 {qd} 条告警**发不出去**(积压待发)。"
+                f"含义:它可能正在出事而喊不出来 —— 须查 Telegram 令牌/网络"]
+    return []
 
 
 def _digest_problems(now: float | None = None) -> list[str]:
@@ -141,6 +184,21 @@ def check() -> list[str]:
     return problems
 
 
+def _cooldown_signature(problems: list[str]) -> str:
+    """冷却签名:把正文里【所有会变的数字】抹掉,只留问题种类与档位(🟡/🔴)。
+
+    🔴 由来(2026-08-19 实测):签名原先是问题正文原样拼接,而其中一行是
+    「采集器有 **N** 条告警发不出去」—— N 实测取过 1/2/3/7/8/9/20。
+    数字一变签名就变 ⇒ 4h 冷却**完全失效** ⇒ 几乎每轮都推。
+    实测那次:看门狗触发 136 次、推出去 63 次(冷却有效的话应是每 4h 一条)。
+
+    ⚠️ 与上面的连续计数**必须成对落地**:只把轮数写进消息而不修签名,
+    轮数每轮都在变 ⇒ 洪水只会更大。
+    档位靠 🟡/🔴 区分,不靠数字,所以抹数字不会把真升级一起压住。
+    """
+    return "|".join(sorted(re.sub(r"\d+", "#", p) for p in problems))
+
+
 def _cooldown_ok(signature: str) -> bool:
     """同一问题集 4h 内只告警一次;问题变化则立即告警。"""
     try:
@@ -159,7 +217,7 @@ def main() -> int:
     if not problems:
         print(f"[{dt.datetime.now():%H:%M}] ✓ 采集器健康")
         return 0
-    sig = "|".join(sorted(problems))
+    sig = _cooldown_signature(problems)
     line = "🐕 <b>采集器看门狗告警</b>\n" + "\n".join(problems)
     print(line)
     if _cooldown_ok(sig):
