@@ -102,6 +102,18 @@ def test_no_text_match_masquerading_as_behavior_check(path):
 
 _WRITE_SQL = re.compile(r"\b(SET|DELETE|INSERT|UPDATE|COPY|ATTACH|INSTALL|LOAD)\b", re.I)
 
+# ⚠️ **已知盲区,如实写明,不假装堵上了**(2026-08-26 review 指出 + 实测确认):
+#   `CREATE ... AS SELECT ... WHERE {x}` 这类语句不在上面的正则里,会绕过扫描。
+#   为什么不补进去:实测 **DuckDB 的 `CREATE VIEW` 不支持参数绑定**
+#     CREATE VIEW v AS SELECT * FROM read_parquet(?)  → BinderException
+#     CREATE TABLE t AS SELECT ? AS x                 → 支持
+#   ⇒ `CREATE VIEW ... read_parquet('{glob}')` 是**结构性必须拼接**,不是偷懒。
+#   全项目现有 20+ 处 CREATE 插值,逐一核对过:插的都是内部算出的 glob / 浮点数 / 列名,
+#   **没有一处接受外部输入**,故当前实际注入面为零。
+#   ⇒ 处置:不扩大正则(那会逼出一份 20 条的白名单,反而稀释棘轮),
+#     改为下面这条判据 —— 盯住"CREATE 插值里有没有混进外部输入"这个真正要紧的点。
+_CLI_TAINT = re.compile(r"\b(args|argv|sys\.argv|input|os\.environ|getenv)\b")
+
 
 @pytest.mark.parametrize("d", GUARDED_SRC_DIRS, ids=lambda p: p.name)
 def test_no_fstring_interpolation_in_write_sql(d):
@@ -131,6 +143,49 @@ def test_no_fstring_interpolation_in_write_sql(d):
                 offenders.append(f"{py.name}:{node.lineno}")
     assert not offenders, (
         f"这些地方用 f-string 拼了写类 SQL:{offenders}\n⇒ 改成参数化 `con.execute(sql, [args])`。")
+
+
+@pytest.mark.parametrize("d", GUARDED_SRC_DIRS, ids=lambda p: p.name)
+def test_create_statements_never_interpolate_external_input(d):
+    """⭐CREATE 类语句可以拼接(DuckDB 的 CREATE VIEW 无法绑参数,实测),
+    但**绝不许把外部输入拼进去** —— 那才是真正的注入面。
+
+    盯的是:f-string 里插的值是否来自 argparse / argv / 环境变量 / input()。
+    """
+    offenders = []
+    for py in sorted(d.glob("*.py")):
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.JoinedStr):
+                continue
+            lit = "".join(v.value for v in node.values
+                          if isinstance(v, ast.Constant) and isinstance(v.value, str))
+            if not re.search(r"\bCREATE\b", lit, re.I):
+                continue
+            for v in node.values:
+                if not isinstance(v, ast.FormattedValue):
+                    continue
+                if _CLI_TAINT.search(ast.unparse(v.value)):
+                    offenders.append(f"{py.name}:{node.lineno} ← {ast.unparse(v.value)}")
+    assert not offenders, (
+        f"这些 CREATE 语句把**外部输入**拼进了 SQL:{offenders}\n"
+        f"⇒ CREATE VIEW 确实不能绑参数,但外部输入必须先校验/白名单,不能直接拼。")
+
+
+def test_create_taint_guard_catches_a_real_case():
+    """结构检查:验证上面那条在已知坏样本上会红 —— 守的是「外部输入不得入 SQL」。"""
+    bad = 'con.execute(f"CREATE VIEW v AS SELECT * FROM read_parquet(\'{args.path}\')")'
+    tree = ast.parse(bad)
+    hit = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            for v in node.values:
+                if isinstance(v, ast.FormattedValue) and _CLI_TAINT.search(ast.unparse(v.value)):
+                    hit.append(ast.unparse(v.value))
+    assert hit == ["args.path"], "外部输入拼进 CREATE 竟然没被抓到"
 
 
 # ---------- 两条守卫的自检(先在坏数据上验会不会红) ----------

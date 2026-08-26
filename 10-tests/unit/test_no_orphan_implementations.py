@@ -37,6 +37,16 @@ GUARDED = {
          "trade_edge": "规格实现;生产走 WIN_SQL+EDGE_SQL。"
                        "等价判据=test_HIGH1_sql_and_python_agree_on_win_edge_and_window"},
     ),
+    PROJECT_ROOT / "08-backtests" / "follow_the_leader.py": (
+        {"run", "main"},
+        {"arm_config": "两臂口径的文档字典,供报告与判据读取",
+         "find_fill": "规格实现;生产走 FILL_SQL。"
+                      "等价判据=test_sql_and_python_agree_on_fill_selection",
+         "scan_signals": "规格实现(纯 Python 版的漏斗与收益口径);生产走 run() 里的 SQL。"
+                         "等价判据=test_sql_and_python_agree_on_fill_selection",
+         "dedupe_signals": "规格实现;生产的去重由 FILL_SQL 的 GROUP BY 完成。"
+                           "等价判据=test_sql_and_python_agree_on_fill_selection"},
+    ),
     PROJECT_ROOT / "08-backtests" / "wallet_skill_v4_matched.py": (
         {"run", "main"},
         {"arm_config": "两臂口径的文档字典,供报告与判据读取",
