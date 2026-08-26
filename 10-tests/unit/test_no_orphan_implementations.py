@@ -58,6 +58,15 @@ GUARDED = {
         {"load_excluded_markets": "给下游分析脚本用的消费者入口(设计单 §7)",
          "write_report": "由 main 调用;同时供判据直接使用"},
     ),
+    # 2026-08-26 纳入:本次给它加了 `_market_times_problems`,而这个守卫要挡的正是
+    # 「新写的检查函数没接到 check() 上」—— 那种漏接的症状与"健康"一模一样。
+    # ⚠️ 加这条的第一版**是假的**:守卫当时无条件豁免下划线函数,而本模块除 main 外
+    #    全是下划线 ⇒ 进不进 GUARDED 都一样。是 review 变异实测抓出来的,
+    #    连带把那条豁免删掉了 —— 否则这里写的理由本身就是一句谎话。
+    PROJECT_ROOT / "11-collector" / "collector_watchdog.py": (
+        {"main"},
+        {},
+    ),
     PROJECT_ROOT / "11-collector" / "backfill_market_times.py": (
         {"main"},
         {"hard_firewall": "给下游分析脚本选分界线用的公开工具(设计单 §4)",
@@ -100,6 +109,23 @@ def _reachable(path: Path, entries: set[str]) -> tuple[set[str], set[str]]:
     return defined, seen
 
 
+def _orphans(path: Path, entries: set[str], allow: dict[str, str]) -> set[str]:
+    """⭐**唯一**的孤儿判定式。生产判据与自检判据都必须走这里。
+
+    ⛔ 不许在别处再写一遍 `defined - seen - ...`:两处判定分叉,正是本守卫自己
+       要挡的那个形状。2026-08-26 我写的第一版自检判据就绕开了这里去直接比
+       `defined - seen` ⇒ 把豁免加回去它照样绿(「判据没走生产路径」当天第八次)。
+
+    ⚠️ 2026-08-26 收紧:原式还减掉了 `{n for n in defined if n.startswith("_")}`,
+       即**无条件豁免所有私有函数**。而 `collector_watchdog.py` 这类模块的惯例是
+       「除 main 外全部私有」⇒ 本守卫对它彻底空转:实测把
+       `problems += _market_times_problems()` 从 check() 里拆掉,它照样报"无孤儿"。
+       收紧前实测过波及面:6 个被守模块**新增孤儿 0 个**,不是靠放宽白名单混过去的。
+    """
+    defined, seen = _reachable(path, entries)
+    return defined - seen - set(allow)
+
+
 @pytest.mark.parametrize("path", list(GUARDED), ids=lambda p: p.name)
 def test_every_function_is_reachable_from_the_production_entry_point(path):
     """⭐定义了却从入口走不到的函数 = 死代码 或 第二份实现。
@@ -107,8 +133,7 @@ def test_every_function_is_reachable_from_the_production_entry_point(path):
     白名单必须**逐个写明理由** —— 空着理由的白名单等于把这条判据关掉。
     """
     entries, allow = GUARDED[path]
-    defined, seen = _reachable(path, entries)
-    orphans = defined - seen - set(allow) - {n for n in defined if n.startswith("_")}
+    orphans = _orphans(path, entries, allow)
     assert not orphans, (
         f"{path.name} 里这些函数定义了却从 {sorted(entries)} 走不到:{sorted(orphans)}\n"
         f"⇒ 要么是死代码,要么你又写了第二份实现(V3 就是这么栽的)。"
@@ -156,6 +181,22 @@ def test_this_guard_would_have_caught_the_v3_bug(tmp_path):
     orphans = defined - seen
     assert orphans == {"window_of", "trade_edge"}, \
         "这条守卫抓不到 V3 那个形状 —— 它本身是坏的"
+
+
+def test_guard_catches_an_unwired_PRIVATE_helper(tmp_path):
+    """⭐2026-08-26(review 抓出):守卫原先无条件豁免所有 `_` 开头的函数。
+
+    而 `collector_watchdog.py` 的惯例是「除 main 外全部私有」⇒ 守卫对它彻底空转:
+    实测把 `problems += _market_times_problems()` 从 check() 里拆掉,它照样报"无孤儿"。
+    那正是本守卫存在的理由(写了第二份 / 新函数没接线),却因一条豁免而看不见。
+    """
+    bad = tmp_path / "m.py"
+    bad.write_text(
+        "def _used(x):\n    return x + 1\n"
+        "def _never_wired(x):\n    return x * 2\n"      # ← 定义了,谁都没调
+        "def main():\n    return _used(1)\n", encoding="utf-8")
+    assert "_never_wired" in _orphans(bad, {"main"}, {}), \
+        "没接线的私有函数没被判成孤儿 —— 守卫对『除 main 外全私有』的模块是空转的"
 
 
 def test_guard_does_not_false_alarm_on_a_normal_module(tmp_path):
