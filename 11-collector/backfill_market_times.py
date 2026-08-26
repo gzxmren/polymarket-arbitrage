@@ -379,6 +379,29 @@ def settled_cids(limit: int | None = None) -> list[str]:
         con.close()
 
 
+def _write_summary(out_dir: str | Path, summary: dict[str, Any]) -> Path:
+    """把本轮的运行记录落盘。**每一条 return 路径都要经过它**。
+
+    ⭐它是侧表的"活着"信号:`collector_watchdog._market_times_problems` 靠这份记录的
+    `run_at_utc` 判断侧表有没有真的跑成过(timer 是 active 但每轮都崩,单看 systemctl
+    是看不出来的 —— 例如 SIGKILL 之后 `.backfill.lock` 残留,此后每轮立刻 return 2)。
+    ⇒ 只写"干成了活"的那条路径 = 追平积压之后守护必然误报。
+
+    ⚠️ **原子写**,理由与同文件 `write_rows`(review M5)逐字相同,而且在这里更要紧:
+    service 有 `TimeoutStartSec=100`,超时会被 SIGKILL。若正好停在写一半,磁盘上会留下
+    **截断的 JSON**;而**同一次 SIGKILL 也会跳过 `finally` 里的 `lock.unlink()`**
+    ⇒ 锁残留 ⇒ 此后每轮都 `return 2`、再也走不到这里 ⇒ 那份坏记录**永远不会被刷新**,
+    上一轮的诊断信息(reconcile/failures)一并丢掉。
+    """
+    import os
+
+    path = Path(out_dir) / "last_run_summary.json"
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+    return path
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="回填市场时间坐标(时间防火墙)")
     ap.add_argument("--test", action="store_true", help="测试模式:写 /tmp,绝不碰生产目录")
@@ -425,7 +448,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"⚠️ 跳过 {len(bad_cids)} 个格式不合法的 condition_id(样例 {bad_cids[:3]})")
         print(f"已结算市场待取 {len(todo):,} 个(已完成 {len(done):,} 个,跳过)")
         if not todo:
+            # ⭐无活可干**也要留痕**。原版这里直接 return、什么都不写 ⇒ 侧表一旦追平
+            # 积压(实测 12,246 个、每小时 1,700 个 ⇒ 约 7 小时),记录就永远停在追平
+            # 那一刻 ⇒ 看门狗从那天起天天误报,而误报会把真信号淹掉。
+            # 形状 = 本项目犯过 4 次的「记录事实 vs 使用事实,只接一头」。
+            # ⚠️「没活可干」(正常)与「有活没干成」(异常)靠 pending 区分,
+            #    不许靠"产出为 0" —— 回填任务追平后产出本来就该是 0。
             print("没有要做的。")
+            _write_summary(out_dir, {
+                "run_at_utc": datetime.now(timezone.utc).isoformat(),
+                "pending": 0, "fetched": 0, "written": 0,
+                "invalid_cids": len(bad_cids), "no_work": True,
+            })
             return 0
 
         ledger = ReconcileLedger()
@@ -477,6 +511,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         have_game = sum(1 for r in rows if r["game_start"])
         summary: dict[str, Any] = {
             "run_at_utc": datetime.now(timezone.utc).isoformat(),
+            # ⭐本轮**开始时**待取的总数(不是本轮切出来的那一片:单轮有 --max-batches
+            #   上限,追不平是正常的)。守护据此区分「有活没干成」与「没活可干」。
+            "pending": len(todo),
             "reconcile": ledger.as_dict(),
             "fetched": len(rows), "written": written,
             "have_closed_time": have_closed, "have_game_start": have_game,
@@ -506,8 +543,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                       f"落在 closedTime 之后 {v.get('trades_after_closed', 0):,} 笔 "
                       f"= {100*v.get('fraction_after', 0):.4f}%(红线 <{100*MEASURED_POST_CLOSED_REDLINE:.1f}%)")
 
-        (out_dir / "last_run_summary.json").write_text(
-            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        _write_summary(out_dir, summary)
         print(f"=== 写到 ===\n  {out_dir}")
     finally:
         lock_fd.close()

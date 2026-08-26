@@ -425,3 +425,88 @@ def test_M7_batch_url_is_delegated_not_hand_rolled():
     assert not re.search(r"""["']condition_ids=(\{|%s)""", src), "又自己拼 URL 了"
     assert "build_gamma_batch_url" in inspect.getsource(bmt.batch_urls)
     assert "pack_condition_ids" in inspect.getsource(bmt.chunk_cids)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 「没活可干」那条路径也必须留痕(2026-08-26 立)
+#
+# 由来:看门狗要靠 last_run_summary.json 的新鲜度判断"侧表还活着"。而原版
+# `if not todo: return 0` **什么都不写** ⇒ 侧表一旦追平积压(实测 12,246 个、
+# 每小时 1,700 个 ⇒ 约 7 小时后),那份记录就永远停在追平那一刻 ⇒
+# 守护会从"追平当天"起天天误报 ⇒ 噪音源。
+#
+# 形状正是本项目犯过 4 次的「记录事实 vs 使用事实,只接一头」:
+# 无活那条路径把事实(这一轮我跑了、没活干)记在了 stdout 里,没人读得到。
+# ─────────────────────────────────────────────────────────────────────────────
+def _summary_of(out_dir) -> dict:
+    return json.loads((Path(out_dir) / "last_run_summary.json").read_text(encoding="utf-8"))
+
+
+def test_a_run_with_no_work_still_leaves_a_trace(tmp_path, monkeypatch):
+    """⭐无活可干 ≠ 没跑。守护要区分这两件事,靠的就是这份记录还在不在更新。"""
+    monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: [])
+    assert bmt.main(["--out", str(tmp_path), "--skip-verify"]) == 0
+    s = _summary_of(tmp_path)
+    assert s["pending"] == 0 and s["written"] == 0
+    assert s["run_at_utc"], "没有时间戳 ⇒ 守护无从判断新鲜度"
+
+
+def test_the_trace_keeps_refreshing_after_the_backlog_is_cleared(tmp_path, monkeypatch):
+    """⭐本组判据真正要挡的那个假警报:追平之后每一轮都没活干,
+    但记录必须**每轮都变新**,否则守护会从追平当天起天天误报。"""
+    cids = [f"0x{i:064x}" for i in range(20)]
+    monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: cids)
+    monkeypatch.setattr(bmt, "fetch_batch",
+                        lambda b, l, counters=None, deadline=None:
+                        (l.record(b, b), [bmt.parse_market(_api_row(c)) for c in b], [])[1:])
+    bmt.main(["--out", str(tmp_path), "--sleep", "0", "--skip-verify"])
+    first = _summary_of(tmp_path)["run_at_utc"]
+
+    # 第二轮:已全部完成 ⇒ 走无活可干那条路径
+    bmt.main(["--out", str(tmp_path), "--sleep", "0", "--skip-verify"])
+    second = _summary_of(tmp_path)
+    assert second["pending"] == 0, "第二轮居然还有活 —— 前提没成立,本判据没测到该测的路径"
+    assert second["run_at_utc"] > first, "无活可干时记录没变新 ⇒ 守护会误报"
+
+
+def test_the_summary_says_how_many_were_waiting(tmp_path, monkeypatch):
+    """「有活没干成」这个判据的分子分母都来自这里 —— pending 必须是**本轮开始时**
+    待取的总数,不是本轮切出来的那一片(单轮有上限 20 批,追不平是正常的)。"""
+    cids = [f"0x{i:064x}" for i in range(300)]
+    monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: cids)
+    monkeypatch.setattr(bmt, "fetch_batch",
+                        lambda b, l, counters=None, deadline=None:
+                        (l.record(b, b), [bmt.parse_market(_api_row(c)) for c in b], [])[1:])
+    bmt.main(["--out", str(tmp_path), "--sleep", "0", "--skip-verify", "--max-batches", "1"])
+    s = _summary_of(tmp_path)
+    assert s["pending"] == len(cids), f"pending 应是全部待取数,实得 {s['pending']}"
+    assert 0 < s["written"] < len(cids), "本轮该只干了一片,判据前提没成立"
+
+
+def test_a_crash_midway_through_writing_the_trace_cannot_corrupt_the_old_one(
+        tmp_path, monkeypatch):
+    """⭐H1(review 抓出):service 有 TimeoutStartSec=100,超时会被 SIGKILL。
+
+    要命的是**同一次 SIGKILL 也会跳过 `finally` 里的 `lock.unlink()`** ⇒ 锁残留 ⇒
+    此后每轮立刻 `return 2`、再也走不到写记录这一步 ⇒ 那份**截断的 JSON 永远不会被刷新**。
+
+    ⚠️ 本判据刻意**不查源码里有没有 os.replace** —— 那是「文本检查冒充行为检查」
+       (2026-08-23 当天犯过 3 次)。这里真的在写到一半时炸一次,看旧记录活没活下来。
+    """
+    good = {"run_at_utc": "2026-08-26T00:00:00+00:00", "pending": 5, "written": 5}
+    bmt._write_summary(tmp_path, good)
+
+    real_write = Path.write_text
+
+    def half_then_die(self, data, *a, **kw):
+        real_write(self, data[: len(data) // 2], *a, **kw)   # 只写一半
+        raise OSError("SIGKILL 模拟:写到一半进程没了")
+
+    monkeypatch.setattr(Path, "write_text", half_then_die)
+    with pytest.raises(OSError):
+        bmt._write_summary(tmp_path, {"run_at_utc": "2026-08-26T01:00:00+00:00",
+                                      "pending": 9, "written": 0})
+    monkeypatch.undo()
+
+    assert json.loads((tmp_path / "last_run_summary.json").read_text(encoding="utf-8")) == good, \
+        "上一轮的好记录被写坏了 —— 直接写最终文件名,不是原子写"
