@@ -288,7 +288,18 @@ def check() -> list[str]:
             problems.append(f"🔴 采集器 {age_min:.0f} 分钟无心跳"
                             f"（应每 {alerts.cycle_minutes()} 分钟一轮=停摆）")
         problems += _heartbeat_problems(hb)
-    problems += _market_times_problems()
+    # ⭐侧表守护放在**最后**,且用 `except Exception` 兜住:它是附加职责,
+    #   而上面那几项是采集器的核心检查。2026-08-17 daily_digest 正是在这个位置
+    #   抛了一个没预料到的异常,把**前面已经攒好的问题整体丢掉** ⇒ 看门狗整轮零告警。
+    #   已知的坏输入家族在 `_market_times_problems` 内部逐个处理(判据里焊死);
+    #   这里兜的是**没预料到的那一种** —— 本项目 alerts.py 对可选导入用的也是
+    #   `except Exception`(CLAUDE.md 异常清单第 5 条明令照它抄)。
+    try:
+        problems += _market_times_problems()
+    except Exception as e:                                    # noqa: BLE001
+        problems.append(
+            f"🔴 侧表守护自己崩了({type(e).__name__}: {e})—— "
+            f"时间防火墙侧表现在**没人在看**。须查 collector_watchdog._market_times_problems")
     return problems
 
 

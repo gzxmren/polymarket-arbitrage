@@ -281,6 +281,33 @@ def test_check_actually_runs_the_side_table_guard(rig, monkeypatch):
     assert any(SIDE_TABLE_UNIT in p for p in cw.check())
 
 
+def test_an_unexpected_crash_in_the_guard_does_not_kill_the_collector_checks(
+        rig, monkeypatch):
+    """⭐兜的是**没预料到的**那一种异常(已知的坏输入家族在别处逐个焊死)。
+
+    2026-08-17 daily_digest 正是这个形状:一个附加检查抛了没预料到的异常,
+    把 check() 里前面已经攒好的核心问题**整体丢掉** ⇒ 看门狗整轮零告警,
+    比没有看门狗更糟(它主动让人放心)。
+    """
+    monkeypatch.setattr(cw, "_digest_problems", lambda *a, **k: [])
+    monkeypatch.setattr(cw, "_latest_heartbeat", lambda: None)
+
+    def boom(unit):
+        # ⚠️ 只让**侧表那一路**炸。第一版这里对所有 unit 都抛,结果炸的是
+        #    check() 里采集器自己那次调用 —— 判据测的根本不是它宣称要测的那条路径
+        #    (「判据没走生产路径」,2026-08-26 当天第七次)。
+        if unit == SIDE_TABLE_UNIT:
+            raise RuntimeError("systemctl 换了输出格式")
+        return True
+    monkeypatch.setattr(cw, "_timer_active", boom)
+
+    problems = cw.check()                       # 不抛 = 第一层要求
+    assert any("无任何审计心跳" in p for p in problems), \
+        f"侧表守护崩溃把采集器的核心检查一起带走了 → {problems}"
+    assert any("侧表守护自己崩了" in p for p in problems), \
+        f"崩溃本身被静默吞掉了 → {problems}"
+
+
 def test_cooldown_signature_survives_changing_counts(rig):
     """防洪:正文里的数字每轮都在变,签名不许跟着变(08-19 冷却被数字冲垮过)。"""
     rig.write(pending=12246, fetched=0, written=0)
