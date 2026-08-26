@@ -185,8 +185,10 @@ def _market_times_problems(now: float | None = None) -> list[str]:
 
     对着「如果它现在就是坏的,我看到的会有什么不同?」这一问,有两种**实际存在**的
     故障下答案是"没有不同":
-      1. `.backfill.lock` 残留 —— 进程被 SIGKILL(超时被 systemd 砍)不走 `finally`,
-         锁留下 ⇒ 此后每一轮都立刻 return 2、什么都不做,而 timer 仍是 active。
+      1. 进程被超时砍掉(`TimeoutStartSec=100`)——2026-08-26 21:52 真实发生,
+         当时的哨兵锁靠 `finally` 删除而 SIGTERM 不走 `finally` ⇒ 卡死 4 小时 22 分。
+         ⚠️ 该机制已于 08-27 换成**内核持有的 flock**,这种卡死不会再发生;
+            但"跑起来了却没干成活"仍有别的成因(下面第 2 条),故本检查照留。
       2. 网络坏掉(2026-08-04 / 08-22 真发生过隧道被拖垮)⇒ 每轮照跑,零产出。
     ⇒ 三条一起判:timer 存活 / 真的跑成过 / 有活真干成了。
 
@@ -239,7 +241,10 @@ def _market_times_problems(now: float | None = None) -> list[str]:
         problems.append(
             f"🔴 侧表已 {age_min:.0f} 分钟没跑成一轮(应每 60 分钟一轮,"
             f"阈值 {MARKET_TIMES_STALE_MIN} 分钟 = 容 1 轮失手)。"
-            f"常见原因:`.backfill.lock` 残留(被硬杀后没清)或上游持续失败")
+            f"⛔ **不要手工删 `.backfill.lock`** —— 锁由内核持有,进程一死自动释放;"
+            f"删掉一个**仍在运行**的实例的锁文件会让两个实例同时跑。"
+            f"先用 `cat` 看锁里的 PID、`ps -p` 确认它是否真的不在了,再判断。"
+            f"常见成因:上游持续失败 / 每轮都超时被砍")
 
     if "pending" not in summary:
         problems.append(
