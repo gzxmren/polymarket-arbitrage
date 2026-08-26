@@ -39,9 +39,11 @@ TIMER_UNIT = "polymarket-rebirth-collector.timer"
 DIGEST_MODULE_PATH = Path(__file__).resolve().parent / "daily_digest.py"
 
 
-def _timer_active() -> bool:
+def _timer_active(unit: str) -> bool:
+    """⛔ 参数**不给默认值**:两条 timer 都要查,给了默认值就会有人忘了传,
+    而那种漏检的症状与"健康"一模一样。"""
     try:
-        r = subprocess.run(["systemctl", "--user", "is-active", TIMER_UNIT],
+        r = subprocess.run(["systemctl", "--user", "is-active", unit],
                            capture_output=True, text=True, timeout=15)
         return r.stdout.strip() == "active"
     except (subprocess.SubprocessError, OSError):
@@ -170,7 +172,7 @@ def _digest_problems(now: float | None = None) -> list[str]:
 def check() -> list[str]:
     problems = []
     problems += _digest_problems()
-    if not _timer_active():
+    if not _timer_active(TIMER_UNIT):
         problems.append(f"🔴 采集器 timer 不在 active（{TIMER_UNIT} 已停摆）")
     hb = _latest_heartbeat()
     if hb is None:

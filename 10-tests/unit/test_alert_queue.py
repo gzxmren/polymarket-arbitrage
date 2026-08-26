@@ -397,7 +397,7 @@ def test_the_watchdog_actually_surfaces_a_stuck_queue(monkeypatch):
     import time as _t
 
     import collector_watchdog as wd
-    monkeypatch.setattr(wd, "_timer_active", lambda: True)
+    monkeypatch.setattr(wd, "_timer_active", lambda unit: True)
     monkeypatch.setattr(wd, "_latest_heartbeat",
                         lambda: {"ts": _t.time(), "alert_queue_depth": 3})
     assert any("发不出去" in p for p in wd.check())

@@ -358,7 +358,7 @@ def test_a_broken_digest_module_is_reported_red_not_silently_ignored(monkeypatch
         f"日报模块坏掉却被当成没问题:{problems}")
 
     # 而且不许把异常放出去 —— 看门狗其余职责必须照常跑完
-    monkeypatch.setattr(cw, "_timer_active", lambda: False)
+    monkeypatch.setattr(cw, "_timer_active", lambda unit: False)
     monkeypatch.setattr(cw, "_latest_heartbeat", lambda: None)
     all_problems = cw.check()
     assert any("timer" in p for p in all_problems), f"看门狗其余检查没跑:{all_problems}"
