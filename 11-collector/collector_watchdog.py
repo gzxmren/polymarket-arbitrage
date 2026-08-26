@@ -35,6 +35,15 @@ HEARTBEAT_STALE_MIN = 40
 COOLDOWN_S = 4 * 3600             # 同一问题 4h 内不重复告警
 STATE_FILE = se.DATA_ROOT / ".watchdog_state.json"
 TIMER_UNIT = "polymarket-rebirth-collector.timer"
+# ⭐时间防火墙侧表(2026-08-26 加)。它每小时把新结算市场的 closedTime 取回来,
+#   **当时错过就永久取不回**(市场一关闭就掉出轮询队列)——而所有"预测准不准"的
+#   分析都以它为时间防火墙。原先本看门狗只盯 TIMER_UNIT 一条,侧表整个不在视野里。
+MARKET_TIMES_TIMER_UNIT = "polymarket-market-times.timer"
+# 侧表 OnCalendar=*:50 ⇒ 一轮 60 分钟。150 分钟 = 2.5 轮:容 1 轮失手、抓 2 轮连续失手。
+# 与上面 HEARTBEAT_STALE_MIN(40 分钟配 15 分钟周期 = 2.67 轮)是同一把尺子,不另立标准。
+MARKET_TIMES_STALE_MIN = 150
+MARKET_TIMES_SUMMARY = (Path(__file__).resolve().parent
+                        / "data" / "market_times" / "last_run_summary.json")
 # 判别「日报功能没装」与「日报模块坏了」靠文件在不在 —— 见 _digest_problems。
 DIGEST_MODULE_PATH = Path(__file__).resolve().parent / "daily_digest.py"
 
@@ -169,6 +178,102 @@ def _digest_problems(now: float | None = None) -> list[str]:
             f"polymarket-daily-digest.timer 与 Telegram 通道"]
 
 
+def _market_times_problems(now: float | None = None) -> list[str]:
+    """⭐时间防火墙侧表的"死人开关"。侧表自己不会喊"我死了",只能由别人替它喊。
+
+    ## 为什么不能只查 timer 是不是 active
+
+    对着「如果它现在就是坏的,我看到的会有什么不同?」这一问,有两种**实际存在**的
+    故障下答案是"没有不同":
+      1. `.backfill.lock` 残留 —— 进程被 SIGKILL(超时被 systemd 砍)不走 `finally`,
+         锁留下 ⇒ 此后每一轮都立刻 return 2、什么都不做,而 timer 仍是 active。
+      2. 网络坏掉(2026-08-04 / 08-22 真发生过隧道被拖垮)⇒ 每轮照跑,零产出。
+    ⇒ 三条一起判:timer 存活 / 真的跑成过 / 有活真干成了。
+
+    ## ⚠️「没活可干」不是异常
+
+    侧表是**回填**任务,追平之后大多数轮次本来就没活干 ⇒ 产出为 0 在这里是**健康**。
+    拿"产出为 0"当判据的那一秒起,它就变成天天误报的噪音源(静默失败清单第 6 条)。
+    有分辨力的量是 `pending > 0 而 written == 0`:有活,一个都没干成。
+
+    ## 异常家族按【造真坏输入实测】决定(2026-08-26 实跑,判据里逐条焊死)
+
+    缺文件→FileNotFoundError / 是目录→IsADirectoryError,同属 OSError;
+    非 UTF-8→UnicodeDecodeError、JSON 垃圾→JSONDecodeError,同属 ValueError;
+    fromisoformat("nope")→ValueError 而 fromisoformat(None)→**TypeError**。
+    ⛔ 全程不许把异常放出去:本函数是附加职责,抛出去会把 check() 里
+       采集器那几项核心检查**整体丢掉**(2026-08-17 daily_digest 栽过同一形状)。
+    """
+    problems: list[str] = []
+    if not _timer_active(MARKET_TIMES_TIMER_UNIT):
+        problems.append(
+            f"🔴 时间防火墙侧表 timer 不在 active（{MARKET_TIMES_TIMER_UNIT} 已停摆）。"
+            f"含义:新结算市场的 closedTime **当时错过就永久取不回** —— "
+            f"所有按时间切窗的分析都会从今天起出现无法回填的缺口")
+    try:
+        summary = json.loads(MARKET_TIMES_SUMMARY.read_text(encoding="utf-8"))
+        if not isinstance(summary, dict):
+            raise ValueError(f"顶层不是对象而是 {type(summary).__name__}")
+    except FileNotFoundError:
+        return problems + [
+            f"🔴 侧表从未成功跑完一轮(没有 {MARKET_TIMES_SUMMARY.name})。"
+            f"须查 {MARKET_TIMES_TIMER_UNIT} 与 market_times.log"]
+    except (OSError, ValueError) as e:
+        return problems + [
+            f"🔴 侧表的运行记录读不了({type(e).__name__}: {e})—— "
+            f"「侧表还活着吗」这个问题现在没人答得了。须查 {MARKET_TIMES_SUMMARY}"]
+
+    try:
+        ran_at = dt.datetime.fromisoformat(summary.get("run_at_utc"))
+    except (TypeError, ValueError) as e:
+        return problems + [
+            f"🔴 侧表运行记录里的时间戳读不了({type(e).__name__}: {e})—— "
+            f"新鲜度判不了 = 本守护对停摆已经瞎了。须查 {MARKET_TIMES_SUMMARY}"]
+    # ⚠️ 无时区的时间戳按 UTC 解释,不许落回本机时区:本机是 JST,
+    #    误差 9 小时足以把"已经停了 8 小时"读成"刚跑过"(项目已因 JST/UTC 错位
+    #    虚构过一个不存在的异常)。
+    if ran_at.tzinfo is None:
+        ran_at = ran_at.replace(tzinfo=dt.timezone.utc)
+    age_min = ((time.time() if now is None else now) - ran_at.timestamp()) / 60
+    if age_min > MARKET_TIMES_STALE_MIN:
+        problems.append(
+            f"🔴 侧表已 {age_min:.0f} 分钟没跑成一轮(应每 60 分钟一轮,"
+            f"阈值 {MARKET_TIMES_STALE_MIN} 分钟 = 容 1 轮失手)。"
+            f"常见原因:`.backfill.lock` 残留(被硬杀后没清)或上游持续失败")
+
+    if "pending" not in summary:
+        problems.append(
+            "🟡 侧表运行记录里没有 pending 字段 —— 写记录的那一版还没升级,"
+            "「有活没干成」这一条现在判不了(不是健康,是**没在判**)")
+        return problems
+    try:
+        pending, written = int(summary["pending"]), int(summary.get("written", 0))
+    except (TypeError, ValueError) as e:
+        problems.append(
+            f"🟡 侧表运行记录里的 pending/written 不是数字({type(e).__name__}: {e})"
+            f"——「有活没干成」这一条判不了")
+        return problems
+    # ⭐`invalid_cids`(格式不合法的 condition_id)是 review 抓出来的:它每轮都被写进
+    #   记录,却**没有任何人读** —— 又一次「记录事实 vs 使用事实,只接一头」。
+    #   要命之处:这些 cid 被**永久**排除在 todo 之外 ⇒ pending 不会因它们变大
+    #   ⇒ 上面两条都判不到 ⇒ 一批市场从此拿不到 closed_time,而看板全绿。
+    #   门槛取 >0 不是拍的:现网实测长期恒为 0(last_run_summary / market_times.log),
+    #   任何非零都是偏离稳态。
+    try:
+        invalid = int(summary.get("invalid_cids", 0) or 0)
+    except (TypeError, ValueError):
+        invalid = 0          # 读不出来不另判:上面已有专门的坏记录分支在管
+    if invalid > 0:
+        problems.append(
+            f"🔴 侧表有 {invalid:,} 个 condition_id 格式不合法,已被**永久**排除 —— "
+            f"这些市场再也拿不到 closed_time,而 pending 不会反映它们。须查注册表写入端")
+    if pending > 0 and written == 0:
+        problems.append(
+            f"🔴 侧表上一轮有 {pending:,} 个市场待取,却**一个都没落盘**。"
+            f"这是「有活没干成」,不是「没活可干」—— 须查网络/代理/Gamma 接口")
+    return problems
+
+
 def check() -> list[str]:
     problems = []
     problems += _digest_problems()
@@ -183,6 +288,7 @@ def check() -> list[str]:
             problems.append(f"🔴 采集器 {age_min:.0f} 分钟无心跳"
                             f"（应每 {alerts.cycle_minutes()} 分钟一轮=停摆）")
         problems += _heartbeat_problems(hb)
+    problems += _market_times_problems()
     return problems
 
 
