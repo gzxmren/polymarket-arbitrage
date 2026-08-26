@@ -404,11 +404,160 @@ def test_M6_invalid_condition_ids_are_rejected_and_counted():
     assert len(bad) == 5
 
 
+def _hold_lock_in_child(out_dir):
+    """起一个**真进程**、走**生产那一份**加锁代码持锁,返回它。
+
+    ⛔ 子进程必须调 `bmt._acquire_lock`,不许自己写 `fcntl.flock(..., LOCK_EX)`。
+       2026-08-27 变异实测:硬编码 LOCK_EX 时,把生产代码改成 **LOCK_SH
+       (共享锁,根本不互斥)** 12 条判据**全部保持绿色** ——
+       那是「替身替掉被测对象本身」,本项目 08-06 就栽过一次。
+    """
+    import os as _o
+    import subprocess
+    import sys as _s
+    env = dict(_o.environ, PYTHONPATH=str(PROJECT_ROOT / "11-collector"))
+    child = subprocess.Popen(
+        [_s.executable, "-c",
+         "import sys,time,backfill_market_times as b;"
+         "fd=b._acquire_lock(sys.argv[1]);"
+         "print('locked' if fd else 'FAILED',flush=True);time.sleep(120)",
+         str(out_dir)],
+        stdout=subprocess.PIPE, text=True, env=env)
+    assert child.stdout.readline().strip() == "locked", "子进程没拿到锁,判据前提不成立"
+    return child
+
+
 def test_M6_second_instance_refuses_to_run(tmp_path, monkeypatch):
-    """⭐M6:两个进程同时跑会各自读到旧的 done 快照、重复请求几千次。"""
+    """⭐M6:两个进程同时跑会各自读到旧的 done 快照、重复请求几千次。
+
+    ⚠️ 本判据 2026-08-27 重写。原版往磁盘上放一个**空壳文件**就断言被拦 ——
+    那测的是"文件存在即上锁"这个**已经被证明有害**的机制本身,
+    换成 flock 之后它会红,而红得有理:真正该验的是「另一个进程正持着锁」。
+    """
     monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: [])
-    (tmp_path / ".backfill.lock").write_text("99999")
-    assert bmt.main(["--out", str(tmp_path), "--skip-verify"]) == 2
+    child = _hold_lock_in_child(tmp_path)
+    try:
+        assert bmt.main(["--out", str(tmp_path), "--skip-verify"]) == 2
+    finally:
+        child.kill(); child.wait()
+
+
+def test_a_killed_run_does_not_wedge_the_next_one(tmp_path, monkeypatch):
+    """⭐⭐**本次要修的那个 bug**(2026-08-26 21:52 真实事故)。
+
+    侧表撞上 `TimeoutStartSec=100` 被 systemd 发 SIGTERM。Python 收到 SIGTERM 是直接死,
+    **不走 `finally`** ⇒ 老式哨兵锁文件留在磁盘上 ⇒ 之后 22:50 / 23:50 / 00:50 三轮
+    全部一进门就 `return 2`,什么都没干,而 timer 一直是 `active`。
+    实测卡死 **4 小时 22 分**,直到人手工删锁。
+
+    ⇒ 换成内核持有的 flock:进程无论怎么死,锁都由内核释放。
+    实测(2026-08-27,真造进程):SIGTERM 后立刻可拿、SIGKILL 后立刻可拿。
+
+    ⛔ 刻意**不用**"锁超过 N 分钟算失效"这类判断:那要定一个阈值,
+       而阈值定错就落进两种坏结果之一 —— 太短会踩掉正在正常跑的实例,
+       太长就是卡死时间变长。内核释放没有这个取舍。
+    """
+    import signal
+    monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: [])
+    child = _hold_lock_in_child(tmp_path)
+    child.send_signal(signal.SIGTERM)      # ← 昨晚的真实信号是 15/TERM
+    child.wait()
+    assert bmt.main(["--out", str(tmp_path), "--skip-verify"]) == 0, \
+        "上一轮被杀之后,下一轮仍然被锁挡住 —— 卡死没有被修好"
+
+
+def test_a_blocked_second_instance_does_not_wipe_the_holders_pid(tmp_path, monkeypatch):
+    """⭐`_acquire_lock` 用 `'a+'` 而不是 `'w'` 打开 —— 注释里承诺了
+    「拿到锁之前不许动别人写进去的内容」,这条判据实测它真的接得住。
+
+    ⚠️ 由来:2026-08-27 变异实测,把 `'a+'` 改成 `'w'` 时**全部判据保持绿色**。
+       `'w'` 会在 flock 之前就截断文件 ⇒ 抹掉持锁者的 PID ⇒ 人工诊断时
+       只看到一个空文件,而那正是出事时唯一能指认"谁在持锁"的线索。
+       (互斥本身不受影响:flock 锁的是 inode,不是文件内容。)
+
+    CLAUDE.md 异常清单第 4 条:注释里承诺的保护,必须实测。
+    """
+    monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: [])
+    child = _hold_lock_in_child(tmp_path)
+    try:
+        before = (tmp_path / ".backfill.lock").read_text()
+        assert before.strip() == str(child.pid), "前提不成立:持锁者没把自己的 PID 写进去"
+        assert bmt.main(["--out", str(tmp_path), "--skip-verify"]) == 2
+        assert (tmp_path / ".backfill.lock").read_text() == before, \
+            "被挡住的那个实例把持锁者的 PID 抹掉了"
+    finally:
+        child.kill(); child.wait()
+
+
+def test_a_leftover_sentinel_file_from_the_old_scheme_does_not_block(tmp_path, monkeypatch):
+    """迁移场景:磁盘上已经有一个旧机制留下的残留锁文件(本次事故现场就是这样)。
+
+    换成 flock 之后,**文件存在本身不再意味着上锁** —— 没人持锁就该照跑。
+    否则这次升级救不了已经卡住的那台机器。
+    """
+    monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: [])
+    (tmp_path / ".backfill.lock").write_text("2711090")     # 事故现场那个 PID
+    assert bmt.main(["--out", str(tmp_path), "--skip-verify"]) == 0
+
+
+def test_an_unwritable_out_dir_returns_None_instead_of_a_traceback(tmp_path, monkeypatch):
+    """⭐review 抓出的"第三态":契约写的是「拿到→fd / 拿不到→None」,
+    而 `mkdir`/`open` 原先在 `try` **之外** ⇒ 目录不可写时抛未捕获的 PermissionError。
+
+    实测(不是想当然):把目录权限改成 555 → `PermissionError [Errno 13]`。
+    CLAUDE.md「注释里承诺的保护必须实测接得住」—— 承诺了两态,就得两态都验。
+    """
+    import os as _o
+    ro = tmp_path / "readonly"
+    ro.mkdir()
+    _o.chmod(ro, 0o555)
+    try:
+        assert bmt._acquire_lock(ro) is None, "目录不可写时没有按契约返回 None"
+        monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: [])
+        assert bmt.main(["--out", str(ro), "--skip-verify"]) == 2
+    finally:
+        _o.chmod(ro, 0o755)
+
+
+def test_failing_to_write_the_pid_does_not_throw_away_the_lock(tmp_path, monkeypatch):
+    """⭐PID 只作诊断,**不是判据**(判据是内核那把锁)。
+
+    ⇒ 写 PID 失败时绝不能把已经拿到的锁丢掉:丢锁的后果(两个实例同时跑)
+       远重于少一行诊断信息。这条焊死那个优先级。
+    """
+    def boom():
+        raise OSError("模拟:写 PID 时磁盘满了")
+    monkeypatch.setattr(bmt.os, "getpid", boom)
+    fd = bmt._acquire_lock(tmp_path)
+    try:
+        assert fd is not None, "写 PID 失败把锁一起丢了 —— 优先级搞反了"
+        import fcntl as _f
+        other = open(tmp_path / ".backfill.lock", "a+")
+        try:
+            with pytest.raises(BlockingIOError):
+                _f.flock(other, _f.LOCK_EX | _f.LOCK_NB)   # 锁必须真的还在手上
+        finally:
+            other.close()
+    finally:
+        fd.close()
+
+
+def test_the_lock_file_is_NOT_deleted_on_exit(tmp_path, monkeypatch):
+    """⭐flock 的经典坑:A 持锁 → B 打开同一路径等待 → A **删文件**并退出 →
+    C 新建文件加锁 ⇒ B 和 C 锁在**不同 inode** 上,两个都以为自己独占。
+
+    ⇒ 锁文件一律保留,不 unlink。这条判据焊死它,免得有人"顺手清理"又把坑挖回来。
+    """
+    monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: [])
+    assert bmt.main(["--out", str(tmp_path), "--skip-verify"]) == 0
+    assert (tmp_path / ".backfill.lock").exists(), "锁文件被删了 —— 换 inode 的坑会回来"
+
+
+def test_two_consecutive_runs_both_get_the_lock(tmp_path, monkeypatch):
+    """正常释放路径:上一轮好好跑完,下一轮必须拿得到锁(别修出个反向的死锁)。"""
+    monkeypatch.setattr(bmt, "settled_cids", lambda limit=None: [])
+    assert bmt.main(["--out", str(tmp_path), "--skip-verify"]) == 0
+    assert bmt.main(["--out", str(tmp_path), "--skip-verify"]) == 0
 
 
 def test_M7_batch_url_is_delegated_not_hand_rolled():

@@ -31,7 +31,9 @@ CLAUDE.md 明令:*不许用与结果相关的变量筛样本或贴标签*。
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
+import os
 import sys
 import time
 from collections.abc import Iterable, Sequence
@@ -252,8 +254,6 @@ def write_rows(rows: Sequence[dict[str, Any]], path: str | Path) -> Path:
     直接写最终文件名时,进程在写一半被硬杀会在磁盘上留下损坏分片,
     虽然 load_done 能跳过它,但垃圾会随多次续跑累积。
     """
-    import os
-
     import pyarrow as pa
     import pyarrow.parquet as pq
     path = Path(path)
@@ -379,6 +379,85 @@ def settled_cids(limit: int | None = None) -> list[str]:
         con.close()
 
 
+def _acquire_lock(out_dir: str | Path):
+    """独占重入锁。拿到 → 返回打开着的文件对象(close 即释放);拿不到 → 返回 None。
+
+    ⭐**这是加锁的唯一一处**,判据也必须经由它造并发。
+    ⛔ 判据不许自己写 `fcntl.flock(..., LOCK_EX)` —— 2026-08-27 变异实测:
+       判据里硬编码 LOCK_EX 时,把生产代码改成 **LOCK_SH(共享锁,根本不互斥)**
+       12 条判据**全部保持绿色**。那是「替身替掉被测对象本身」的又一次。
+
+    ## 🔴 由来:2026-08-26 21:52 真实事故(卡死 4 小时 22 分)
+
+    原版是**「文件存在即上锁」的哨兵文件**,靠 `finally` 删除。侧表撞上
+    `TimeoutStartSec=100` 被 systemd 发 SIGTERM,而 Python 收到 SIGTERM 是
+    **直接死、不走 `finally`** ⇒ 锁残留 ⇒ 之后 22:50/23:50/00:50 三轮全部一进门就
+    `return 2`、什么都没干,而 timer 一直是 `active`。
+    ⇒ 这正是「只查 timer 是不是 active 没有分辨力」那条的活标本。
+
+    ## 为什么是 flock,而不是「锁超过 N 分钟算失效」
+
+    flock 由**内核**持有:进程无论怎么死(TERM / KILL / 断电),锁都自动释放。
+    实测(造真进程):SIGTERM 后立刻可拿、SIGKILL 后立刻可拿。
+    ⛔ 超时失效那类做法要定一个阈值,而阈值定错就落进两种坏结果之一 ——
+       太短会踩掉正在正常跑的实例,太长就是卡死时间变长。内核释放没有这个取舍,
+       所以它是**严格更好**,不是另一种权衡。
+
+    ## ⛔ 不许 unlink 锁文件
+
+    flock 的经典坑:A 持锁 → B 打开同一路径等待 → A 删文件并退出 → C 新建文件加锁
+    ⇒ B 与 C 锁在**不同 inode** 上,两个都以为自己独占。
+    判据 `test_the_lock_file_is_NOT_deleted_on_exit` 焊死这条。
+
+    ## ⛔ 也不要**手工**删这个文件来"解锁"
+
+    昨晚的处置动作是手工 `rm` —— 那在旧机制下是唯一出路,在新机制下是**危险动作**:
+    进程只是**慢**(没死)时删掉锁文件,下一轮会 open 出一个**新 inode** 并立刻拿到锁
+    ⇒ 两个实例同时跑,正是这把锁存在的意义。
+    flock 由内核释放,进程一死锁就没了,**不需要任何手工清理**。
+
+    ## 边界:本设计假定 out_dir 在**本地**文件系统上
+
+    flock 的互斥是内核本地的。若哪天数据目录挪到 NFS(尤其 `nolock` 挂载)之类共享存储、
+    且另一台主机也跑同一个脚本,**跨主机互斥会静默失效**(同机多进程仍然是对的)。
+    当前部署是单机 systemd --user + 本机路径,不落在这个场景里。
+    """
+    out_dir = Path(out_dir)
+    lock = out_dir / ".backfill.lock"
+    # ⚠️ review 抓出:mkdir 与 open 原先在 try **之外** ⇒ 目录不可写/磁盘满时抛
+    #    PermissionError/OSError 一路冒到 main 外面,成了文档没承诺过的**第三态**
+    #    (实测:把目录改成 555 → `PermissionError [Errno 13]` 未捕获 traceback)。
+    #    契约只有两态,就得两态都实测接得住。
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        fd = open(lock, "a+")       # 'a+' 不截断:**拿到锁之前**不许动别人写进去的内容
+    except OSError as e:
+        print(f"🔴 连锁文件都打不开({lock};{type(e).__name__}: {e})。"
+              f"须查目录权限/磁盘空间。", file=sys.stderr)
+        return None
+    try:
+        # 拿不到锁时抛 BlockingIOError(实测 errno=11),它是 OSError 的子类;
+        # flock 也可能抛别的 OSError(如 fd 类型不支持)⇒ 统一按 OSError 收。
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as e:
+        fd.close()
+        print(f"🔴 已有一个实例正持有锁({lock};{type(e).__name__})。"
+              f"等它跑完再来 —— 锁由内核持有,进程一死就自动释放,**不要手工删这个文件**。",
+              file=sys.stderr)
+        return None
+    # 拿到锁之后才写 PID —— 只作诊断用,**不是判据**(判据是内核那把锁)。
+    # ⇒ 所以写失败**绝不能**把已经拿到的锁丢掉:丢锁的后果(并发跑)远重于少一行诊断。
+    try:
+        fd.seek(0)
+        fd.truncate()
+        fd.write(str(os.getpid()))
+        fd.flush()
+    except OSError as e:
+        print(f"⚠️ 锁已拿到,但 PID 没写进去({type(e).__name__}: {e})—— "
+              f"只影响事后诊断,不影响互斥。", file=sys.stderr)
+    return fd
+
+
 def _write_summary(out_dir: str | Path, summary: dict[str, Any]) -> Path:
     """把本轮的运行记录落盘。**每一条 return 路径都要经过它**。
 
@@ -393,8 +472,6 @@ def _write_summary(out_dir: str | Path, summary: dict[str, Any]) -> Path:
     ⇒ 锁残留 ⇒ 此后每轮都 `return 2`、再也走不到这里 ⇒ 那份坏记录**永远不会被刷新**,
     上一轮的诊断信息(reconcile/failures)一并丢掉。
     """
-    import os
-
     path = Path(out_dir) / "last_run_summary.json"
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -423,14 +500,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     out_dir = Path(args.out) if args.out else (Path("/tmp/market_times_test") if args.test else OUT_DIR)
     # ⭐重入锁(review M6):两个进程同时跑会各自读到旧的 done 快照、重复请求。
-    lock = out_dir / ".backfill.lock"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        lock_fd = open(lock, "x")
-        lock_fd.write(str(__import__("os").getpid()))
-        lock_fd.flush()
-    except FileExistsError:
-        print(f"🔴 已有一个实例在跑(锁文件 {lock})。确认没有后删掉它再来。", file=sys.stderr)
+    #
+    # 🔴 2026-08-26 21:52 真实事故:原版是**「文件存在即上锁」的哨兵文件**,靠 `finally`
+    #    删除。侧表撞上 `TimeoutStartSec=100` 被 systemd 发 SIGTERM,而 Python 收到
+    #    SIGTERM 是**直接死、不走 `finally`** ⇒ 锁残留 ⇒ 之后 22:50/23:50/00:50 三轮
+    #    全部一进门就 `return 2`、什么都没干,而 timer 一直是 `active`。
+    #    实测卡死 **4 小时 22 分**,直到人手工删锁。
+    #    ⇒ 这正是「只查 timer 是不是 active 没有分辨力」那条的活标本。
+    #
+    # ⇒ 换成**内核持有**的 flock:进程无论怎么死(TERM / KILL / 断电),锁都由内核释放。
+    #    实测(2026-08-27,真造进程):SIGTERM 后立刻可拿、SIGKILL 后立刻可拿。
+    #
+    # ⛔ **不用**「锁超过 N 分钟算失效」那一类判断:它要定一个阈值,而阈值定错就落进
+    #    两种坏结果之一 —— 太短会踩掉正在正常跑的实例,太长就是卡死时间变长。
+    #    内核释放没有这个取舍,所以它严格更好,不是"另一种权衡"。
+    #
+    # ⛔ **不许 unlink 锁文件**(flock 的经典坑):A 持锁 → B 打开同一路径等待 →
+    #    A 删文件并退出 → C 新建文件加锁 ⇒ B 与 C 锁在**不同 inode** 上,
+    #    两个都以为自己独占。判据 `test_the_lock_file_is_NOT_deleted_on_exit` 焊死这条。
+    lock_fd = _acquire_lock(out_dir)
+    if lock_fd is None:
         return 2
 
     try:
@@ -546,8 +635,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         _write_summary(out_dir, summary)
         print(f"=== 写到 ===\n  {out_dir}")
     finally:
+        # close 即释放 flock。⛔ 不 unlink —— 理由见上面那段(换 inode 的坑)。
         lock_fd.close()
-        lock.unlink(missing_ok=True)
     return 0
 
 
