@@ -198,7 +198,11 @@ def _cooldown_signature(problems: list[str]) -> str:
     轮数每轮都在变 ⇒ 洪水只会更大。
     档位靠 🟡/🔴 区分,不靠数字,所以抹数字不会把真升级一起压住。
     """
-    return "|".join(sorted(re.sub(r"\d+", "#", p) for p in problems))
+    # ⚠️ 2026-08-26 复发一次:原式 `\d+` 抹不掉**千分位逗号与小数点** ——
+    #    「12,246 个」→「#,#」而「907 个」→「#」,签名照样每轮不同 ⇒ 洪水照旧。
+    #    是新加的侧表守护的防洪判据当场抓到的。故整数、带千分位、小数一律并成一个 #。
+    #    (必须以数字开头,免得把正文里孤立的逗号也吃掉。)
+    return "|".join(sorted(re.sub(r"\d[\d,]*(?:\.\d+)?", "#", p) for p in problems))
 
 
 def _cooldown_ok(signature: str) -> bool:

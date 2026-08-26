@@ -159,6 +159,25 @@ def test_signature_is_STABLE_when_only_a_count_changes():
         "只有数字变了,签名却变了 ⇒ 冷却会被冲垮"
 
 
+def test_signature_collapses_THOUSANDS_SEPARATORS_and_decimals_too():
+    """⭐2026-08-26 复发一次:原式 `\d+` 抹不掉**千分位逗号** ——
+    「12,246 个」→「#,#」而「907 个」→「#」⇒ 签名照样每轮不同 ⇒ 4h 冷却又失效。
+
+    与 08-19 那次(触发 136 次、推出去 63 次)是**同一个病换了个数字形态**:
+    上次是 N 条积压,这次是数量级跨过千位。⇒ 签名必须按「数」归一,不是按「数字字符」。
+    """
+    big = cw._cooldown_signature(["🔴 有 12,246 个市场待取,却一个都没落盘"])
+    small = cw._cooldown_signature(["🔴 有 907 个市场待取,却一个都没落盘"])
+    assert big == small, f"跨过千位签名就变 ⇒ 冷却失效\n{big}\n{small}"
+
+    # 小数同理(正文里有「已 3.5 小时」「0.0099%」这类)
+    assert (cw._cooldown_signature(["🟡 已 3.5 小时没发"])
+            == cw._cooldown_signature(["🟡 已 27.0 小时没发"]))
+
+    # 反向:不许连该区分的也一起抹掉 —— 档位升级必须换签名,否则真升级会被压住
+    assert cw._cooldown_signature(["🔴 A"]) != cw._cooldown_signature(["🟡 A"])
+
+
 def test_signature_is_STABLE_across_streak_growth_within_a_tier():
     """同一档内轮数在涨(3→4→5),不该每轮推一条。"""
     sigs = {cw._cooldown_signature(
