@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -166,6 +166,92 @@ def summarize(returns: Sequence[float], prices: Sequence[float]) -> dict[str, An
     }
 
 
+# ---------------- V6:主判决量改为「仅 p>=P_FLOOR 子集」----------------
+# 预登记单:docs/PREREG_FOLLOW_V6_PFLOOR_2026-08-26.md
+#
+# 为什么砍掉低价:等额投入下买 0.01 赢了是 +9900%,少数彩票中奖主导平均值
+# ⇒ V5b 实测零分布 p95 高达 +9.04%,功效闸直接失效。
+# p>=0.10 时收益率被限制在 10 倍以内,噪声底应当大幅下降。
+# ⚠️ 这是**预期不是保证** —— 功效闸仍放在所有红线之前,压不下来仍判「无判决」。
+
+# 判决版的开跑硬门槛(预登记单 §6,不到不许跑)。
+# 依据:实测 7 天窗 ≈ 40,668 市场 / 9,907 合格钱包;取其约七成作下限,留余量。
+VERDICT_BOUNDARY = datetime(2026, 8, 27, 0, 0, 0, tzinfo=timezone.utc)
+"""🔴 判决版的**最早**边界。验证窗必须整个落在这之后 —— 那是我一个数都没看过的区间。
+
+⚠️ 2026-08-26 review 抓到的 CRITICAL:原实现里 `run(p_floor=0.10)` 这个**最自然的调用**
+会拿到 `boundary=None → 旧边界 2026-08-08`(V5b 已看过的窗)+ `descriptive=False`
+⇒ 直接产出一个**未标注的真判决**,正是本单 §2 明令禁止的「结果出来后挑标准」。
+而 §6 的数据量门槛救不了它 —— 旧窗数据量绰绰有余。
+⇒ 危险路径不许是默认:见 `run()` 里的硬拦截。"""
+
+VERDICT_MIN_MARKETS = 20_000
+VERDICT_MIN_WALLETS = 8_000
+VERDICT_MIN_FILLS = 10_000
+
+
+def summarize_v6(returns: Sequence[float], prices: Sequence[float],
+                 p_floor: float = P_FLOOR_FOR_SUBSET) -> dict[str, Any]:
+    """V6 主判决量:只保留 `p >= p_floor` 的信号,取平均收益率。
+
+    ⚠️ 三个必报的数缺一不可(平均 / 中位 / 样本量),外加**被砍掉多少**要出声计数 ——
+    V5b 证明了只看平均会漏掉「中位是 −100%」这种要命的事实。
+    ⚠️ 边界取**闭区间**(恰好等于门槛的保留),写死免得两处实现理解不同。
+    """
+    import statistics
+    kept = [r for r, p in zip(returns, prices) if p >= p_floor]
+    dropped = len(returns) - len(kept)
+    if not kept:
+        return {"n_signals": 0, "mean_return_pct": 0.0, "median_return_pct": 0.0,
+                "n_dropped_below_floor": dropped, "p_floor": p_floor}
+    return {"n_signals": len(kept),
+            "mean_return_pct": 100.0 * statistics.fmean(kept),
+            "median_return_pct": 100.0 * statistics.median(kept),
+            "n_dropped_below_floor": dropped, "p_floor": p_floor}
+
+
+def verdict_run_allowed(n_markets: int, n_wallets: int,
+                        n_fills: int | None = None) -> dict[str, Any]:
+    """判决版能不能开跑(预登记单 §6)。
+
+    ⭐数据攒够之前跑 = 小样本噪声,**跑了也不算**。三条全部满足才许跑,
+    且拒绝时必须说清是哪一条不满足 —— 只说"不许跑"等于把人挡在门外还不给理由。
+    """
+    checks = [("已结算市场", n_markets, VERDICT_MIN_MARKETS),
+              ("合格钱包", n_wallets, VERDICT_MIN_WALLETS)]
+    # ⚠️ n_fills=None 表示"这一项还不知道"(前置检查阶段),**跳过它但要留痕** ——
+    #    静默当成通过与真的通过看起来一样,那正是本项目的死因。
+    if n_fills is not None:
+        checks.append(("p>=门槛的成交跟单", n_fills, VERDICT_MIN_FILLS))
+    missing = [f"{name} {got:,} < {need:,}" for name, got, need in checks if got < need]
+    return {"allowed": not missing, "missing": missing,
+            "fills_checked": n_fills is not None,
+            "checked": {name: (got, need) for name, got, need in checks}}
+
+
+def label_result(result: dict[str, Any], descriptive: bool) -> dict[str, Any]:
+    """给结果贴上「描述性 / 判决」的标签。
+
+    ⭐`p>=0.10` 这个数在 V5b 里我**已经看过**;用旧验证窗再跑一遍只能是描述性的,
+    不能当判决(那就是"结果出来后挑标准")。标签写进 verdict 字段本身,
+    而不是靠人记得 —— 只写在文档里的免责声明,日后一定会被跳过。
+    """
+    if not descriptive:
+        return result
+    out = dict(result)
+    out["original_verdict"] = result.get("verdict")
+    out["verdict"] = "DESCRIPTIVE_ONLY"
+    # ⭐标签要打到**每一臂**:有人直接读 arms[..]["green"] 就绕过顶层了(review MEDIUM 5)
+    for _a in out.get("arms", {}).values():
+        if isinstance(_a, dict):
+            _a["descriptive_only"] = True
+    out["reading"] = ("⚠️ **描述性结果,不构成判决** —— 本次验证窗的数据在 V5b 已被看过,"
+                      "拿它定标准即「结果出来后挑标准」。真判决须用今天之后结算的市场,"
+                      "见 PREREG_FOLLOW_V6_PFLOOR_2026-08-26 §2。\n\n原判读(仅供参考):"
+                      + str(result.get("reading", "")))
+    return out
+
+
 def power_gate_return(null_p95_pct: float) -> dict[str, Any]:
     """功效闸(收益率口径)。闸不过 ⇒ 判「无判决」,⛔ 不许报 FAIL/证伪。"""
     passes = null_p95_pct <= MDE_MAX_RETURN_PCT
@@ -193,7 +279,17 @@ def arm_verdict_return(r_pct: float, null_p95_pct: float,
             "detail": " | ".join(f"{n}:{'PASS' if ok else 'FAIL'}({d})" for n, ok, d in checks)}
 
 
-def arm_config(name: str, delay_min: int = DELAY_MIN) -> dict[str, Any]:
+def _summary_tail(summ: dict[str, Any]) -> str:
+    """summary 的尾巴。⚠️ V5b 与 V6 字段不同,两种都要认 ——
+    原版写死 V5b 的键,给了 p_floor 之后真跑直接 KeyError(2026-08-26 踩到)。"""
+    if "n_dropped_below_floor" in summ:
+        return f"n={summ['n_signals']:,} (砍掉低价 {summ['n_dropped_below_floor']:,})"
+    return (f"p>=0.10 子集 {summ['mean_return_pct_p_ge_010']:+.3f}% "
+            f"(n={summ['n_p_ge_010']:,})")
+
+
+def arm_config(name: str, delay_min: int = DELAY_MIN,
+               boundary: datetime | None = None) -> dict[str, Any]:
     """两臂完整口径。差异必须有且只有 market_range 一项。
 
     ⚠️ 2026-08-26 review 抓到两处**记录说谎**:
@@ -203,7 +299,7 @@ def arm_config(name: str, delay_min: int = DELAY_MIN) -> dict[str, Any]:
     ⇒ 记录必须由**实际使用的那个值**产生,不许各写各的。
     """
     return {"delay_min": delay_min, "min_bets_per_window": MIN_BETS_PER_WINDOW,
-            "top_fraction": TOP_FRACTION, "boundary": BOUNDARY.isoformat(),
+            "top_fraction": TOP_FRACTION, "boundary": (boundary or BOUNDARY).isoformat(),
             "dedupe": "one_per_asset", "weighting": "equal_per_signal", "side": "BUY_only",
             "time_firewall": "closed_time", "exclude_wash": True,
             "perm_n": PERM_N, "boot_n": BOOT_N, "seed": RNG_SEED,
@@ -255,7 +351,9 @@ GROUP BY f.cid, f.leg
 """
 
 
-def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN) -> dict[str, Any]:
+def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN,
+        p_floor: float | None = None, boundary: datetime | None = None,
+        descriptive: bool = False) -> dict[str, Any]:
     """跑完整双臂跟单检验。⭐功效闸先跑先判。"""
     import duckdb
     sys.path.insert(0, str(PROJECT_ROOT / "06-tools" / "analysis"))
@@ -278,7 +376,16 @@ def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN) -> dict[str, 
             SELECT condition_id, resolved_outcome, closed,
                    row_number() OVER (PARTITION BY condition_id ORDER BY snapshot_at DESC) rn
             FROM read_parquet('{regg}', union_by_name=true)) WHERE rn=1""")
-        B = "TIMESTAMP '" + BOUNDARY.strftime("%Y-%m-%d %H:%M:%S") + "'"
+        bnd = boundary or BOUNDARY
+        # ⭐硬拦截(review CRITICAL 1):要出**判决**就必须用今天之后的窗。
+        #    不是 warning、不是默认值 —— 直接拒绝,免得有人少传一个参数就静默出假判决。
+        if p_floor is not None and not descriptive and bnd < VERDICT_BOUNDARY:
+            raise ValueError(
+                f"拒绝在已看过的窗上出判决:boundary={bnd.isoformat()} < "
+                f"{VERDICT_BOUNDARY.isoformat()}。\n"
+                f"`p>=0.10` 这个子集的结果在 V5b 已被看过,拿旧窗再跑一遍只能是描述性的。\n"
+                f"⇒ 要描述:传 descriptive=True;要判决:传 boundary>=VERDICT_BOUNDARY。")
+        B = "TIMESTAMP '" + bnd.strftime("%Y-%m-%d %H:%M:%S") + "'"
         con.execute("""CREATE TABLE base AS
             SELECT t.proxy_wallet AS w, t.condition_id AS cid, t.outcome_index AS leg,
                    t.size, t.price, to_timestamp(t.timestamp) AS ts,
@@ -314,7 +421,33 @@ def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN) -> dict[str, 
                   "tagged_none": con.execute("SELECT count(*) FROM tagged WHERE win_tag IS NULL").fetchone()[0]}
         assert funnel["tagged_D"] + funnel["tagged_V"] + funnel["tagged_none"] == n_wash, "分窗对账不平"
 
-        results: dict[str, Any] = {"boundary": BOUNDARY.isoformat(), "delay_min": delay_min,
+        # ⭐门槛前置(review MEDIUM 7):原来跑在两臂 + 400 次置换**之后**,
+        #    既浪费,又会在数据太少时先崩在 rank_wallets 上、根本走不到门槛。
+        if p_floor is not None and not descriptive:
+            pre = verdict_run_allowed(
+                n_markets=con.execute(
+                    "SELECT count(DISTINCT cid) FROM tagged WHERE win_tag='V'").fetchone()[0],
+                n_wallets=con.execute(f"""SELECT count(*) FROM (
+                    SELECT w FROM tagged WHERE win_tag='D' GROUP BY 1
+                      HAVING count(*)>={MIN_BETS_PER_WINDOW}
+                    INTERSECT
+                    SELECT w FROM tagged WHERE win_tag='V' GROUP BY 1
+                      HAVING count(*)>={MIN_BETS_PER_WINDOW})""").fetchone()[0])
+            if not pre["allowed"]:
+                out = {"boundary": bnd.isoformat(), "delay_min": delay_min,
+                       "p_floor": p_floor, "descriptive": descriptive, "funnel": funnel,
+                       "verdict_run_gate": pre,
+                       "power_gate": {"passes": None, "null_p95_pct": None,
+                                      "reason": "数据未攒够,未跑到功效闸"},
+                       "verdict": "NOT_YET_ENOUGH_DATA",
+                       "reading": "⚪ 数据未攒够,按预登记单 §6 **不出判决** —— "
+                                  "小样本跑了也不算。缺:" + "; ".join(pre["missing"])}
+                (out_dir / "results.json").write_text(
+                    json.dumps(out, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+                return out
+
+        results: dict[str, Any] = {"boundary": bnd.isoformat(), "delay_min": delay_min,
+                                   "p_floor": p_floor, "descriptive": descriptive,
                                    "leg_imb_cut": cut, "funnel": funnel, "arms": {}}
         arms = {}
         for arm in ("A", "B"):
@@ -351,7 +484,9 @@ def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN) -> dict[str, 
                     rets.append(r); prices.append(px)
                     m = pm.setdefault(cid, [0.0, 0.0])
                     m[0] += r; m[1] += 1.0        # 按市场聚类:分子=收益率和,分母=笔数
-                summ = summarize(rets, prices)
+                # ⭐V6:给了 p_floor 就走子集口径,否则沿用 V5b 全量口径
+                summ = (summarize_v6(rets, prices, p_floor) if p_floor is not None
+                        else summarize(rets, prices))
                 # ⚠️ unfilled 用**独立 SQL** 数,不用 n_sig-filled 那种恒等式减法 ——
                 #    减法永远对得上,发现不了 FILL_SQL 把信号算重或漏算(review 抓到)
                 n_unfilled = con.execute(f"""
@@ -381,19 +516,43 @@ def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN) -> dict[str, 
             arms[arm].update({"n_pool": len(pool), "n_top": len(top), "follow_funnel": fn,
                               "n_markets": len(per_market), "boot_q975_pct": q975,
                               "null_p50_pct": pctl(null, 0.50), "summary": summ,
-                              "config": arm_config(arm, delay_min)})
+                              "config": arm_config(arm, delay_min, bnd)})
             results["arms"][arm] = arms[arm]
             print(f"  臂{arm}: 池 {len(pool):,} 前10% {len(top):,} | 信号 {fn['signals']:,} "
                   f"→ 成交 {fn['filled']:,} (未成交 {fn['unfilled']:,}, 坏价 {fn['bad_price']}) \n"
                   f"        平均收益率 {summ['mean_return_pct']:+.3f}% | "
                   f"中位 {summ['median_return_pct']:+.3f}% | "
-                  f"p>=0.10 子集 {summ['mean_return_pct_p_ge_010']:+.3f}% (n={summ['n_p_ge_010']:,})\n"
+                  f"{_summary_tail(summ)}\n"
                   f"        零分布p95 {pctl(null,0.95):+.3f}% | 自举2.5% {q025:+.3f}%", flush=True)
 
+        # ⭐开跑硬门槛(预登记单 §6)真的接在这里 —— 只算不用等于没有。
+        if p_floor is not None and not descriptive:
+            gate = verdict_run_allowed(
+                n_markets=con.execute(
+                    "SELECT count(DISTINCT cid) FROM tagged WHERE win_tag='V'").fetchone()[0],
+                n_wallets=min(arms[a]["n_pool"] for a in ("A", "B")),
+                n_fills=min(arms[a]["summary"]["n_signals"] for a in ("A", "B")))
+            results["verdict_run_gate"] = gate
+            if not gate["allowed"]:
+                # ⚠️ 早退分支也要给出 power_gate 键,否则下游读它直接 KeyError
+                results["power_gate"] = {"passes": None, "null_p95_pct": None,
+                                         "reason": "数据未攒够,未跑到功效闸"}
+                results.update({"verdict": "NOT_YET_ENOUGH_DATA",
+                                "reading": "⚪ 数据未攒够,按预登记单 §6 **不出判决** —— "
+                                           "小样本跑了也不算。缺:" + "; ".join(gate["missing"])})
+                (out_dir / "results.json").write_text(
+                    json.dumps(results, ensure_ascii=False, indent=2, default=str),
+                    encoding="utf-8")
+                return results
         worst = max(arms["A"]["null_p95_pct"], arms["B"]["null_p95_pct"])
         power = power_gate_return(worst)
         results["power_gate"] = power
+        # ⭐描述版的标签写进 verdict 字段本身,不靠人记得。
+        # ⚠️ 必须把**整个 results**(含 arms)喂给 label_result —— 原来喂的是 decide() 的
+        #    返回值,那里面没有 arms ⇒ 每臂的标签根本没打上(2026-08-26 真跑发现,
+        #    而判据传的是自造的带 arms 的字典所以绿着:测试没走生产路径,同一形状第六次)。
         results.update(decide(arms["A"], arms["B"], power))
+        results = label_result(results, descriptive)
         (out_dir / "results.json").write_text(
             json.dumps(results, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         return results

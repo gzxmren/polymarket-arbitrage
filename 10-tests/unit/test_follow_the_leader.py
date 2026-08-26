@@ -460,3 +460,272 @@ def test_result_keys_use_pct_not_pp_units():
     for k in ("r_v_pct", "null_p95_pct", "boot_q025_pct"):
         assert k in d
     assert not any(k.endswith("_pp") for k in d), f"还有 pp 后缀的键: {sorted(d)}"
+
+
+# =====================================================================
+# 10. V6:主判决量改为「仅 p>=0.10 子集」(预登记单 PREREG_FOLLOW_V6_PFLOOR_2026-08-26)
+# =====================================================================
+
+def test_V6_headline_uses_only_the_p_floor_subset():
+    """⭐V6 主判决量 = 只保留 p>=P_FLOOR 的信号,取平均收益率。
+
+    砍掉低价是因为等额投入下买 0.01 赢了是 +9900%,少数彩票中奖主导平均值
+    ⇒ V5b 实测零分布 p95 高达 +9.04%,功效闸直接失效。
+    """
+    rets = [99.0, 1.0, -1.0]          # 第一笔是 0.01 的百倍赢家
+    prices = [0.01, 0.50, 0.50]
+    r = fl.summarize_v6(rets, prices, p_floor=0.10)
+    assert r["n_signals"] == 2, "低价信号没被排除"
+    assert r["mean_return_pct"] == pytest.approx(0.0)
+    assert r["n_dropped_below_floor"] == 1, "被砍掉多少必须出声计数"
+
+
+def test_V6_p_floor_is_inclusive_at_the_boundary():
+    """边界写死:恰好等于门槛的算保留(免得两处实现理解不同)。"""
+    r = fl.summarize_v6([1.0], [0.10], p_floor=0.10)
+    assert r["n_signals"] == 1
+
+
+def test_V6_reports_all_three_mandatory_numbers():
+    """⭐平均 / 中位 / 样本量,缺一不可。
+    V5b 证明了只看平均会漏掉「中位是 −100%」这种要命的事实。
+    """
+    r = fl.summarize_v6([1.0, -1.0, -1.0], [0.5, 0.5, 0.5], p_floor=0.10)
+    for k in ("mean_return_pct", "median_return_pct", "n_signals", "n_dropped_below_floor"):
+        assert k in r, f"缺了必报项 {k}"
+    assert r["median_return_pct"] == pytest.approx(-100.0)
+
+
+def test_V6_p_floor_default_is_the_uncontaminated_one():
+    """⭐`P_FLOOR = 0.10` 来自 V5b 的**配套报告项**,是在跑 V5b 任何数字**之前**定的
+    (理由:10 倍以内杠杆)⇒ 门槛本身没被结果污染。
+
+    结构检查:默认值必须仍是 0.10 —— 守的是「不许事后调门槛去凑一个好看的结果」
+    这条红线(预登记单 §4 明令不许试 0.05/0.15/0.20 再挑)。
+    """
+    assert fl.P_FLOOR_FOR_SUBSET == 0.10
+
+
+def test_V6_empty_after_floor_does_not_fake_a_number():
+    r = fl.summarize_v6([99.0], [0.01], p_floor=0.10)
+    assert r["n_signals"] == 0
+    assert r["mean_return_pct"] == 0.0 and r["median_return_pct"] == 0.0
+    assert r["n_dropped_below_floor"] == 1
+
+
+# ---------- V6 判决版的开跑硬门槛 ----------
+
+def test_V6_verdict_run_is_blocked_until_data_is_sufficient():
+    """⭐预登记单 §6:数据攒够之前跑 = 小样本噪声,跑了也不算。
+
+    三条硬门槛任一不满足就必须拒绝开跑,而不是跑出一个没意义的数。
+    """
+    ok = dict(n_markets=20_000, n_wallets=8_000, n_fills=10_000)
+    assert fl.verdict_run_allowed(**ok)["allowed"] is True
+    for k in ok:
+        bad = dict(ok); bad[k] = ok[k] - 1
+        g = fl.verdict_run_allowed(**bad)
+        assert g["allowed"] is False, f"{k} 少 1 竟然还允许开跑"
+        # ⚠️ 只断言 missing 非空是不够的:空字符串列表也非空(变异实测抓到)。
+        #    必须断言它**真的说出了**是哪一条、差多少 —— 否则拒绝信息等于没有。
+        assert any(x.strip() for x in g["missing"]), "拒绝时没说清是哪一条不满足"
+        assert any(str(ok[k] - 1) in x.replace(",", "") for x in g["missing"]), \
+            f"拒绝信息里没写出实际值,人看不出差多少:{g['missing']}"
+
+
+def test_V6_gate_thresholds_match_the_prereg():
+    assert fl.VERDICT_MIN_MARKETS == 20_000
+    assert fl.VERDICT_MIN_WALLETS == 8_000
+    assert fl.VERDICT_MIN_FILLS == 10_000
+
+
+def test_V6_descriptive_run_is_labelled_and_cannot_be_quoted_as_verdict():
+    """⭐描述版的结论栏必须自带「不构成判决」,否则日后一定被当判决引用。"""
+    r = fl.label_result({"verdict": "PASS", "reading": "两臂通过"}, descriptive=True)
+    assert r["verdict"] == "DESCRIPTIVE_ONLY", "描述版的 verdict 字段没被改掉"
+    assert "不构成判决" in r["reading"]
+    assert r["original_verdict"] == "PASS", "原判读要保留,便于日后对照"
+
+
+def test_V6_verdict_run_label_is_untouched():
+    r = fl.label_result({"verdict": "PASS", "reading": "两臂通过"}, descriptive=False)
+    assert r["verdict"] == "PASS" and "不构成判决" not in r["reading"]
+
+
+def test_V6_redlines_are_not_relaxed_for_the_subset():
+    """⛔换了子集不许放松红线 —— 与 V5b 同源,不重新拍数。"""
+    assert fl.MDE_MAX_RETURN_PCT == 2.0
+    assert fl.ABS_FLOOR_RETURN_PCT == 1.0
+
+
+def test_V6_machinery_is_actually_wired_into_run(tmp_path, monkeypatch):
+    """⭐红线只算不用等于没有 —— 本项目犯过多次。
+
+    孤儿守卫当场抓到过一次:`verdict_run_allowed` / `label_result` 写好了但 `run()` 没调用。
+
+    结构检查:断言三个 V6 函数出现在 `run()` 的执行路径里,且 `run()` 收得下三个开关 ——
+    守的是「红线必须接到生产路径上」这条结构不变量。
+    ⚠️ 但**光有结构检查不够**:2026-08-26 实测,这条绿着而真跑 KeyError
+    (打印仍用 V5b 的字段名)。行为侧由下面 `test_V6_summary_tail_handles_both_shapes` 补齐。
+    """
+    called = {"gate": 0}
+    real = fl.verdict_run_allowed
+
+    def spy(**kw):
+        called["gate"] += 1
+        return real(**kw)
+
+    monkeypatch.setattr(fl, "verdict_run_allowed", spy)
+    import inspect
+    src = inspect.getsource(fl.run)
+    assert "verdict_run_allowed(" in src, "开跑门槛没接进 run()"
+    assert "label_result(" in src, "描述版标签没接进 run()"
+    assert "summarize_v6(" in src, "V6 主判决量没接进 run()"
+    # run() 的签名必须收得下这三个开关,否则外面根本没法选口径
+    params = set(inspect.signature(fl.run).parameters)
+    assert {"p_floor", "descriptive", "boundary"} <= params, f"run() 少了开关:{sorted(params)}"
+
+
+def test_V6_summary_tail_handles_both_shapes():
+    """⭐行为验证:V5b 与 V6 的 summary 字段不同,打印必须两种都认。
+
+    2026-08-26 真跑踩到:`run()` 的打印写死了 V5b 的键,
+    给了 p_floor 之后直接 KeyError —— 而那时"接线在不在"的结构判据是绿的。
+    ⇒ 结构检查管"接上了没有",行为检查管"接上之后能不能跑",两者缺一不可。
+    """
+    v6 = fl.summarize_v6([1.0, -1.0], [0.5, 0.5], p_floor=0.10)
+    v5b = fl.summarize([1.0, -1.0], [0.5, 0.5])
+    for summ, tag in ((v6, "V6"), (v5b, "V5b")):
+        tail = fl._summary_tail(summ)      # 不许抛 KeyError
+        assert isinstance(tail, str) and tail, f"{tag} 形状的 summary 没生成尾巴"
+    assert "砍掉低价" in fl._summary_tail(v6)
+    assert "p>=0.10 子集" in fl._summary_tail(v5b)
+
+
+# =====================================================================
+# 11. 2026-08-26 review 判 Block 的两条 CRITICAL,逐条钉住
+# =====================================================================
+
+def test_CRITICAL1_refuses_to_produce_a_verdict_on_an_already_seen_window():
+    """⭐⭐CRITICAL 1:危险路径不许是默认。
+
+    `run(p_floor=0.10)` 这个**最自然的调用**原本会拿到旧边界(V5b 已看过的窗)
+    + `descriptive=False` ⇒ 产出一个**未标注的真判决**,
+    正是预登记单 §2 明令禁止的「结果出来后挑标准」;而 §6 的数据量门槛救不了它
+    (旧窗数据量绰绰有余)。⇒ 必须**直接拒绝**,不是 warning、不是默认值。
+    """
+    import datetime as _dt
+    with pytest.raises(ValueError, match="拒绝在已看过的窗上出判决"):
+        fl.run(p_floor=0.10)                       # 少传两个参数 = 危险路径
+    with pytest.raises(ValueError):
+        fl.run(p_floor=0.10, boundary=fl.BOUNDARY)  # 显式传旧边界也不行
+    # 描述版放行(它本来就不是判决)—— 这里只验"没在边界上被拦",不跑完
+    assert fl.VERDICT_BOUNDARY == _dt.datetime(2026, 8, 27, tzinfo=_dt.timezone.utc)
+
+
+def test_CRITICAL1_boundary_check_happens_before_any_expensive_work(monkeypatch):
+    """拦截必须在**跑起来之前** —— 否则等它算完 400 次置换才报错毫无意义。"""
+    hit = {"n": 0}
+    import duckdb
+    real_connect = duckdb.connect
+    monkeypatch.setattr(duckdb, "connect",
+                        lambda *a, **k: (hit.__setitem__("n", hit["n"] + 1),
+                                         real_connect(*a, **k))[1])
+    with pytest.raises(ValueError):
+        fl.run(p_floor=0.10)
+    # 允许开了连接(建表在前),但绝不许跑到置换/自举那一步 —— 用耗时间接验证
+    assert hit["n"] <= 1
+
+
+def test_CRITICAL2_gate_actually_blocks_not_just_records(monkeypatch, tmp_path):
+    """⭐⭐CRITICAL 2:`verdict_run_allowed` 的**拦截**必须真的阻断流程。
+
+    review 变异实测:只删掉 `if not gate["allowed"]: return`(保留计算与记录),
+    50 条判据一条不红 —— 因为没有任何判据真的调用过 `run()`。
+
+    ⚠️ 本判据第一版**又是空过的**:它用 try/except 兜住 run() 的异常,
+    而 run() 在够到门槛之前就先崩在 rank_wallets 上(验证窗为空)⇒
+    except 分支断言"没走到 decide"(成立,因为压根没走到)⇒ 变异照样全绿。
+    ⇒ 现在:① 门槛已前置到两臂之前(review MEDIUM 7);
+           ② **断言门槛真的被调用过**,没调用过就是本判据没测到点上,必须红;
+           ③ 不再吞异常。
+    """
+    import datetime as _dt
+    seen = {"gate": 0, "decide": 0}
+    monkeypatch.setattr(fl, "decide",
+                        lambda *a, **k: (seen.__setitem__("decide", 1), {})[1])
+    monkeypatch.setattr(fl, "verdict_run_allowed",
+                        lambda **k: (seen.__setitem__("gate", seen["gate"] + 1),
+                                     {"allowed": False, "missing": ["造出来的不足"],
+                                      "checked": {}, "fills_checked": False})[1])
+    r = fl.run(out_dir=tmp_path, p_floor=0.10,
+               boundary=_dt.datetime(2026, 9, 1, tzinfo=_dt.timezone.utc))
+    assert seen["gate"] > 0, "门槛压根没被调用 —— 本判据没测到点上(第一版就是这么空过的)"
+    assert r["verdict"] == "NOT_YET_ENOUGH_DATA", f"门槛说不许跑,判决却是 {r['verdict']}"
+    assert seen["decide"] == 0, "门槛说不许跑,却仍然走到了 decide()"
+    assert "power_gate" in r, "早退分支没给出 power_gate 键,下游会 KeyError"
+
+
+def test_CRITICAL2_gate_is_checked_before_the_expensive_work(monkeypatch, tmp_path):
+    """⭐门槛必须在**两臂 + 400 次置换之前**跑(review MEDIUM 7)。
+
+    否则数据太少时会先崩在 rank_wallets 上,根本走不到那句干净的「数据未攒够」。
+    """
+    import datetime as _dt
+    seen = {"rank": 0}
+    monkeypatch.setattr(fl, "rank_wallets",
+                        lambda *a, **k: (seen.__setitem__("rank", 1), [])[1])
+    monkeypatch.setattr(fl, "verdict_run_allowed",
+                        lambda **k: {"allowed": False, "missing": ["造出来的不足"],
+                                     "checked": {}, "fills_checked": False})
+    fl.run(out_dir=tmp_path, p_floor=0.10,
+           boundary=_dt.datetime(2026, 9, 1, tzinfo=_dt.timezone.utc))
+    assert seen["rank"] == 0, "门槛拦下之后仍然跑了排名 —— 说明它排在昂贵计算之后"
+
+
+def test_skipped_fills_check_leaves_a_trace(monkeypatch):
+    """⚠️ 前置阶段跳过 fills 那一项时必须**留痕** ——
+    静默当成通过与真的通过看起来一样,那正是本项目的死因。
+    """
+    g = fl.verdict_run_allowed(n_markets=99_999, n_wallets=99_999)
+    assert g["fills_checked"] is False
+    full = fl.verdict_run_allowed(n_markets=99_999, n_wallets=99_999, n_fills=99_999)
+    assert full["fills_checked"] is True
+
+
+def test_HIGH3_arm_config_reports_the_actual_boundary():
+    """⭐HIGH 3:`arm_config` 的 boundary 也必须用**实际值**。
+
+    这与本函数 docstring 里已经记过一次的 `delay_min` 是**同一 bug 类**,当时没有推广;
+    结果 V6 新加的 boundary 又栽了一遍(review 抓到)。
+    """
+    import datetime as _dt
+    b = _dt.datetime(2026, 9, 1, tzinfo=_dt.timezone.utc)
+    assert fl.arm_config("A", 5, b)["boundary"] == b.isoformat()
+    assert fl.arm_config("A")["boundary"] == fl.BOUNDARY.isoformat()
+
+
+def test_MEDIUM5_descriptive_label_reaches_every_arm():
+    """⭐只打顶层标签不够:有人直接读 arms[..]['green'] 就绕过去了。
+
+    ⚠️ 本判据第一版传的是**自己造的、带 arms 的字典**,所以它绿着;
+    而生产路径喂给 label_result 的是 `decide()` 的返回值 —— 那里面**没有 arms**
+    ⇒ 每臂的标签根本没打上(2026-08-26 真跑 `descriptive_only=None` 才发现)。
+    ⇒ 下面同时钉住生产路径的调用形状。
+    """
+    r = fl.label_result({"verdict": "PASS", "reading": "x",
+                         "arms": {"A": {"green": True}, "B": {"green": True}}},
+                        descriptive=True)
+    for a in r["arms"].values():
+        assert a.get("descriptive_only") is True, "描述版标签没打到臂上"
+
+
+def test_MEDIUM5_production_path_feeds_the_whole_results_to_label():
+    """结构检查:`run()` 必须把**含 arms 的整个 results** 喂给 label_result,
+    而不是只喂 `decide()` 的返回值 —— 守的是「标签必须够得着每一臂」这条不变量。
+    """
+    import inspect
+    src = inspect.getsource(fl.run)
+    assert "label_result(results," in src, (
+        "run() 没把整个 results 喂给 label_result ⇒ 每臂的标签打不上")
+    assert "label_result(decide(" not in src, "又退回只喂 decide() 的返回值了"
