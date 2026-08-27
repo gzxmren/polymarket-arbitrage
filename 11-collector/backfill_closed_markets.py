@@ -225,6 +225,10 @@ def backfill_once(targets: list[dict], cursor: str, max_markets: int,
         if rows:
             counts["with_trades"] += 1
             counts["trades_written"] += len(rows)
+            # ⚠️ 这里**刻意不传 counts**:`write` 是可注入的测试接缝,契约是 `write(rows)`,
+            #    12 处判据注入的替身都是这个签名。为了让"坏时间戳丢弃数"进心跳而把接缝
+            #    改宽,收益(回填的 counts 本来也不是心跳)小于代价。
+            #    本路径的出声走 `write_trades` 里的 stderr,消费者是 backfill.log。
             write(rows)              # 空 rows 不写:空文件会污染分区、拖垮 compaction
         else:
             counts["empty"] += 1     # 零返回要出声:系统性查不到否则完全隐形

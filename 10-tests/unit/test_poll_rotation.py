@@ -302,7 +302,7 @@ def test_never_polled_is_measured_before_truncation(monkeypatch, tmp_path):
     monkeypatch.setattr(cc, "poll_market", lambda m, c, wm: [])
     monkeypatch.setattr(cc.se, "duckdb_conn", lambda: type("C", (), {"close": lambda s: None})())
     monkeypatch.setattr(cc.se, "all_watermarks", lambda con: {})   # 全都没采过
-    monkeypatch.setattr(cc.se, "write_trades", lambda rows: None)
+    monkeypatch.setattr(cc.se, "write_trades", lambda rows, day=None, counts=None: None)
     monkeypatch.setattr(cc, "REGISTER_STREAK_FILE", tmp_path / "reg.json")
     monkeypatch.setattr(cc, "FIREHOSE_WM_FILE", tmp_path / "wm.json")
     monkeypatch.setattr(cc, "POLL_CURSOR_FILE", tmp_path / "cur.json")

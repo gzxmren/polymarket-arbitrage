@@ -191,7 +191,7 @@ def test_no_truncation_leaves_no_trace(one_page):
 def test_records_reach_the_lake(endless, monkeypatch, tmp_path):
     """`poll_markets` 必须把痕迹冲进数据湖 —— 留在内存里等于没留。"""
     monkeypatch.setattr(se, "TRUNCATIONS_DIR", tmp_path / "truncations")
-    monkeypatch.setattr(se, "write_trades", lambda rows, day=None: None)
+    monkeypatch.setattr(se, "write_trades", lambda rows, day=None, counts=None: None)
     written = []
     monkeypatch.setattr(se, "write_truncations", lambda recs: written.extend(recs))
     counters = cc.new_counters()

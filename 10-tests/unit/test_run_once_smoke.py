@@ -45,7 +45,7 @@ def _offline(monkeypatch, tmp_path):
     monkeypatch.setattr(cc, "poll_market", lambda m, c, wm: [])
     monkeypatch.setattr(cc.se, "duckdb_conn", lambda: _FakeCon())
     monkeypatch.setattr(cc.se, "all_watermarks", lambda con: {})
-    monkeypatch.setattr(cc.se, "write_trades", lambda rows: None)
+    monkeypatch.setattr(cc.se, "write_trades", lambda rows, day=None, counts=None: None)
     monkeypatch.setattr(cc, "REGISTER_STREAK_FILE", tmp_path / "reg.json")
     monkeypatch.setattr(cc, "FIREHOSE_WM_FILE", tmp_path / "wm.json")
     # ⚠️ 2026-08-06 实测踩到:新增 POLL_CURSOR_FILE 后忘了在这里重定向,

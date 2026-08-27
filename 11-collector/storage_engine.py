@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import sys
 import uuid
 from pathlib import Path
 
@@ -53,15 +54,106 @@ def _atomic_write_parquet(table: pa.Table, dest: Path) -> None:
     os.replace(tmp, dest)  # 同分区原子
 
 
-def write_trades(rows: list[dict], day: str | None = None) -> Path | None:
-    """原子追加一批已解析 trades 到当日分区。rows 为空返回 None。
+def _trade_day(row: dict) -> str | None:
+    """一行成交的真实 UTC 成交日。取不出来返回 None(由调用方出声并跳过)。
 
-    每次调用产生一个新 Parquet 文件(append-only,绝不改旧文件)。小文件由 compact_day 合并。
+    异常家族按【造真坏输入实测】决定,不凭想当然。⚠️ **它在量级边界上会换族**:
+
+        10**18  -> OSError          10**19 起 -> OverflowError
+        -10**15 -> ValueError       -10**17 -> OSError    -10**20 -> OverflowError
+        None    -> TypeError        'abc'   -> ValueError  inf -> OverflowError
+
+    🔴 2026-08-27 code review 抓出的 BLOCKER:我第一版漏了 `OverflowError`。
+       根源是我"实测"时**只探了 10^18 和 2^63-1,两个恰好都落在 OSError 那一侧** ——
+       只量了会落进目标族的值,没量会落到别处的值,就盖了"已实测"的章。
+       后果:一个足够大的整数(上游 `int(t.get("timestamp", 0))` 不限量级,
+       损坏的 API 值原样穿过来)会让**整批**抛出去,把整轮采集打死 ——
+       恰恰是本函数 docstring 承诺"不许一颗老鼠屎打翻整批"要防的那件事。
+       ⇒ CLAUDE.md「注释里承诺的保护,必须实测它真的接得住」。
+
+    ⚠️ `0` / `-1` **不抛**(得到 1970 年)——它们是"合法但可疑",照常落进 1970 分区
+       让它**看得见**,⛔ 绝不许悄悄归到"今天"(那正是本次要修的病)。
+    """
+    try:
+        return dt.datetime.fromtimestamp(int(row.get("timestamp")), dt.UTC).strftime("%Y-%m-%d")
+    except (OSError, ValueError, TypeError, OverflowError):
+        return None
+
+
+def write_trades(rows: list[dict], day: str | None = None,
+                 counts: dict | None = None) -> list[Path]:
+    """原子追加一批已解析 trades。**按每行自己的成交日分区**,返回落下的文件列表。
+
+    ## 🔴 2026-08-27 修:原先整批按 `rows[0]` 的日期归档
+
+        day = fromtimestamp(rows[0]["timestamp"]).strftime("%Y-%m-%d")   # ← 旧代码
+
+    后果实测(全湖 2,961.5 万笔):**1,017.9 万笔(34.4%)的 dt 与自己的成交日对不上**;
+    当前 41 个分区,按真实成交日应有 460 个;最狠的 `dt=2026-08-01` 一个目录装着
+    横跨 **2025-05-13 ~ 2026-08-01(15 个月)** 的成交。
+    巨盘回填一次抓回一年历史,全被记成"今天"。
+
+    ⭐危害不是"现在算错了"(实查:全项目没有一处按 dt 过滤,都是 `dt=*` 读全湖,
+    既往结论没被污染),而是**它是个上了膛的陷阱** —— 将来谁顺手写一句
+    `WHERE dt BETWEEN ...`,拿到的就是与结果相关的偏样本,且**看不出来**。
+
+    ## 契约
+
+    - `day` **显式传入时照旧**:整批进那个分区(`test_compaction_sweep` 依赖它造小文件)
+    - `day is None`:按每行自己的 UTC 成交日分组,**一个日期一个文件**
+      (实测 64.8% 的真实写入是单日 ⇒ 多数情况下仍然只写一个文件,不会无谓炸碎)
+    - 空批次返回 `[]`,**绝不落空文件**(空文件会污染分区、拖垮 compaction)
+    - 单行时间戳坏掉:**跳过该行并出声**,不许一颗老鼠屎打翻整批
+      (出声的消费者是 `collector.log`,与本文件里落盘失败那条 🔴 同一条通路)
+
+    每次调用产生新 Parquet 文件(append-only,绝不改旧文件),小文件由 compact_day 合并。
+
+    ⚠️ 已知欠账(设计单 §4.2):按天分组会让文件数变成约 **2.4 倍**(实测 676 次写入
+    → 1,627 个文件),而 compaction 的触发是**每分区** > `min_files`(=50)⇒ 摊薄到
+    多个分区的碎片够不到阈值。量级不致命但真实存在,已进交接待办,V6 判决后处理。
     """
     if not rows:
-        return None
-    if day is None:
-        day = dt.datetime.fromtimestamp(int(rows[0]["timestamp"]), dt.UTC).strftime("%Y-%m-%d")
+        return []
+    if day is not None:
+        return [_write_one_partition(rows, day)]
+
+    groups: dict[str, list[dict]] = {}
+    dropped = 0
+    for r in rows:
+        d = _trade_day(r)
+        if d is None:
+            dropped += 1
+            continue
+        groups.setdefault(d, []).append(r)
+    if dropped:
+        # ⛔ 静默丢样本是本项目的头号真凶 —— 丢多少必须说出来
+        #    (CLAUDE.md「任何降级/剔除/回退必须出声计数」)。
+        # ⭐2026-08-27 code review:只 print 到 stderr 是**没有读取者**的
+        #   (「记录事实 vs 使用事实,只接一头」,本项目已犯 5 次)⇒ 同时进结构化计数,
+        #   由 AUDIT_FIELDS 带进心跳,日报的兜底读取者会消费它。
+        hc.bump(counts, "trade_day_unparsable_count", dropped)
+        print(f"🔴 write_trades 丢弃 {dropped} 行:timestamp 取不出合法日期"
+              f"(本批 {len(rows)} 行)。须查解析端", file=sys.stderr)
+    # ⛔⛔ `sorted()` 是**不许动的正确性不变量**,不是为了好看。
+    #
+    # 市场水位线 = 湖里该市场的 `max(timestamp)`(见 all_watermarks),
+    # 而轮询遇到 `ts <= wm` 就**停止翻页**(collector_core.py:169)——
+    # **比水位线旧的成交永远不会被再抓一次。**
+    #
+    # ⇒ 按【旧→新】落盘:中途被杀时,磁盘上留下的永远是一个**时间前缀**,
+    #   水位线只会低报,下一轮从断点接着补 ⇒ 自愈。
+    # ⇒ 若改成【新→旧】(或干脆用 dict 的插入序 —— 那大致是 API 分页的**新在前**):
+    #   中途被杀 ⇒ 新的那几天已落盘、水位线被抬到最新,而**更旧、没写成的那几天
+    #   全部躺在水位线之下 ⇒ 永久缺口**,本项目最怕的那个后果。
+    #
+    # 🔴 我第一版在这里写的是"排序只为可读性,不影响正确性" —— **那是句假话**,
+    #    2026-08-27 code review 抓出。判据:
+    #    test_a_crash_midway_leaves_a_time_ordered_prefix_never_a_hole
+    return [_write_one_partition(rs, d) for d, rs in sorted(groups.items())]
+
+
+def _write_one_partition(rows: list[dict], day: str) -> Path:
+    """把一组已经**确定同属 `day`** 的行写成一个 parquet 文件。"""
     table = pa.Table.from_pylist(rows, schema=TRADES_SCHEMA)
     dest = RAW_DIR / f"dt={day}" / f"{uuid.uuid4().hex}.parquet"
     _atomic_write_parquet(table, dest)
@@ -273,6 +365,9 @@ AUDIT_FIELDS = (
     "total_markets_polled", "http_4xx_count", "rate_limit_hits",
     "offset_overflow_count", "dedup_collapse_count", "parse_reject_count",
     "firehose_fail", "new_trades", "register_fail",
+    # 2026-08-27:落盘时 timestamp 取不出合法日期而被丢弃的行数(write_trades)。
+    # 稳态应为 0;非零意味着解析端放进来了坏时间戳,那批行**没有进湖**。
+    "trade_day_unparsable_count",
     # --- 2026-08-04 新增:网络健康 + 耗时。补的是"23% 请求失败而心跳全绿"的盲区 ---
     "net_attempt_count",      # 分母:比率必须有分母,绝对值会随工作量漂移
     "net_retry_count",        # 瞬时失败(自愈,但每次要付 sleep 1.5s —— 慢周期的真因)
@@ -367,4 +462,4 @@ if __name__ == "__main__":
         "size": 1.0, "price": 0.5, "timestamp": int(dt.datetime.now(dt.UTC).timestamp()),
         "ingested_at": int(dt.datetime.now(dt.UTC).timestamp()),
     }])
-    print(f"  写入: {p}")
+    print(f"  写入: {p}")   # 列表(一个日期一个文件)

@@ -49,6 +49,9 @@ OFFSET_WARN = 8000       # 逼近上限的告警线(留余量,提示需压频)
 COUNTER_KEYS = (
     "total_markets_polled", "http_4xx_count", "rate_limit_hits",
     "offset_overflow_count", "dedup_collapse_count", "parse_reject_count",
+    # 落盘时 timestamp 取不出合法日期而被丢弃的行(2026-08-27)。
+    # ⛔ 不并进 parse_reject_count:那是"资产下标定位失败",成因与处置都不同。
+    "trade_day_unparsable_count",
     # offset 截断拆成可修/不可修两半(2026-08-06):合成一个数就分辨不出该不该管
     "offset_overflow_cold_count", "offset_overflow_warm_count",
     "poll_truncated_count",          # 网络断掉导致分页提前结束(≠ 翻到底)
@@ -327,7 +330,7 @@ def poll_markets(markets: list[dict], counters: dict, wms: dict,
         # 溢出时 poll_market 已保留近端并计数(不再抛异常丢批);守护层据心跳 offset_overflow 压频/告警
         rows = poll_market(m, counters, wms.get(m["condition_id"]))
         if rows:
-            se.write_trades(rows)
+            se.write_trades(rows, counts=counters)   # counts:坏时间戳丢弃数进心跳
             total_written += len(rows)
         if on_done is not None:
             on_done(m)   # 零成交也算做完了:轮转的义务是"轮到过",不是"采到东西"
