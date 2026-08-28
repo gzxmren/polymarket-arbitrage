@@ -84,7 +84,7 @@ CONSUMED_FIELDS = (
     "register_inconclusive_count",
     # 整轮健康
     "cycle_seconds", "slow_cycle_streak", "rotation_hole_streak",
-    "alert_queue_depth", "alert_dropped_count",
+    "alert_queue_depth", "alert_dropped_count", "alert_throttle_suppressed",
 )
 
 # 只有这几个量有**实测分布**撑着,才允许在日报里下判决;其余一律只报数字。
@@ -362,6 +362,7 @@ def render(hbs: list[dict], day: str | None = None, skipped: int = 0) -> str:
     holes = max((_num(h, "rotation_hole_streak") for h in hbs), default=0)
     qmax = max((_num(h, "alert_queue_depth") for h in hbs), default=0)
     qdrop = sum(_num(h, "alert_dropped_count") for h in hbs)
+    qsupp = sum(_num(h, "alert_throttle_suppressed") for h in hbs)
     secs = [_num(h, "cycle_seconds") for h in hbs if _num(h, "cycle_seconds")]
     secs.sort()
     p50 = secs[len(secs) // 2] if secs else 0
@@ -377,6 +378,10 @@ def render(hbs: list[dict], day: str | None = None, skipped: int = 0) -> str:
                  + (f" / 游标空洞连计 {holes}" if holes else ""))
     if qmax or qdrop:
         lines.append(f"⚠️ 告警通道:队列峰值 {qmax} 条,丢弃 {qdrop} 条 —— 有告警没送出去")
+    if qsupp:
+        # ⭐这行就是 alert_throttle_suppressed 的读取者。压住一条告警是一次**降级**,
+        # 铁律要求出声计数 —— 光在 Telegram 正文里带一句尾巴不够,那条消息可能压根没送出去。
+        lines.append(f"🔇 告警防洪:{qsupp} 条重复告警被冷却压住(未单独推送,已并入摘要)")
 
     verdict = "昨日无异常" if not bads else "🔴 昨日有异常:" + "、".join(bads)
     return f"{head}\n" + "\n".join(lines) + f"\n{verdict}"

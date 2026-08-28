@@ -193,6 +193,7 @@ def main(sample: int = DEFAULT_SAMPLE, max_new: int | None = DEFAULT_MAX_NEW,
     # 重读恒为 0 —— 而"成功了"恰恰是 dropped 最不该沉默的时刻(2026-08-07 评审抓出)。
     merged["alert_queue_depth"] = ar["queue_depth"]      # 消费者:看门狗读心跳
     merged["alert_dropped_count"] = ar["dropped"]
+    merged["alert_throttle_suppressed"] = ar["throttle_suppressed"]   # 消费者:日报
     # 告警最坏阻塞约 30s。它以前算在 cycle_seconds 之外 ⇒ 心跳系统性少算,
     # 且恰好在网络最差、最该被准确记录的那些轮次。故耗时在告警之后定稿。
     # ⚠️ `slow_cycle_streak` 仍用告警**之前**的耗时算:判定结果要拿去生成告警正文,

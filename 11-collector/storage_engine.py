@@ -434,7 +434,7 @@ AUDIT_FIELDS = (
     # 看起来"今天 0 条告警",与真正的风平浪静一模一样。队列深度落进心跳,
     # 消费者是**看门狗**(collector_watchdog._heartbeat_problems)——
     # 它在"网络没坏、但 Telegram 令牌失效/接口变更"这类故障下是唯一还活着的路。
-    "alert_queue_depth", "alert_dropped_count",
+    "alert_queue_depth", "alert_dropped_count", "alert_throttle_suppressed",
 )
 
 

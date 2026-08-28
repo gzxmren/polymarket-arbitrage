@@ -100,6 +100,23 @@ SLOW_CYCLE_RATIO = 0.6        # 告警线 = 540s
 # 540s 对实测健康 max 有 2.4 倍余量(稳态静默),距被杀仍留 360s(是预警不是讣告)。
 SLOW_CYCLE_ALERT_CYCLES = 4   # 防洪:单发不推(自愈噪声),连续 4 轮(1 小时)才推、之后按整数倍复述
 
+# ---------- 通用防洪:按触发类型的时间冷却(2026-08-28) ----------
+# 由来:上面那一族 `% N == 0` 全部按**连续轮数**算 ⇒ 遇「间歇」故障时 streak 反复归零,
+# 取模永远够不到。实测 08-18~21 那次退化就是约 50% 占空比的间歇,
+# 一天推 35~69 条,而待发队列只有 PENDING_MAX=20 格 ——
+# 08-14 实测因此**永久丢弃 41 条**告警。冷却按墙上时钟算,对间歇同样有效。
+#
+# 取 12 轮(3 小时)的理由:落在本项目既有档位家族(3/4/6/18 轮)里,
+# 且 12 能被 3、4、6 整除 —— 这保证它与上面那些 `% N == 0` 叠加时不会互相错开
+# 造成「永久压住」(判据 test_alert_flood_guard.py 逐行验算了这张表)。
+# ⚠️ 改这个数之前先看那条判据:改成 5 或 7 会让某些触发饿死。
+THROTTLE_COOLDOWN_CYCLES = 12
+
+
+def throttle_cooldown_s() -> float:
+    """冷却窗秒数。**从轮次派生**,同 cycle_minutes 那条教训:写死的常量必然与它描述的对象分叉。"""
+    return THROTTLE_COOLDOWN_CYCLES * cycle_minutes() * 60
+
 
 def cycle_minutes() -> int:
     """一轮实际间隔(分钟)。**必须从预算派生**,不许在文案里写死。
@@ -179,6 +196,79 @@ def _queue_path(link: str) -> Path:
     """一条链路一个文件。采集器(:00/:15/:30/:45)与看门狗(:00/:30)会**同时**跑,
     共用一个文件会在读-改-写之间丢条目 —— 而丢的正是告警本身。"""
     return _QUEUE_DIR / f"pending_alerts_{link}.json"
+
+
+def _throttle_path(link: str) -> Path:
+    """一条链路一个文件 —— 与 `_queue_path` 同源的理由:采集器与看门狗会同时跑,
+    共用一个文件会在读-改-写之间丢东西。今天 `build_alert` 只有采集器在调,
+    **明天有人给回填也接上就会出事**,而那时症状是"冷却偶尔失效",极难归因。"""
+    return _QUEUE_DIR / f"alert_throttle_{link}.json"
+
+
+def throttle(pairs: list[tuple[str, str]], state: dict,
+             now: float) -> tuple[list[str], dict, int]:
+    """按触发类型压频。**纯函数** —— state 与 now 都从参数进出,不碰文件、不看时钟。
+
+    返回 (本轮该发的行, 新 state, **本轮**压住了几条)。
+
+    ⚠️ 第三个值是"本轮压住几条"而不是"还欠着几条":日报把它按天求和,
+    用"还欠着"会把同一条重复计进多轮(记录事实与使用事实的口径必须对齐)。
+
+    规则:
+
+    1. 该 key 不在冷却窗内 → 放行,记下时刻
+    2. 在冷却窗内 → 压住,`suppressed[key] += 1`
+    3. ⭐ 本轮**只要有任何一条**放行,就把**所有** key 欠着的次数作为尾巴附上并清零 ——
+       不然故障自己好了之后,被压住的那几次**永远没人知道**,那是告警系统自己在
+       静默丢弃(项目铁律:任何降级/剔除/回退必须出声计数)
+    4. 一条都没放行时 `suppressed` **留着不清**,等下一条消息带走
+
+    ⚠️ 冷却在**入队之前**就消耗掉,不等送达 —— 目的正是限制队列增长;
+    若改成"送达才起冷却",通道一断冷却全失效,而那恰恰是最需要它的时刻。
+    """
+    # ⚠️ 坏输入防护(2026-08-28 code review 用真坏输入实测抓出)。
+    # `cycle_state.read_state` 只挡"读不出来"(不存在 / JSON 语法错),
+    # **挡不住"语法合法但形状不对"** —— 实测 {"throttle": "garbage"} /
+    # {"last": "oops"} / {"last": [1,2]} / {"suppressed": "oops"} 四种全崩
+    # (AttributeError / ValueError / TypeError,分属三个异常家族)。
+    # 而 run_cycle.main **零 try/except**,且心跳写在告警之后 ⇒ 崩一次
+    # 整轮心跳都不写,看门狗会报"采集器死了",而轮询/结算其实都成功了。
+    # 我原先在设计单 §2.7 写的"状态损坏会退化成立刻推一条,方向是安全的"是**假话**,
+    # 这段防护是把那句话变成真的。形状照抄同文件 `_load_queue`。
+    if not isinstance(state, dict):
+        state = {}
+    last = state.get("last")
+    last = dict(last) if isinstance(last, dict) else {}
+    supp = state.get("suppressed")
+    supp = {k: v for k, v in supp.items() if isinstance(v, int)} if isinstance(supp, dict) else {}
+    cd = throttle_cooldown_s()
+    lines: list[str] = []
+    suppressed_now = 0
+    for key, text in pairs:
+        prev = last.get(key)
+        if not isinstance(prev, (int, float)):
+            prev = None
+        # ⚠️ `now <= prev` 这一半是 review 抓出来的:时钟前跳(RTC 读到错误的未来)之后
+        # 被 NTP 纠正回来,`now - prev` 恒为负 ⇒ 该 key 会被卡到墙钟追上那个错误值为止。
+        # 实测 now 跳到 10,000,000 再纠正回 1,000 ⇒ **静默 2,780 小时**(116 天)。
+        # 本项目别处已经因为"NTP 会把时钟拨得忽前忽后"而改用 monotonic(run_cycle.py),
+        # 说明这台机器上时钟跳变是真实风险。prev 比 now 还新 = 状态不可信 ⇒ 放行并覆盖。
+        if prev is None or now <= prev or now - prev >= cd:
+            last[key] = now
+            lines.append(text)
+        else:
+            supp[key] = supp.get(key, 0) + 1
+            suppressed_now += 1
+    # 过期条目直接扔掉:它们对判断已无影响(过期 = 必然放行),留着只会让状态文件
+    # 在故障早就结束之后仍然赖着不走。这与本文件"送达即清空,稳态不留垃圾文件"同一条惯例。
+    last = {k: ts for k, ts in last.items() if now - ts < cd}
+    if lines and supp:
+        detail = "、".join(f"{k} {n} 次" for k, n in sorted(supp.items()))
+        lines.append(
+            f"另:以下问题在冷却窗内又发生过但未单独推送 —— {detail}"
+            f"(冷却 {THROTTLE_COOLDOWN_CYCLES} 轮 ≈ {cd / 3600:.1f} 小时)")
+        supp = {}
+    return lines, {"last": last, "suppressed": supp}, suppressed_now
 
 
 def _load_queue(link: str) -> tuple[list[dict], int]:
@@ -323,7 +413,12 @@ def maybe_alert(counts: dict) -> bool:
     注意语义:队列里补发成功不算"本轮推了" —— 本轮没触发就该返回 False,
     这是既有判据(test_alerts_*.py 等约 15 条)验的东西,不许因为加队列而改掉。
     """
-    return bool(maybe_alert_with_counts(counts)["sent_fresh"])
+    # ⚠️ **不经节流**,且这是有意的:本函数只剩约 15 条判据和本文件 __main__ 在用
+    # (生产路径走 maybe_alert_with_counts,test_alert_queue.py 里有判据焊住这一点)。
+    # 那些判据在循环里反复调它并断言 True/False,加了冷却会让它们**变绿**而非变红。
+    # 逻辑不重复:与生产路径共用 build_alert + dispatch,少的只是节流那一层。
+    body = build_alert(counts)
+    return bool(body) and dispatch(body, link="cycle")["delivered"]
 
 
 def maybe_alert_with_counts(counts: dict) -> dict:
@@ -333,20 +428,44 @@ def maybe_alert_with_counts(counts: dict) -> dict:
     送达成功时队列文件已被删,重读只会拿到 0 —— 而"成功了"恰恰是
     `dropped`/`backlog_sent` 最不该沉默的时刻(2026-08-07 评审实测抓出)。
     """
-    body = build_alert(counts)
+    st = cycle_state.read_state(_throttle_path("cycle"), "throttle", {}) or {}
+    lines, st, suppressed_now = throttle(build_alert_keyed(counts), st, time.time())
+    body = compose_body(lines, counts)
     r = dispatch(body, link="cycle")
+    # ⭐冷却状态必须在 dispatch **之后**才落盘(2026-08-28 code review 抓出;
+    # 我原先写的是之前,理由"被杀时状态没写会让防洪失效"—— 那个理由是**错的**)。
+    # 真相:`dispatch` 里 `items.append` 只在内存,只有 `_send` 返回 False 之后才落队列文件。
+    # 进程若在 `_send`(最坏阻塞 30s)期间被 SIGTERM 杀掉,这条消息**既没发出也没进队列**
+    # = 彻底丢失。若此时冷却已经提前记下,同一个 key 会被压住最长 3 小时。
+    # 而这恰好打在 `offset_overflow_warm` 上 —— 它改动前是**每轮无条件推**、丢一次下轮自愈,
+    # 且是唯一被证明与永久数据丢失挂钩的那条。放在 dispatch 之后:被杀就两边都没发生,
+    # 下一轮当成第一次重推 = 自愈保持不变。防洪也没打折,因为丢掉的消息根本没进队列。
+    if st["last"] or st["suppressed"]:
+        cycle_state.write_state(_throttle_path("cycle"), "throttle", st, "告警冷却状态")
+    else:
+        # 稳态(既没在冷却也没欠账)不留文件 —— 读不到时默认就是空状态,行为等价。
+        _throttle_path("cycle").unlink(missing_ok=True)
     # 本轮触发且送出去了 = 老语义的 True。补发成功不算(既有约 15 条判据验的是这个)。
     r["sent_fresh"] = bool(body) and r["delivered"]
+    # 出声计数:压住一条告警**是一次降级**,项目铁律要求它有读取者。
+    # 读取者 = 心跳字段 alert_throttle_suppressed → daily_digest.CONSUMED_FIELDS。
+    r["throttle_suppressed"] = suppressed_now
     return r
 
 
-def build_alert(counts: dict) -> str | None:
-    """拼出告警正文;无触发返回 None。
+def build_alert_keyed(counts: dict) -> list[tuple[str, str]]:
+    """拼出本轮全部触发,形如 [(key, 正文)]。**纯函数,无副作用。**
 
     与 `maybe_alert` 分开是为了**判据能验内容而不只验"推没推"**:
     "推了一条"通不过"推的是不是那件事"这一问。
+
+    ⭐ key 是**写死在产生处的字面量**,与正文里有几个数字、有没有千分位逗号无关
+    (2026-08-28)。看门狗那套"把正文里的数字抹掉当签名"已经坏过两次 ——
+    08-19 栽在数字位数、08-26 **同一处复发**栽在千分位逗号 —— 根因都是
+    签名依赖正文的偶然形态,改一句文案就可能再冲垮它。在这里给 key 能
+    **结构性地**消除那个失败模式。见 docs/DESIGN_ALERT_FLOOD_2026-08-28.md §2.3。
     """
-    triggers = []
+    triggers: list[tuple[str, str]] = []
     ov = counts.get("offset_overflow_count", 0)
     # ⭐2026-08-17:这一条原先只有下面那句"单轮"版本,而它在**持续故障**下说的是假话。
     # 08-13 那次连续 56 轮(14.0 小时)一笔没抓到,它推了 61 遍"数据不丢(下轮自愈回填)",
@@ -358,27 +477,31 @@ def build_alert(counts: dict) -> str | None:
         if tfs >= TRADE_FLOW_OUTAGE_CYCLES:
             # 防洪:不许每轮一条(那次真事故会推 61 条)。按整数倍复述 ⇒ 14 小时推 9 条。
             if tfs % TRADE_FLOW_OUTAGE_CYCLES == 0:
-                triggers.append(
+                triggers.append(("trade_flow_outage",
+
                     f"🔴 成交流持续断供:连续 {tfs} 轮"
                     f"(约 {tfs * cycle_minutes() / 60:.1f} 小时)firehose 一笔都没抓到。"
                     f"⚠️ 这已经不是「下轮自愈」那种抖动 —— 轮转一圈超过约 {LAP_RED_LINE_HOURS} 小时后,"
                     f"最活跃的市场会出**永久**空洞(翻页够不回去,补不回来)。"
-                    f"须立刻查网络/代理/IP,不要等它自己好")
+                    f"须立刻查网络/代理/IP,不要等它自己好"))
         else:
-            triggers.append("🔴 firehose 抽风:采样 0 笔成交(Polymarket 恒有成交=抓取失败),本轮空转;"
-                            "数据不丢(下轮自愈回填),但接口若持续失败须查 IP/限流")
+            triggers.append(("firehose_blip",
+            "🔴 firehose 抽风:采样 0 笔成交(Polymarket 恒有成交=抓取失败),本轮空转;"
+                            "数据不丢(下轮自愈回填),但接口若持续失败须查 IP/限流"))
     # 恢复总结:只推一次(靠 run_cycle 只在"上一轮还断着、这一轮好了"时填这个键),
     # 且短暂抽风的恢复不推 —— 否则每天几条"已恢复"又是噪音。
     rec = counts.get("trade_flow_outage_recovered", 0)
     if rec >= TRADE_FLOW_OUTAGE_CYCLES:
-        triggers.append(
+        triggers.append(("trade_flow_recovered",
+
             f"🟢 成交流已恢复:本次断供共 {rec} 轮(约 {rec * cycle_minutes() / 60:.1f} 小时)。"
             f"⚠️ 断供期最**前**段的成交可能已永久缺失(恢复后翻页只补得回后半段),"
-            f"请用相邻日同时段做基线对照核一次缺口 —— 本条不给损失量,那只能实测")
+            f"请用相邻日同时段做基线对照核一次缺口 —— 本条不给损失量,那只能实测"))
     # 稳态截断(ov 低于阈值)不推:自愈事件,靠汇总日志 + 心跳留痕即可。
     # 只有尖峰(≥阈值)才异常——意味轮询系统性追不上,值得人工看一眼。
     if ov >= OFFSET_OVERFLOW_ALERT_THRESHOLD:
-        triggers.append(f"⚠️ offset 截断尖峰 {ov} 个市场(远超稳态,轮询恐系统性追不上,须查间隔/名额)")
+        triggers.append(("offset_overflow_spike",
+            f"⚠️ offset 截断尖峰 {ov} 个市场(远超稳态,轮询恐系统性追不上,须查间隔/名额)"))
     # ⭐增量截断:有水位线却没追上 = 两轮之间攒了 >10,000 笔 = **轮转一圈太久**,
     # 即 test_poll_rotation.py 那条红线(一圈须短于 OFFSET_CAP / p99.9 成交率 ≈ 11.6h)
     # 被踩穿的现场证据。后果是序列中间出一个**永久**空洞(实测同类空白 p50 199 天)。
@@ -386,39 +509,45 @@ def build_alert(counts: dict) -> str | None:
     # 防洪的另一头由判据焊住:cold(接口硬约束)再多也不推,稳态因此完全静默。
     ow = counts.get("offset_overflow_warm_count", 0)
     if ow > 0:
-        triggers.append(
+        triggers.append(("offset_overflow_warm",
+
             f"🔴 增量 offset 截断 {ow} 个市场:两轮之间攒爆 10,000 笔 = **轮转一圈太久**"
             f"(红线 ≈11.6 小时)。这些市场的序列**中间**已出现永久空洞,补不回来 —— "
-            f"须缩短一圈(加名额/加轮转片),不是调告警")
+            f"须缩短一圈(加名额/加轮转片),不是调告警"))
     # 注册链路断供(静默失败)。register_fail 个数本身不再告警 —— 单次失败会自愈,
     # 数个数是错的形状;失败仍逐轮进日志/心跳留痕,只是不再打扰人。
     rzs = counts.get("register_zero_streak", 0)
     if rzs > 0 and rzs % REGISTER_ZERO_CYCLES == 0:
-        triggers.append(
+        triggers.append(("register_zero",
+
             f"🔴 注册链路断供:连续 {rzs} 轮(约 {rzs * cycle_minutes() / 60:.1f} 小时)有市场可登记却一个"
-            f"**新市场**都没登记成功。正常每轮 ~34 个。新市场进不来=宇宙停止增长,须查 Gamma 接口")
+            f"**新市场**都没登记成功。正常每轮 ~34 个。新市场进不来=宇宙停止增长,须查 Gamma 接口"))
     sf, sc = counts.get("settlement_lookup_fail", 0), counts.get("settlement_checked", 0)
     if sf > SETTLEMENT_FAIL_MIN and sc > 0 and sf / sc > SETTLEMENT_FAIL_RATIO:
-        triggers.append(f"⚠️ 结算守望查询失败 {sf}/{sc}(整条链路恐已挂,地面真值会断供)")
+        triggers.append(("settlement_lookup_fail",
+            f"⚠️ 结算守望查询失败 {sf}/{sc}(整条链路恐已挂,地面真值会断供)"))
     # 真值断供:静默失败(一切正常但产出为 0),靠连零轮数发现。
     # 防洪:只在恰好跨过阈值的整数倍时推 → 断供期间每 3 小时复述一次,而非每轮。
     zs = counts.get("truth_supply_zero_streak", 0)
     if zs > 0 and zs % TRUTH_SUPPLY_ZERO_CYCLES == 0:
-        triggers.append(
+        triggers.append(("truth_supply_zero",
+
             f"🔴 结算真值断供:连续 {zs} 轮(约 {zs * cycle_minutes() / 60:.1f} 小时)有市场可查却一个都没结算。"
-            f"正常每轮期望 ~20 个。须查结算守望链路(Gamma 接口/轮转游标/注册表)")
+            f"正常每轮期望 ~20 个。须查结算守望链路(Gamma 接口/轮转游标/注册表)"))
     # 游标空洞:稳态恒 0(见 ROTATION_HOLE_CYCLES 上方说明),持续非 0 = 结构变了。
     rhs = counts.get("rotation_hole_streak", 0)
     if rhs > 0 and rhs % ROTATION_HOLE_CYCLES == 0:
-        triggers.append(
+        triggers.append(("rotation_hole",
+
             f"🔴 轮转游标出现空洞并持续 {rhs} 轮(轮询 {counts.get('poll_rotation_holes', 0)} / "
             f"结算 {counts.get('settlement_rotation_holes', 0)} 个)。"
             f"含义:有市场被跳过而轮转不知道,游标已停在它前面 —— 要么有人加了新的跳过路径,"
-            f"要么某个市场每轮都做不成把整条队伍卡住了。须人工看一眼是哪个市场")
+            f"要么某个市场每轮都做不成把整条队伍卡住了。须人工看一眼是哪个市场"))
     # 慢周期:单发是自愈噪声(网络抖一下),**持续**才是真退化 → 只在连续 N 轮的整数倍推。
     scs = counts.get("slow_cycle_streak", 0)
     if scs > 0 and scs % SLOW_CYCLE_ALERT_CYCLES == 0:
-        triggers.append(
+        triggers.append(("slow_cycle",
+
             f"⚠️ 周期耗时持续偏高:连续 {scs} 轮 ≥{slow_cycle_threshold_s():.0f}s"
             f"(本轮 {counts.get('cycle_seconds', 0):.0f}s,预算 {CYCLE_BUDGET_S}s)。"
             f"实测健康区间 p99≈221s;再涨就会撞 systemd 超时被杀。"
@@ -428,13 +557,31 @@ def build_alert(counts: dict) -> str | None:
             f",限流放弃 {counts.get('rate_limit_give_up_count', 0)}"
             f",分页截断 {counts.get('poll_truncated_count', 0)}"
             f"/{counts.get('firehose_truncated_count', 0)}\n"
-            + _slow_cycle_hint(counts))
-    if not triggers:
+            + _slow_cycle_hint(counts)))
+    return triggers
+
+
+def compose_body(lines: list[str], counts: dict) -> str | None:
+    """把若干行正文装进消息壳(标题 + 本轮摘要)。无内容返回 None。**纯函数。**
+
+    单独拆出来是因为节流之后"要发的行"不再等于"本轮触发的行"——
+    节流层可能压掉几行、又追加一行"被压住 N 次"的尾巴,而壳必须逐字不变
+    (既有判据验的正是这个壳)。
+    """
+    if not lines:
         return None
-    body = "🔴 <b>Polymarket 采集器守护告警</b>\n" + "\n".join(triggers)
+    body = "🔴 <b>Polymarket 采集器守护告警</b>\n" + "\n".join(lines)
     body += (f"\n\n本轮: 市场 {counts.get('total_markets_polled', 0)} / "
              f"新成交 {counts.get('new_trades', 0)} / 新结算 {counts.get('newly_resolved', 0)}")
     return body
+
+
+def build_alert(counts: dict) -> str | None:
+    """拼出告警正文;无触发返回 None。**纯函数** —— 现有 18+ 条判据在循环里反复调它,
+    冷却状态一旦落进来,它们会**变绿**而不是变红(见设计单 §3 R1)。节流在
+    `maybe_alert_with_counts` 那一层。
+    """
+    return compose_body([t for _, t in build_alert_keyed(counts)], counts)
 
 
 def maybe_alert_backfill(counts: dict) -> bool:
