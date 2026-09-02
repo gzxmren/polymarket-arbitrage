@@ -27,6 +27,7 @@ V4 证明了「这批钱包比同格其他买方买得便宜约 5pp」是已验�
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta, timezone
@@ -229,6 +230,132 @@ def verdict_run_allowed(n_markets: int, n_wallets: int,
             "checked": {name: (got, need) for name, got, need in checks}}
 
 
+# ⭐数据不够时,**允许**留在输出里的键 —— 白名单,不是黑名单。
+# 用白名单的理由:将来新增一个收益率字段时,黑名单会静默放它过去,白名单会把它挡在外面
+# (挡错了顶多少显示一个样本量,漏放过去的却是本文件要防的那件事)。
+_ARM_SAFE_KEYS = frozenset({"n_pool", "n_top", "n_markets", "follow_funnel"})
+_SUMMARY_SAFE_KEYS = frozenset({"n_signals", "n_dropped_below_floor", "p_floor"})
+
+# 自检用:凡是长得像"一个收益数字"的键名。只在**值不是 None** 时才算泄露 ——
+# 早退分支按设计要留 `power_gate.null_p95_pct = None` 这个占位键(下游读不到会 KeyError)。
+_LEAKY_NAME = re.compile(r"(_pct|_pp)$|return|mean|median|edge")
+
+
+def _strip_leaks(obj: Any, trail: list[str]) -> Any:
+    """递归剥掉名字像收益率的字段;剥了什么记进 `trail`(出声计数,不静默丢)。
+
+    ⚠️ 第一版的条件多了一句 `and not isinstance(v, (dict, list))` —— 想让容器走递归,
+    结果是**键名匹配但值是容器时整个放过去**,而且 `trail` 是空的:漏了还不留痕。
+    2026-09-02 code review 抓到,实测复现:
+    `{"mean_edge_summary": {"raw_value": <数>}}` 原样出现在输出里,自检一声不响。
+    ⇒ 现在:**键名匹配 + 值非 None ⇒ 整体剥掉**,容器也不例外。
+      要保留容器里某些安全子字段,应当显式白名单那些子字段,而不是靠"容器就不算泄露"。
+    """
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if _LEAKY_NAME.search(str(k)) and v is not None:
+                trail.append(str(k))
+                continue
+            out[k] = _strip_leaks(v, trail)
+        return out
+    if isinstance(obj, list):
+        return [_strip_leaks(v, trail) for v in obj]
+    return obj
+
+
+def check_pool_subset(pool_a: Sequence[str], pool_b: Sequence[str]) -> None:
+    """臂B 的市场范围是臂A 的**子集** ⇒ 池必然是子集,于是 `min(两臂)` 恒等于臂B。
+
+    日后新增第三臂、或把臂B 从"市场范围收窄"改成"范围不相交",这个前提就会静默失效 ——
+    没有守卫的话不会有任何信号(2026-09-02 设计 review S6)。
+
+    ⚠️ 不用裸 `assert`:`python -O` 会把 assert 整条从字节码里删掉 ⇒ 这道焊缝换个启动参数
+    就悄悄不成立(CLAUDE.md:旧的保证在新工况下会变假话)。项目现在 0 处用 `-O`,
+    但"现在没人这么跑"正是那类保证失效的典型前提。
+    ⚠️ 也不内联在 `run()` 里:内联的话没有任何判据够得着它 ——
+    2026-09-02 变异实测,把内联版改成 `if False:` 时**判据一条都没红**。
+    """
+    if len(pool_b) > len(pool_a):
+        raise RuntimeError(
+            f"臂B 池 {len(pool_b)} > 臂A 池 {len(pool_a)} —— min(两臂) 的前提变了")
+
+
+def _blocked_result(base: dict[str, Any], gate: dict[str, Any]) -> dict[str, Any]:
+    """构造「数据未攒够」的早退输出 —— ⭐**一个收益率数字都不许带出去**。
+
+    由来(2026-09-02,设计单 `docs/DESIGN_VERDICT_PREGATE_2026-09-02.md` §四 S2):
+    V6 第四次真跑被后置门槛拒绝,`verdict` 确实是 `NOT_YET_ENOUGH_DATA`,
+    但落盘的 `results.json` 里 `arms.A` 完整含着 `r_v_pct=1.2293` /
+    `null_p95_pct=1.5094` / `boot_q025_pct=-3.8668` / `summary.mean_return_pct`。
+    **屏幕会滚走,文件不会。** 预登记单 §6 那句「小样本跑了也不算」要防的是"看见",
+    不是"浪费 CPU" —— 看过之后即便红线一个没动,对结果的解释也会开始偏。
+
+    ⚠️ 两道门槛(前置粗筛 / 真门槛)都走这一个函数,不许各写一份早退分支。
+    """
+    out = {k: v for k, v in base.items() if k != "arms"}
+    arms = base.get("arms")
+    safe: dict[str, Any] = {}
+    if isinstance(arms, dict):
+        for name, a in arms.items():
+            if not isinstance(a, dict):       # 形状不对就整臂丢掉(安全方向)
+                continue
+            keep = {k: v for k, v in a.items() if k in _ARM_SAFE_KEYS}
+            summ = a.get("summary")
+            if isinstance(summ, dict):        # ⚠️ 字符串/None 的 summary 一律丢,不许 .items()
+                s = {k: v for k, v in summ.items() if k in _SUMMARY_SAFE_KEYS}
+                if s:
+                    keep["summary"] = s
+            safe[name] = keep
+    out["arms"] = safe
+    out["verdict_run_gate"] = gate
+    out["power_gate"] = {"passes": None, "null_p95_pct": None,
+                         "reason": "数据未攒够,未跑到功效闸"}
+    out["verdict"] = "NOT_YET_ENOUGH_DATA"
+    out["reading"] = ("⚪ 数据未攒够,按预登记单 §6 **不出判决** —— "
+                      "小样本跑了也不算。缺:" + "; ".join(gate.get("missing") or []))
+    # ⭐兜底自检:白名单之外的路径(顶层新增字段、将来有人往 funnel 里塞收益率)也扫一遍。
+    #   发现了就删掉**并留痕** —— 静默删与静默泄露是同一个病的两面。
+    trail: list[str] = []
+    out = _strip_leaks(out, trail)
+    if trail:
+        out["_stripped_unexpected"] = sorted(set(trail))
+    return out
+
+
+def _arm_pool(con: Any, arm: str, cut: float) -> tuple[list[str], dict[str, Any]]:
+    """算某一臂的合格钱包池与格得分。**只读调用方已建好的 `tagged` / `mb` 两张表。**
+
+    ⛔ 不碰磁盘、不读 `PROJECT_ROOT`、不自己建 `tagged` —— 否则判据就喂不进人工数据集
+    (设计单 §四 S4:`run()` 的数据源写死在函数内部,是这条线上最大的不可测点)。
+
+    ⭐ 抽出来的唯一理由:**前置门槛和主循环必须用同一份口径**。
+    2026-09-02 事故就是两处各写一份造成的 —— 前置在 `tagged` 上直接数,
+    没有 `JOIN mb`、没有 `MIN_OTHER_TRADES`,于是系统性地比真门槛松,放行了跑不了的活。
+    照抄结构而不抽象,本项目已犯过 3 次。
+    """
+    import wallet_skill_v4_matched as v4
+
+    if arm not in ("A", "B"):
+        # ⚠️ 原写法是 `"TRUE" if arm == "A" else <臂B 条件>` ⇒ **任何非 A 都静默当成臂B**。
+        raise ValueError(f"未知的臂 {arm!r};只有 'A' / 'B'。静默当成臂B 是本项目最典型的失败形状")
+    if isinstance(cut, bool) or not isinstance(cut, (int, float)):
+        # `cut` 会被 f-string 直接拼进 SQL,类型不对就是一句能跑但意思全变的 SQL。
+        raise TypeError(f"cut 必须是数值,拿到 {type(cut).__name__}: {cut!r}")
+
+    where = "TRUE" if arm == "A" else f"m.leg_imb <= {float(cut)}"
+    con.execute(f"""CREATE OR REPLACE TABLE a AS SELECT t.* FROM tagged t
+        JOIN mb m USING (cid) WHERE {where} AND t.win_tag IS NOT NULL""")
+    for tag in ("D", "V"):
+        con.execute(f"CREATE OR REPLACE TABLE src_{tag} AS SELECT * FROM a WHERE win_tag='{tag}'")
+    sc = {t: {r[0]: (r[1], r[2], r[4]) for r in con.execute(
+        v4._wallet_scores_sql(f"src_{t}", v4.MIN_OTHER_TRADES)).fetchall()} for t in ("D", "V")}
+    pool = sorted(w for w in sc["D"] if w in sc["V"]
+                  and sc["D"][w][2] >= MIN_BETS_PER_WINDOW
+                  and sc["V"][w][2] >= MIN_BETS_PER_WINDOW)
+    return pool, sc
+
+
 def label_result(result: dict[str, Any], descriptive: bool) -> dict[str, Any]:
     """给结果贴上「描述性 / 判决」的标签。
 
@@ -358,7 +485,6 @@ def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN,
     import duckdb
     sys.path.insert(0, str(PROJECT_ROOT / "06-tools" / "analysis"))
     import wallet_skill_v3 as v3
-    import wallet_skill_v4_matched as v4
     import wash_trading_detector as wd
 
     out_dir = Path(out_dir)
@@ -423,25 +549,40 @@ def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN,
 
         # ⭐门槛前置(review MEDIUM 7):原来跑在两臂 + 400 次置换**之后**,
         #    既浪费,又会在数据太少时先崩在 rank_wallets 上、根本走不到门槛。
+        # ⚠️ 2026-09-02 修(设计单 `docs/DESIGN_VERDICT_PREGATE_2026-09-02.md`):
+        #    这里原先只有**宽口径**一道 —— 直接在 tagged 上数,没有 `JOIN mb`、
+        #    没有 `MIN_OTHER_TRADES`、没有臂B 的 leg_imb 收窄 ⇒ **系统性地比真门槛松**。
+        #    后果不是"偶尔多跑一次":09-02 那次它放行了跑不了的活,白跑 293 秒,
+        #    还把两臂收益率打到屏幕**并落进了 results.json**(小样本结果本不该被看见)。
         if p_floor is not None and not descriptive:
-            pre = verdict_run_allowed(
-                n_markets=con.execute(
-                    "SELECT count(DISTINCT cid) FROM tagged WHERE win_tag='V'").fetchone()[0],
+            base = {"boundary": bnd.isoformat(), "delay_min": delay_min,
+                    "p_floor": p_floor, "descriptive": descriptive, "funnel": funnel}
+            n_mkt = con.execute(
+                "SELECT count(DISTINCT cid) FROM tagged WHERE win_tag='V'").fetchone()[0]
+            # ① 粗筛(宽口径):只读 tagged,不必建 a/src_* 也不必跑 _wallet_scores_sql。
+            #    ⚠️ **放行 ≠ 能跑** —— 它必然比真门槛松,只用来在数据极少时省掉 ② 的开销。
+            #    名字必须自证身份:2026-09-02 就是把它当权威判定才出的事。
+            pre_screen_wide = verdict_run_allowed(
+                n_markets=n_mkt,
                 n_wallets=con.execute(f"""SELECT count(*) FROM (
                     SELECT w FROM tagged WHERE win_tag='D' GROUP BY 1
                       HAVING count(*)>={MIN_BETS_PER_WINDOW}
                     INTERSECT
                     SELECT w FROM tagged WHERE win_tag='V' GROUP BY 1
                       HAVING count(*)>={MIN_BETS_PER_WINDOW})""").fetchone()[0])
+            if not pre_screen_wide["allowed"]:
+                out = _blocked_result(base, pre_screen_wide)
+                (out_dir / "results.json").write_text(
+                    json.dumps(out, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+                return out
+            # ② 真口径:与后置门槛**逐字同源**(同一个 `_arm_pool`),这是本次修复的核心。
+            pool_a, _ = _arm_pool(con, "A", cut)
+            pool_b, _ = _arm_pool(con, "B", cut)
+            check_pool_subset(pool_a, pool_b)
+            pre = verdict_run_allowed(n_markets=n_mkt,
+                                      n_wallets=min(len(pool_a), len(pool_b)))
             if not pre["allowed"]:
-                out = {"boundary": bnd.isoformat(), "delay_min": delay_min,
-                       "p_floor": p_floor, "descriptive": descriptive, "funnel": funnel,
-                       "verdict_run_gate": pre,
-                       "power_gate": {"passes": None, "null_p95_pct": None,
-                                      "reason": "数据未攒够,未跑到功效闸"},
-                       "verdict": "NOT_YET_ENOUGH_DATA",
-                       "reading": "⚪ 数据未攒够,按预登记单 §6 **不出判决** —— "
-                                  "小样本跑了也不算。缺:" + "; ".join(pre["missing"])}
+                out = _blocked_result(base, pre)
                 (out_dir / "results.json").write_text(
                     json.dumps(out, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
                 return out
@@ -451,16 +592,9 @@ def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN,
                                    "leg_imb_cut": cut, "funnel": funnel, "arms": {}}
         arms = {}
         for arm in ("A", "B"):
-            where = "TRUE" if arm == "A" else f"m.leg_imb <= {cut}"
-            con.execute(f"""CREATE OR REPLACE TABLE a AS SELECT t.* FROM tagged t
-                JOIN mb m USING (cid) WHERE {where} AND t.win_tag IS NOT NULL""")
-            for tag in ("D", "V"):
-                con.execute(f"CREATE OR REPLACE TABLE src_{tag} AS SELECT * FROM a WHERE win_tag='{tag}'")
-            sc = {t: {r[0]: (r[1], r[2], r[4]) for r in con.execute(
-                v4._wallet_scores_sql(f"src_{t}", v4.MIN_OTHER_TRADES)).fetchall()} for t in ("D", "V")}
-            pool = sorted(w for w in sc["D"] if w in sc["V"]
-                          and sc["D"][w][2] >= MIN_BETS_PER_WINDOW
-                          and sc["V"][w][2] >= MIN_BETS_PER_WINDOW)
+            # ⭐与前置门槛用**同一个函数**(2026-09-02):两处各写一份正是那次事故的成因。
+            #    顺带:它每臂都重建 a/src_D/src_V,所以下面的置换读到的一定是本臂的表。
+            pool, sc = _arm_pool(con, arm, cut)
             top = rank_wallets({w: 100.0 * sc["D"][w][0] / sc["D"][w][1]
                                 for w in pool if sc["D"][w][1]})
 
@@ -517,13 +651,14 @@ def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN,
                               "n_markets": len(per_market), "boot_q975_pct": q975,
                               "null_p50_pct": pctl(null, 0.50), "summary": summ,
                               "config": arm_config(arm, delay_min, bnd)})
-            results["arms"][arm] = arms[arm]
+            # ⚠️ 2026-09-02:原先这里就把整臂(含 r_v_pct / null_p95_pct / summary)写进
+            #    `results`,而后置门槛在循环**之后** ⇒ 数据不够时收益率照样落进 results.json。
+            #    实测那次:verdict=NOT_YET_ENOUGH_DATA,而 arms.A.r_v_pct=1.2293 好端端躺在文件里。
+            #    ⇒ `results["arms"]` 推迟到门槛通过之后再赋值(见下面)。
+            # 样本量现在就打(它不是结果,且拒跑时要靠它说清差多少);收益率推到门槛之后。
             print(f"  臂{arm}: 池 {len(pool):,} 前10% {len(top):,} | 信号 {fn['signals']:,} "
-                  f"→ 成交 {fn['filled']:,} (未成交 {fn['unfilled']:,}, 坏价 {fn['bad_price']}) \n"
-                  f"        平均收益率 {summ['mean_return_pct']:+.3f}% | "
-                  f"中位 {summ['median_return_pct']:+.3f}% | "
-                  f"{_summary_tail(summ)}\n"
-                  f"        零分布p95 {pctl(null,0.95):+.3f}% | 自举2.5% {q025:+.3f}%", flush=True)
+                  f"→ 成交 {fn['filled']:,} (未成交 {fn['unfilled']:,}, 坏价 {fn['bad_price']})",
+                  flush=True)
 
         # ⭐开跑硬门槛(预登记单 §6)真的接在这里 —— 只算不用等于没有。
         if p_floor is not None and not descriptive:
@@ -532,18 +667,23 @@ def run(out_dir: Path | str = OUT_DIR, delay_min: int = DELAY_MIN,
                     "SELECT count(DISTINCT cid) FROM tagged WHERE win_tag='V'").fetchone()[0],
                 n_wallets=min(arms[a]["n_pool"] for a in ("A", "B")),
                 n_fills=min(arms[a]["summary"]["n_signals"] for a in ("A", "B")))
-            results["verdict_run_gate"] = gate
             if not gate["allowed"]:
-                # ⚠️ 早退分支也要给出 power_gate 键,否则下游读它直接 KeyError
-                results["power_gate"] = {"passes": None, "null_p95_pct": None,
-                                         "reason": "数据未攒够,未跑到功效闸"}
-                results.update({"verdict": "NOT_YET_ENOUGH_DATA",
-                                "reading": "⚪ 数据未攒够,按预登记单 §6 **不出判决** —— "
-                                           "小样本跑了也不算。缺:" + "; ".join(gate["missing"])})
+                # ⚠️ 显式把 arms 喂进去让它剥 —— 此刻 results 里本就没有 arms(已移出循环),
+                #    但深度防御:万一日后有人又在循环里写回去,这里仍然剥得掉。
+                out = _blocked_result({**results, "arms": arms}, gate)
                 (out_dir / "results.json").write_text(
-                    json.dumps(results, ensure_ascii=False, indent=2, default=str),
+                    json.dumps(out, ensure_ascii=False, indent=2, default=str),
                     encoding="utf-8")
-                return results
+                return out
+            results["verdict_run_gate"] = gate
+        # ⭐到这里(门槛通过,或描述性跑法)才允许收益率进入 results 与屏幕。
+        results["arms"] = arms
+        for _a in ("A", "B"):
+            _s, _r = arms[_a]["summary"], arms[_a]
+            print(f"        臂{_a} 平均收益率 {_s['mean_return_pct']:+.3f}% | "
+                  f"中位 {_s['median_return_pct']:+.3f}% | {_summary_tail(_s)}\n"
+                  f"             零分布p95 {_r['null_p95_pct']:+.3f}% | "
+                  f"自举2.5% {_r['boot_q025_pct']:+.3f}%", flush=True)
         worst = max(arms["A"]["null_p95_pct"], arms["B"]["null_p95_pct"])
         power = power_gate_return(worst)
         results["power_gate"] = power
