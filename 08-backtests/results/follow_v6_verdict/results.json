@@ -1,0 +1,136 @@
+{
+  "boundary": "2026-08-27T00:00:00+00:00",
+  "delay_min": 5,
+  "p_floor": 0.1,
+  "descriptive": false,
+  "leg_imb_cut": 0.4840472823529873,
+  "funnel": {
+    "raw_buy": 20460531,
+    "after_wash": 20460375,
+    "dropped_by_wash": 156,
+    "tagged_D": 17266873,
+    "tagged_V": 2692774,
+    "tagged_none": 500728
+  },
+  "arms": {
+    "A": {
+      "green": false,
+      "r_v_pct": 1.24817166947231,
+      "null_p95_pct": 1.451555743394838,
+      "boot_q025_pct": -3.5750387462855633,
+      "failed": [
+        "A·置换(+1.2482% vs 零分布p95 +1.4516%)",
+        "B·自举稳健(2.5%分位 -3.5750% > 0)"
+      ],
+      "detail": "A·置换:FAIL(+1.2482% vs 零分布p95 +1.4516%) | A0·绝对下限:PASS(+1.2482% vs 下限 +1.0%) | B·自举稳健:FAIL(2.5%分位 -3.5750% > 0)",
+      "n_pool": 9432,
+      "n_top": 943,
+      "follow_funnel": {
+        "raw_buys_before_dedupe": 143112,
+        "signals": 22341,
+        "filled": 19647,
+        "unfilled": 2694,
+        "bad_price": 0
+      },
+      "n_markets": 14135,
+      "boot_q975_pct": 2.924837529725293,
+      "null_p50_pct": 0.6833472204267141,
+      "summary": {
+        "n_signals": 16879,
+        "mean_return_pct": 1.24817166947231,
+        "median_return_pct": 0.10010010010010895,
+        "n_dropped_below_floor": 2768,
+        "p_floor": 0.1
+      },
+      "config": {
+        "delay_min": 5,
+        "min_bets_per_window": 20,
+        "top_fraction": 0.1,
+        "boundary": "2026-08-27T00:00:00+00:00",
+        "dedupe": "one_per_asset",
+        "weighting": "equal_per_signal",
+        "side": "BUY_only",
+        "time_firewall": "closed_time",
+        "exclude_wash": true,
+        "perm_n": 400,
+        "boot_n": 1000,
+        "seed": 20260823,
+        "market_range": "all"
+      }
+    },
+    "B": {
+      "green": false,
+      "r_v_pct": -0.1116267355326479,
+      "null_p95_pct": 0.6724464391885324,
+      "boot_q025_pct": -4.467341521278829,
+      "failed": [
+        "A·置换(-0.1116% vs 零分布p95 +0.6724%)",
+        "A0·绝对下限(-0.1116% vs 下限 +1.0%)",
+        "B·自举稳健(2.5%分位 -4.4673% > 0)"
+      ],
+      "detail": "A·置换:FAIL(-0.1116% vs 零分布p95 +0.6724%) | A0·绝对下限:FAIL(-0.1116% vs 下限 +1.0%) | B·自举稳健:FAIL(2.5%分位 -4.4673% > 0)",
+      "n_pool": 8074,
+      "n_top": 807,
+      "follow_funnel": {
+        "raw_buys_before_dedupe": 128624,
+        "signals": 13951,
+        "filled": 12929,
+        "unfilled": 1022,
+        "bad_price": 0
+      },
+      "n_markets": 8577,
+      "boot_q975_pct": 3.1128636520681483,
+      "null_p50_pct": -0.23614612984149513,
+      "summary": {
+        "n_signals": 11281,
+        "mean_return_pct": -0.1116267355326479,
+        "median_return_pct": -100.0,
+        "n_dropped_below_floor": 1648,
+        "p_floor": 0.1
+      },
+      "config": {
+        "delay_min": 5,
+        "min_bets_per_window": 20,
+        "top_fraction": 0.1,
+        "boundary": "2026-08-27T00:00:00+00:00",
+        "dedupe": "one_per_asset",
+        "weighting": "equal_per_signal",
+        "side": "BUY_only",
+        "time_firewall": "closed_time",
+        "exclude_wash": true,
+        "perm_n": 400,
+        "boot_n": 1000,
+        "seed": 20260823,
+        "market_range": "leg_balanced"
+      }
+    }
+  },
+  "verdict_run_gate": {
+    "allowed": true,
+    "missing": [],
+    "fills_checked": true,
+    "checked": {
+      "已结算市场": [
+        59820,
+        20000
+      ],
+      "合格钱包": [
+        8074,
+        8000
+      ],
+      "p>=门槛的成交跟单": [
+        11281,
+        10000
+      ]
+    }
+  },
+  "power_gate": {
+    "null_p95_pct": 1.451555743394838,
+    "mde_max_pct": 2.0,
+    "passes": true,
+    "verdict_if_blocked": null,
+    "reason": ""
+  },
+  "verdict": "NOT_FOLLOWABLE",
+  "reading": "🔴 两臂都不过 ⇒ **跟单不成立**。\n含义要说清:这**不是**「他们没本事」—— V4 已验证他们确实买得比别人便宜;而是那 5pp 是**领先者**的,等你看到信号再进场时已经拿不到了。"
+}

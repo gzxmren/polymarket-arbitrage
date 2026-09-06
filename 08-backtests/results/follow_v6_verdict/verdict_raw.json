@@ -1,0 +1,39 @@
+{
+  "boundary": "2026-08-27T00:00:00+00:00",
+  "delay_min": 5,
+  "p_floor": 0.1,
+  "descriptive": false,
+  "funnel": {
+    "raw_buy": 19784372,
+    "after_wash": 19784216,
+    "dropped_by_wash": 156,
+    "tagged_D": 17219183,
+    "tagged_V": 2091022,
+    "tagged_none": 474011
+  },
+  "arms": {},
+  "verdict_run_gate": {
+    "allowed": false,
+    "missing": [
+      "合格钱包 6,777 < 8,000"
+    ],
+    "fills_checked": false,
+    "checked": {
+      "已结算市场": [
+        50055,
+        20000
+      ],
+      "合格钱包": [
+        6777,
+        8000
+      ]
+    }
+  },
+  "power_gate": {
+    "passes": null,
+    "null_p95_pct": null,
+    "reason": "数据未攒够,未跑到功效闸"
+  },
+  "verdict": "NOT_YET_ENOUGH_DATA",
+  "reading": "⚪ 数据未攒够,按预登记单 §6 **不出判决** —— 小样本跑了也不算。缺:合格钱包 6,777 < 8,000"
+}
