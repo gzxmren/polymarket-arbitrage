@@ -288,7 +288,7 @@ def test_run_yields_when_collector_is_active(monkeypatch):
     counts = bf.backfill_once(_targets(10), cursor="", max_markets=10,
                               time_budget_s=100,
                               fetch=lambda m: fetched.append(m) or [],
-                              write=lambda rows: None)
+                              write=lambda rows: None, mark=lambda rows: None)
     assert fetched == [], "采集器在跑,回填却照样发请求 —— 会把它拖垮"
     assert counts["yielded"] == 1, "让路必须出声(否则'为什么一直没补'无从解释)"
 
@@ -299,7 +299,7 @@ def test_run_proceeds_when_collector_is_idle(monkeypatch):
     fetched = []
     bf.backfill_once(_targets(5), cursor="", max_markets=5, time_budget_s=100,
                      fetch=lambda m: fetched.append(m) or [_row(1)],
-                     write=lambda rows: None)
+                     write=lambda rows: None, mark=lambda rows: None)
     assert len(fetched) == 5
 
 
@@ -317,7 +317,7 @@ def test_run_aborts_midway_if_collector_starts(monkeypatch):
     counts = bf.backfill_once(_targets(50), cursor="", max_markets=50, time_budget_s=100,
                               fetch=lambda m: fetched.append(m) or [_row(1)],
                               write=lambda rows: None,
-                              yield_check_every=1)
+                              yield_check_every=1, mark=lambda rows: None)
     assert len(fetched) < 50, "采集器起来了还在继续发请求"
     assert counts["yielded"] == 1
 
@@ -371,7 +371,7 @@ def test_time_budget_stops_before_starting_another_market(monkeypatch):
         return [_row(1)]
 
     counts = bf.backfill_once(_targets(100), cursor="", max_markets=100,
-                              time_budget_s=25, fetch=slow, write=lambda rows: None)
+                              time_budget_s=25, fetch=slow, write=lambda rows: None, mark=lambda rows: None)
     assert counts["attempted"] == 3, f"预算 25s/每个 10s,应做 3 个,实际 {counts['attempted']}"
 
 
@@ -399,7 +399,7 @@ def test_cursor_only_advances_over_markets_actually_attempted(monkeypatch):
         return [_row(1)]
 
     counts = bf.backfill_once(targets, cursor="", max_markets=100,
-                              time_budget_s=25, fetch=slow, write=lambda rows: None)
+                              time_budget_s=25, fetch=slow, write=lambda rows: None, mark=lambda rows: None)
     ordered = sorted(targets, key=lambda m: m["condition_id"])
     assert counts["attempted"] == 3
     assert counts["cursor"] == ordered[2]["condition_id"], \
@@ -418,7 +418,7 @@ def test_cursor_does_not_advance_when_yielding_midway(monkeypatch):
     targets = _targets(50)
     counts = bf.backfill_once(targets, cursor="", max_markets=50, time_budget_s=1000,
                               fetch=lambda m: [_row(1)], write=lambda rows: None,
-                              yield_check_every=1)
+                              yield_check_every=1, mark=lambda rows: None)
     ordered = sorted(targets, key=lambda m: m["condition_id"])
     assert counts["yielded"] == 1
     assert counts["cursor"] == ordered[counts["attempted"] - 1]["condition_id"]
@@ -434,7 +434,7 @@ def test_nothing_attempted_leaves_the_cursor_alone(monkeypatch):
     monkeypatch.setattr(bf.time, "monotonic", clock)
     counts = bf.backfill_once(_targets(20), cursor="", max_markets=20,
                               time_budget_s=0, fetch=lambda m: [_row(1)],
-                              write=lambda rows: None)
+                              write=lambda rows: None, mark=lambda rows: None)
     assert counts["attempted"] == 0
     assert not counts.get("cursor"), "什么都没做却推进了游标"
 
@@ -459,7 +459,7 @@ def test_no_target_is_skipped_across_repeatedly_cut_rounds(monkeypatch):
     for _ in range(10):            # 10 轮 × 每轮 3 个 = 刚好够覆盖 30 个
         counts = bf.backfill_once(targets, cursor=cursor, max_markets=30,
                                   time_budget_s=25, fetch=slow,
-                                  write=lambda rows: None)
+                                  write=lambda rows: None, mark=lambda rows: None)
         cursor = counts.get("cursor") or cursor
     assert len(seen) == 30, f"10 轮之后仍有 {30 - len(seen)} 个目标从没被碰过"
 
@@ -469,7 +469,7 @@ def test_max_markets_caps_the_batch(monkeypatch):
     monkeypatch.setattr(bf, "collector_is_running", lambda: False)
     counts = bf.backfill_once(_targets(500), cursor="", max_markets=7,
                               time_budget_s=10_000,
-                              fetch=lambda m: [_row(1)], write=lambda rows: None)
+                              fetch=lambda m: [_row(1)], write=lambda rows: None, mark=lambda rows: None)
     assert counts["attempted"] == 7
 
 
@@ -480,7 +480,7 @@ def test_counts_reconcile_requested_against_returned(monkeypatch):
     monkeypatch.setattr(bf, "collector_is_running", lambda: False)
     seq = [[], [_row(1), _row(2)], [], [_row(3)]]
     counts = bf.backfill_once(_targets(4), cursor="", max_markets=4, time_budget_s=100,
-                              fetch=lambda m: seq.pop(0), write=lambda rows: None)
+                              fetch=lambda m: seq.pop(0), write=lambda rows: None, mark=lambda rows: None)
     assert counts["attempted"] == 4
     assert counts["with_trades"] == 2
     assert counts["empty"] == 2, "零返回的市场没出声 —— 系统性查不到会完全隐形"
@@ -492,7 +492,7 @@ def test_nothing_written_when_nothing_fetched(monkeypatch):
     monkeypatch.setattr(bf, "collector_is_running", lambda: False)
     wrote = []
     bf.backfill_once(_targets(3), cursor="", max_markets=3, time_budget_s=100,
-                     fetch=lambda m: [], write=lambda rows: wrote.append(rows))
+                     fetch=lambda m: [], write=lambda rows: wrote.append(rows), mark=lambda rows: None)
     assert wrote == []
 
 
