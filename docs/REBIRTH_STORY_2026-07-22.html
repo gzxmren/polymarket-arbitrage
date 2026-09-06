@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>一把不准的尺子 · 一个数据项目归零又重生的一天</title>
+<style>
+  :root{
+    --paper:#e9ecf0; --surface:#f6f7f9; --ink:#1b222b; --muted:#5b6675;
+    --hair:#d0d6de; --hair-soft:#dde2e9;
+    --accent:#a9691a;           /* 琥珀:唯一的暖信号 */
+    --crit:#9c3a2c;             /* 砖红:毒打/失败 */
+    --signal:#1d6d63;           /* 青绿:修好/新系统 */
+    --shadow:rgba(30,42,60,.08);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#11151b; --surface:#191f27; --ink:#dde3ea; --muted:#98a3b1;
+      --hair:#2a323d; --hair-soft:#222932;
+      --accent:#d59544; --crit:#d26a56; --signal:#4cb6a6;
+      --shadow:rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#e9ecf0; --surface:#f6f7f9; --ink:#1b222b; --muted:#5b6675;
+    --hair:#d0d6de; --hair-soft:#dde2e9;
+    --accent:#a9691a; --crit:#9c3a2c; --signal:#1d6d63; --shadow:rgba(30,42,60,.08);
+  }
+  :root[data-theme="dark"]{
+    --paper:#11151b; --surface:#191f27; --ink:#dde3ea; --muted:#98a3b1;
+    --hair:#2a323d; --hair-soft:#222932;
+    --accent:#d59544; --crit:#d26a56; --signal:#4cb6a6; --shadow:rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",sans-serif;
+    line-height:1.72; font-size:17px;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .serif{font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;}
+  .mono{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;}
+
+  .wrap{max-width:720px; margin:0 auto; padding:0 24px;}
+  .col{max-width:640px; margin-left:auto; margin-right:auto;}
+
+  /* ---- 页眉 ---- */
+  header{padding:14vh 0 8vh; border-bottom:1px solid var(--hair);}
+  .eyebrow{
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:12.5px;
+    letter-spacing:.22em; text-transform:uppercase; color:var(--accent);
+    margin:0 0 22px;
+  }
+  h1.title{
+    font-size:clamp(30px,6.4vw,50px); line-height:1.12; margin:0;
+    font-weight:600; letter-spacing:-.01em; text-wrap:balance;
+  }
+  .thesis{
+    margin:26px 0 0; font-size:clamp(18px,2.6vw,21px); color:var(--muted);
+    line-height:1.62; text-wrap:pretty; max-width:34em;
+  }
+  .meta{
+    margin-top:34px; font-size:12.5px; letter-spacing:.06em; color:var(--muted);
+    display:flex; gap:20px; flex-wrap:wrap; font-family:ui-monospace,Menlo,monospace;
+  }
+
+  /* ---- 章节 ---- */
+  section{padding:7vh 0;}
+  section + section{border-top:1px solid var(--hair-soft);}
+  .sec-label{
+    font-family:ui-monospace,Menlo,monospace; font-size:12px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--muted); margin:0 0 18px;
+  }
+  h2{
+    font-size:clamp(23px,4vw,30px); line-height:1.24; margin:0 0 20px;
+    font-weight:600; letter-spacing:-.005em; text-wrap:balance;
+  }
+  p{margin:0 0 20px;}
+  p:last-child{margin-bottom:0;}
+  .lead{font-size:19px;}
+  strong{font-weight:650; color:var(--ink);}
+  em.pull{
+    font-style:normal; background:linear-gradient(transparent 62%, color-mix(in srgb,var(--accent) 26%, transparent) 62%);
+    padding:0 1px;
+  }
+
+  /* ---- 四拳:日志条目 ---- */
+  .log{display:flex; flex-direction:column; gap:20px; margin-top:8px;}
+  .entry{
+    background:var(--surface); border:1px solid var(--hair);
+    border-left:3px solid var(--crit); border-radius:3px;
+    padding:22px 24px; box-shadow:0 1px 2px var(--shadow);
+  }
+  .entry-head{display:flex; align-items:baseline; gap:14px; margin-bottom:10px;}
+  .entry-no{
+    font-family:ui-monospace,Menlo,monospace; font-size:13px; font-weight:600;
+    color:var(--crit); letter-spacing:.04em; flex:none;
+  }
+  .entry-title{font-weight:650; font-size:18.5px; line-height:1.3; letter-spacing:-.005em;}
+  .entry dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:6px 14px;}
+  .entry dt{
+    font-family:ui-monospace,Menlo,monospace; font-size:11.5px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--muted); padding-top:5px; white-space:nowrap;
+  }
+  .entry dd{margin:0; line-height:1.6;}
+  .entry dd.learn{color:var(--ink);}
+  .entry dd.learn b{color:var(--signal); font-weight:650;}
+  .entry-aside{
+    margin-top:16px; padding-top:14px; border-top:1px dashed var(--hair);
+    font-size:14.5px; color:var(--muted); line-height:1.6;
+  }
+
+  /* ---- 退休:三点 ---- */
+  .checks{list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:14px;}
+  .checks li{padding-left:26px; position:relative; line-height:1.6;}
+  .checks li::before{
+    content:""; position:absolute; left:2px; top:.62em; width:9px; height:9px;
+    border:2px solid var(--signal); border-radius:2px; transform:rotate(0deg);
+  }
+  .checks li b{color:var(--signal); font-weight:650;}
+
+  /* ---- 几课 ---- */
+  .lessons{display:flex; flex-direction:column; gap:0; margin-top:8px;}
+  .lesson{
+    display:grid; grid-template-columns:44px 1fr; gap:0 18px;
+    padding:22px 0; border-top:1px solid var(--hair-soft); align-items:start;
+  }
+  .lesson:first-child{border-top:none;}
+  .lesson .n{
+    font-family:ui-monospace,Menlo,monospace; font-size:14px; color:var(--accent);
+    font-weight:600; padding-top:3px;
+  }
+  .lesson .say{font-size:19.5px; font-weight:600; line-height:1.4; margin:0 0 6px; letter-spacing:-.005em;}
+  .lesson .why{color:var(--muted); font-size:16px; line-height:1.6; margin:0;}
+
+  /* ---- 收尾 ---- */
+  .closing{
+    padding:9vh 0 12vh; text-align:left;
+  }
+  .closing p{font-size:clamp(20px,3vw,24px); line-height:1.5; font-weight:500; text-wrap:pretty;}
+  .closing .kicker{color:var(--accent);}
+  footer{
+    border-top:1px solid var(--hair); padding:26px 0 48px; color:var(--muted);
+    font-size:12.5px; font-family:ui-monospace,Menlo,monospace; letter-spacing:.05em;
+  }
+
+  a{color:var(--accent); text-underline-offset:3px;}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:2px;}
+
+  @media (max-width:560px){
+    body{font-size:16px;}
+    .entry dl{grid-template-columns:1fr; gap:3px 0;}
+    .entry dt{padding-top:10px;}
+    .lesson{grid-template-columns:30px 1fr; gap:0 12px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="col">
+      <p class="eyebrow">复盘 · 2026-07-22</p>
+      <h1 class="title serif">一把不准的尺子</h1>
+      <p class="thesis">今天我们没找到任何能赚钱的策略。但做了一件更要紧的事——把「能不能相信自己算出来的数」这件事,从地基上修好了。</p>
+      <div class="meta">
+        <span>一个数据项目 · 归零 → 重生</span>
+        <span>阅读约 6 分钟</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="col">
+
+    <section>
+      <p class="sec-label">01 · 起点</p>
+      <h2 class="serif">为什么一个项目要「归零」</h2>
+      <p class="lead">这个项目前后试过十三种办法去找赚钱的路子,<strong>全部失败</strong>。最自然的反应是:再换一种策略试试看。</p>
+      <p>但今天我们停下来,问了一个更狠的问题——会不会根本不是策略不行,而是我们<strong>量东西的那把尺子本身就是歪的</strong>?</p>
+      <p>答案是:对。过去每天记录市场行情的那套程序,只挑当天「最热闹」的两千个市场记,冷门的一概不看;而且一个市场刚结束,它就不再记了,连<strong>最终是什么结果</strong>都没拍下来。用这样一份挑挑拣拣、还缺了结局的数据去回测,得出的任何结论都靠不住——<em class="pull">就像用一把不准的尺子量了十三次,每次读数都不一样,你以为是方法的问题,其实是尺子的问题。</em></p>
+    </section>
+
+    <section>
+      <p class="sec-label">02 · 转向</p>
+      <h2 class="serif">我们做的不是修策略,是重造尺子</h2>
+      <p>所以今天没有再去调策略,而是回到最底层,<strong>重造数据采集这把尺子</strong>。并且立了一条铁规矩:动手写代码之前,先把「什么才叫采对了」白纸黑字写清楚。</p>
+      <p>为什么这么较真?因为如果先把活干完、再回头定标准,人<strong>一定会</strong>不自觉地挑一个「刚好能通过」的标准来骗自己,事后连自己都说不清到底有没有放水。<em class="pull">就像考试——评分标准得考前定好,不能考完了再来划及格线。</em></p>
+    </section>
+
+    <section>
+      <p class="sec-label">03 · 现实</p>
+      <h2 class="serif">纸上完美,一碰现实就露馅</h2>
+      <p>标准写得再漂亮,一接上真实世界的数据,还是接连挨了四拳。每一拳都打在<strong>过去十三轮从不敢碰</strong>的硬骨头上——但这一次,我们全接住了。</p>
+
+      <div class="log">
+        <div class="entry">
+          <div class="entry-head"><span class="entry-no mono">第 1 拳</span><span class="entry-title">系统给的「标签」是假的</span></div>
+          <dl>
+            <dt>现象</dt><dd>每笔交易,系统都附一个编号,标明「这是买涨还是买跌」。我们本打算直接拿来用。</dd>
+            <dt>发现</dt><dd>拿真实数据一验:这个编号里 <strong>93% 是无意义的占位符</strong>(全填了「999」)。要是信了它,整张表的价格含义会全部错位、直接崩掉。</dd>
+            <dt>学到</dt><dd class="learn"><b>别信文档,别信字段名。</b>每一个「看起来理所当然」的假设,都要亲手拿真实数据验一遍。</dd>
+          </dl>
+        </div>
+
+        <div class="entry">
+          <div class="entry-head"><span class="entry-no mono">第 2 拳</span><span class="entry-title">翻页翻到 2100 就撞墙</span></div>
+          <dl>
+            <dt>现象</dt><dd>我们以为能一页一页,把所有市场从头翻到尾。</dd>
+            <dt>发现</dt><dd>翻到第 2100 个,接口直接拒绝——它有一个我们完全没料到的<strong>硬上限</strong>。</dd>
+            <dt>学到</dt><dd class="learn"><b>关于「到底有多大、有多少」的假设,必须实测。</b>不能拍脑袋估个数就往下走。</dd>
+          </dl>
+        </div>
+
+        <div class="entry">
+          <div class="entry-head"><span class="entry-no mono">第 3 拳</span><span class="entry-title">几万个市场,真正在交易的只有几百</span></div>
+          <dl>
+            <dt>现象</dt><dd>名义上有几万个「开着的」市场,我们原计划全部抓一遍。</dd>
+            <dt>发现</dt><dd>全抓既跑不完、又没必要——绝大多数市场<strong>根本没人交易</strong>,抓回来也是空的。真正有成交的,任何时刻只有几百个。</dd>
+            <dt>学到</dt><dd class="learn"><b>「抓全部」往往既做不到,也没意义。</b>跟着「真实正在发生的事」走,反而更干净、更聪明——还天然避开了旧系统「只挑热门」的偏心。</dd>
+          </dl>
+        </div>
+
+        <div class="entry">
+          <div class="entry-head"><span class="entry-no mono">第 4 拳</span><span class="entry-title">最可怕的错误,是「闷声不响」</span></div>
+          <dl>
+            <dt>现象</dt><dd>上线后第一轮,程序看着好好地在跑,还正常退出了。</dd>
+            <dt>发现</dt><dd>其实那一轮<strong>什么都没干</strong>——数据接口那一刻抽风了,而它「安静地」空转,一声没吭。</dd>
+            <dt>学到</dt><dd class="learn"><b>失败必须大声喊出来,还要计数。</b>「看着正常、其实没干活」的静默失败,比明摆着的报错危险得多。</dd>
+          </dl>
+          <p class="entry-aside">这第四拳,是我们特意加的一个「看门狗」当场抓出来的——一个只干一件事的小程序:盯着采集器到底还活着没。它上岗第一天就立了功。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <p class="sec-label">04 · 退休</p>
+      <h2 class="serif">怎么体面地淘汰旧东西</h2>
+      <p>新尺子经过实战验证之后,旧的那一整套(有偏的采集程序、过时的网页界面)就成了冗余,于是把它们停掉。但<strong>「怎么停」比「停不停」更见功夫</strong>:</p>
+      <ul class="checks">
+        <li><b>可逆</b> —— 全部是「停用」而不是「删除」,一条命令就能恢复。</li>
+        <li><b>留档案</b> —— 旧数据一个字节都不删,冻结保存,当历史素材。</li>
+        <li><b>想清连带影响</b> —— 停掉旧的监控之后,谁来盯新系统?于是先补上看门狗,再动手停。</li>
+      </ul>
+      <p style="margin-top:22px;"><em class="pull">淘汰不是删除。要可逆,要留证据,要把牵一发而动全身的地方先想清楚。</em></p>
+    </section>
+
+    <section>
+      <p class="sec-label">05 · 收获</p>
+      <h2 class="serif">真正值钱的几课</h2>
+      <div class="lessons">
+        <div class="lesson">
+          <div class="n mono">一</div>
+          <div><p class="say">先定对错,再动手。</p><p class="why">标准要事前立、白纸黑字。否则事后一定会不自觉地放水骗自己。</p></div>
+        </div>
+        <div class="lesson">
+          <div class="n mono">二</div>
+          <div><p class="say">越早让现实来打你的假设,越好。</p><p class="why">纸上写得再完美,真实世界总有你没想到的硬角落。早点挨打,早点修好。</p></div>
+        </div>
+        <div class="lesson">
+          <div class="n mono">三</div>
+          <div><p class="say">最毒的偏差,是用「和结果相关」的方式挑数据。</p><p class="why">比如只统计「已经结束的比赛」——那等于只看已经知道胜负的样本,结论必然虚高。这是过去所有翻车的总根源。</p></div>
+        </div>
+        <div class="lesson">
+          <div class="n mono">四</div>
+          <div><p class="say">宁可吵闹地出错,也不要安静地骗自己。</p><p class="why">明摆着的报错不可怕,可怕的是「看着正常其实空转」的静默失败。</p></div>
+        </div>
+        <div class="lesson">
+          <div class="n mono">五</div>
+          <div><p class="say">淘汰要可逆。</p><p class="why">给自己留后路,给数据留档案。今天停的,明天能一键请回来。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="closing">
+      <p>今天的账很好算:策略,依然一个都没成。<br>但我们把「凭什么相信自己算出来的数」这件事,从地基上修好了。<br><span class="kicker">在这一行里,一个能信的「不知道」,远比一个不能信的「赚了」值钱。</span></p>
+    </div>
+
+  </main>
+
+  <footer class="col">
+    Polymarket 数据项目 · 归零与重生 · 2026-07-22 · 一份写给自己的复盘
+  </footer>
+</div>
+
+<script>
+  // 尊重"减少动效"偏好:本页本就静态,此处仅作占位守则,不加任何自动动画。
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+[Unit]
+Description=Polymarket 采集器看门狗 · 每 30 分钟查一次存活(Persistent 防 suspend 漏跑)
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+OnBootSec=5min
+
+[Install]
+WantedBy=timers.target

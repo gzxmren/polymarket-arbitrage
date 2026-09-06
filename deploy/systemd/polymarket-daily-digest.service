@@ -1,0 +1,20 @@
+[Unit]
+Description=Polymarket 采集器每日日报 · 读心跳 parquet,推 Telegram
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# ⚠️ 两条 ExecStart 都必须带 `-` 前缀。systemd 语义:「前一条失败(且没有 `-`),
+#    后面的都不执行,整个单元判失败」。日报与报表是**互相独立**的两件事,
+#    任一崩掉不该掐掉另一个。判据 test_render_report.py::test_both_exec_lines_tolerate_each_others_failure
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+Environment=PYTHONPATH=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+# 日报只读 parquet + 一次推送。给足余量但必须有界 —— 无界的 oneshot 会把 timer 堵住。
+TimeoutStartSec=300
+ExecStart=-/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/11-collector/daily_digest.py
+# 趋势报表和日报**同一个 service** —— 两者不可能各自漂移,也不必再问"谁拉起它"。
+# 上一个 dashboard 正是死于"服务没人拉起来"。
+ExecStart=-/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/11-collector/render_report.py
+StandardOutput=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/digest.log
+StandardError=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/digest.log

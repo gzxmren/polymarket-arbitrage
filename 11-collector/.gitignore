@@ -1,0 +1,4 @@
+# 采集数据(append-only Parquet 湖)不入库
+data/
+__pycache__/
+*.pyc

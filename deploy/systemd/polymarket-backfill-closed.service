@@ -1,0 +1,18 @@
+[Unit]
+Description=Polymarket 已关闭市场成交回填清扫(补轮询层饿死漏掉的市场;给采集器让路)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+Environment=PYTHONPATH=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+# 超时 = 时间闸(300s)+ 告警推送最坏 30s + 余量 90s。脚本自己会在 300s 前收工;
+# 这里只是兜底硬杀。⭐2026-08-07 更新这行算式:当天给回填接上了 Telegram 告警
+# (此前守护计数没人读),而 Telegram 单次超时 30s —— 余量从 120s 变成 90s。
+# 告警侧已按此把重试压到 1 次(alerts.maybe_alert_backfill),两边要一起看。
+# ⚠️ 必须远小于采集器间隔(900s),否则会活到下一轮采集器起来还没退出。
+TimeoutStartSec=420
+ExecStart=/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/11-collector/backfill_closed_markets.py
+StandardOutput=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/backfill.log
+StandardError=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/backfill.log

@@ -1,0 +1,19 @@
+[Unit]
+Description=Polymarket 时间防火墙侧表回填(取每个已结算市场的 closedTime / gameStartTime)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/xmren/.openclaw/workspace/polymarket-project
+Environment=PYTHONPATH=/home/xmren/.openclaw/workspace/polymarket-project/11-collector
+# 超时 = 批数上限的最坏耗时(20 批 × 约 4.3s ≈ 86s)+ 余量。
+# ⚠️ 必须小于到下一个占用任务的间隔:本任务 :50 起,回填清扫 :52 起 ⇒ 上限 120s。
+#    判据 test_run_finishes_before_the_next_occupied_slot 焊死这条。
+# 脚本自身可断点续跑,所以"这一轮跑不完"无害;"跑过界"才有害。
+TimeoutStartSec=100
+# ⭐只许一条 ExecStart:多条串起来时前一条失败会让后面的**都不执行**
+#   (CLAUDE.md 静默失败第 10 条,项目 2026-08-17 真栽过)。
+ExecStart=/usr/bin/python3 /home/xmren/.openclaw/workspace/polymarket-project/11-collector/backfill_market_times.py --max-batches 20
+StandardOutput=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/market_times.log
+StandardError=append:/home/xmren/.openclaw/workspace/polymarket-project/11-collector/data/market_times.log

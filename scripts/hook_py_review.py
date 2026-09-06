@@ -54,6 +54,39 @@ OPEN_WITHOUT_WITH_RE = re.compile(
 WITH_OPEN_RE = re.compile(r'\bwith\b.*\bopen\s*\(')
 
 
+# ---------------------------------------------------------------------------
+# 11-collector 专用检查项(2026-08-06 加)
+#
+# 为什么单独给这个目录加:它是 2026-07-22 起从零写的、出坑最多的目录,
+# 而项目原本强制 code review 的范围(06-tools/、dashboard/backend/)**恰好没覆盖它**。
+#
+# 为什么是"检查项"而不是"原则":项目自己的教训 ——
+# 抽象原则在写代码那一刻不会触发(事故发生时,正确的话早就写在文档里了);
+# 只有在**动手的那一刻**被摆到眼前的具体问句才挡得住。
+#
+# 这两条形状不是随便挑的,是 2026-08-06 设计梳理从十几个实际坑里归纳出来的:
+# 同一形状分别在 4 个和 3 个不同位置各犯了一次。
+COLLECTOR_DIR = "/11-collector/"
+
+COLLECTOR_CHECKLIST = """[hook:collector] 改动了 {name} —— 动手完成前请逐条自查:
+
+  ① 独立复核:必须过 `subagent python-reviewer`(本目录出坑最多,自己 review 自己无效)
+  ② 判据:改的行为在 10-tests/ 里有对应判据吗?判据是**先写**的吗?
+
+  ③ 已知形状一「记录事实 vs 使用事实,只接了一头」——
+     这次新增/修改的量,记下来之后**有人读它吗**?
+     (犯过 4 次:水位线前进却没记截断、计数器算了没进心跳、
+      时间闸参数定义了调用方没传、截断留了痕下游没人用)
+
+  ④ 已知形状二「照抄结构而不抽象」——
+     这段逻辑在别处是不是已经有一份?抄的话,上一份的教训跟过来了吗?
+     (犯过 3 次:游标轮转抄 3 遍、时间闸抄 5 遍、连零守护抄 4 遍;
+      其中游标那次是**同一天上午修了一处、下午在新代码里又写了一遍**)
+
+  ⑤ 需求对账:这一步服务哪条需求?不做会怎样?做完怎么验证?
+     第②问答不出实质后果的,就不该做。"""
+
+
 def is_io_file(path_str: str) -> bool:
     lower = path_str.lower()
     return any(p in lower for p in IO_PATTERNS)
@@ -142,6 +175,9 @@ def main():
             + "\n\nConsider running: /python-review  or  subagent python-reviewer",
             file=sys.stderr,
         )
+
+    if COLLECTOR_DIR in abs_path.replace(os.sep, "/"):
+        print(COLLECTOR_CHECKLIST.format(name=Path(abs_path).name), file=sys.stderr)
 
     # Always pass through — advisory only
     sys.stdout.buffer.write(raw)

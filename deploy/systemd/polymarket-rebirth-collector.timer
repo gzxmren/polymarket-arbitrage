@@ -1,0 +1,15 @@
+[Unit]
+Description=Polymarket 重生采集器 · 每 15 分钟一个采集周期(Persistent 防 suspend 漏跑)
+
+[Timer]
+# 2026-08-04 从 10 分钟放宽到 15 分钟:实测健康周期 p99=221s/max=228s,但网络退化时
+# 可涨到 3 倍(代理隧道 23% TLS 失败 × 重试 5 次)。间隔必须 ≥ 超时上限,否则上一轮还没
+# 跑完下一轮就被叫醒 = 排队打转。⚠️ 与 alerts.CYCLE_BUDGET_S 一致,由
+# 10-tests/unit/test_cycle_budget.py::test_timer_interval_matches_budget 焊死。
+OnCalendar=*:0/15
+Persistent=true
+# 开机后 2 分钟先跑一次(避免与整点抢网络)
+OnBootSec=2min
+
+[Install]
+WantedBy=timers.target

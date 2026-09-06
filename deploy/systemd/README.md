@@ -1,3 +1,9 @@
+> # 🛑 2026-09-05 起:6 个采集 timer 已**有意停止**
+>
+> `rebirth-collector` / `collector-watchdog` / `backfill-closed` / `market-times` /
+> `daily-digest` / `slippage-probe` 全部 `disable` 了,**不是漏装**。
+> 照本文件的命令重装会把它们又装回来 —— 装之前**先读 [`STOPPED_2026-09-05.md`](STOPPED_2026-09-05.md)**。
+
 # systemd --user 定时任务（留档）
 
 本目录是**运行中 systemd `--user` 单元的快照留档**，实际生效副本在

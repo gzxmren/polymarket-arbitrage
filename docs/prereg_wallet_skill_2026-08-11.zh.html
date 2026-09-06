@@ -1,0 +1,770 @@
+<title>预登记单 · 钱包战绩持续性(方向三第一关)</title>
+<style>
+  :root {
+    /* 沿用本项目既有 blog 的令牌系统;按既定要求只保留亮色一套 */
+    --bg: #ECEFF3;
+    --surface: #FFFFFF;
+    --surface-2: #F4F6F8;
+    --surface-3: #E7EBF0;
+    --ink: #16202B;
+    --ink-soft: #4A5763;
+    --ink-faint: #78848F;
+    --line: #D4DBE2;
+    --line-soft: #E3E8ED;
+    --accent: #B0740F;
+    --accent-tint: #F3E9D6;
+    --good: #2E7A57;
+    --good-tint: #E1EFE7;
+    --bad: #B24C2C;
+    --bad-tint: #F3E3DC;
+    --warn: #8A6D1F;
+    --warn-tint: #F5EEDC;
+    --serif: "Charter", "Bitstream Charter", "Iowan Old Style", Georgia, "Songti SC", "Noto Serif CJK SC", STSong, serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --measure: 40rem;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 0 1.25rem 6rem; }
+
+  /* ---------- 抬头 ---------- */
+  .masthead {
+    border-bottom: 2px solid var(--ink);
+    padding: 3.25rem 0 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 .9rem;
+  }
+  h1 {
+    font-size: clamp(1.8rem, 4.2vw, 2.6rem);
+    line-height: 1.22;
+    margin: 0 0 .5rem;
+    font-weight: 600;
+    text-wrap: balance;
+    letter-spacing: -.01em;
+  }
+  .subtitle {
+    font-size: 1.05rem;
+    color: var(--ink-soft);
+    margin: 0 0 1.6rem;
+    max-width: var(--measure);
+  }
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: .1rem 1.5rem;
+    font-family: var(--mono);
+    font-size: .78rem;
+    line-height: 1.9;
+    color: var(--ink-soft);
+  }
+  .facts b { color: var(--ink-faint); font-weight: 400; }
+
+  /* ---------- 条款版式:左侧号码栏 ---------- */
+  section.clause {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0 1.5rem;
+    padding: 2.6rem 0 .4rem;
+    border-top: 1px solid var(--line);
+  }
+  section.clause > .num {
+    font-family: var(--mono);
+    font-size: .78rem;
+    letter-spacing: .1em;
+    color: var(--ink-faint);
+    padding-top: .55rem;
+    text-align: right;
+    white-space: nowrap;
+  }
+  section.clause > .body { min-width: 0; max-width: 44rem; }
+
+  h2 {
+    font-size: 1.42rem;
+    line-height: 1.32;
+    margin: 0 0 .35rem;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+  h2 .qual { color: var(--ink-faint); font-weight: 400; font-size: .8em; }
+  h3 {
+    font-size: 1.04rem;
+    margin: 2rem 0 .4rem;
+    font-weight: 600;
+  }
+  p { margin: 0 0 1rem; max-width: var(--measure); }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.3rem; max-width: var(--measure); }
+  li { margin-bottom: .38rem; }
+  li::marker { color: var(--ink-faint); }
+  a { color: var(--accent); }
+  strong { font-weight: 600; }
+  code {
+    font-family: var(--mono);
+    font-size: .84em;
+    background: var(--surface-3);
+    padding: .1em .34em;
+    border-radius: 2px;
+  }
+
+  /* ---------- 提示块 ---------- */
+  .note {
+    border-left: 3px solid var(--line);
+    background: var(--surface);
+    padding: .95rem 1.15rem;
+    margin: 0 0 1.15rem;
+    max-width: var(--measure);
+  }
+  .note > :last-child { margin-bottom: 0; }
+  .note .tag {
+    display: block;
+    font-family: var(--mono);
+    font-size: .68rem;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    margin-bottom: .45rem;
+  }
+  .note.bad { border-left-color: var(--bad); background: var(--bad-tint); }
+  .note.bad .tag { color: var(--bad); }
+  .note.warn { border-left-color: var(--warn); background: var(--warn-tint); }
+  .note.warn .tag { color: var(--warn); }
+  .note.good { border-left-color: var(--good); background: var(--good-tint); }
+  .note.good .tag { color: var(--good); }
+  .note.accent { border-left-color: var(--accent); background: var(--accent-tint); }
+  .note.accent .tag { color: var(--accent); }
+
+  .shout {
+    border: 2px solid var(--bad);
+    background: var(--bad-tint);
+    padding: 1.25rem 1.4rem;
+    margin: 0 0 1.3rem;
+    max-width: var(--measure);
+  }
+  .shout > :last-child { margin-bottom: 0; }
+  .shout .tag {
+    display: block;
+    font-family: var(--mono);
+    font-size: .7rem;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--bad);
+    margin-bottom: .5rem;
+  }
+  .shout p { font-size: 1.02rem; }
+
+  /* ---------- 表格 ---------- */
+  .tablewrap { overflow-x: auto; margin: 0 0 1.3rem; max-width: 44rem; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: .9rem;
+    line-height: 1.5;
+    background: var(--surface);
+  }
+  th, td {
+    text-align: left;
+    padding: .55rem .7rem;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  thead th {
+    font-family: var(--mono);
+    font-size: .7rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--line);
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.k { font-family: var(--mono); font-size: .82em; white-space: nowrap; color: var(--ink-soft); }
+
+  /* ---------- 代码 ---------- */
+  pre {
+    font-family: var(--mono);
+    font-size: .81rem;
+    line-height: 1.62;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: .95rem 1.1rem;
+    overflow-x: auto;
+    margin: 0 0 1.2rem;
+    max-width: 44rem;
+    border-radius: 2px;
+  }
+  pre code { background: none; padding: 0; font-size: 1em; }
+  .cmt { color: var(--ink-faint); }
+
+  /* ---------- 执行顺序(真实序列,故用序号) ---------- */
+  .order {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1.2rem;
+    max-width: 44rem;
+    counter-reset: step;
+  }
+  .order li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 2rem 1fr;
+    gap: .9rem;
+    align-items: start;
+    padding: .7rem 0;
+    border-bottom: 1px dashed var(--line);
+    margin: 0;
+  }
+  .order li:last-child { border-bottom: none; }
+  .order li::before {
+    content: counter(step);
+    font-family: var(--mono);
+    font-size: .78rem;
+    color: var(--surface);
+    background: var(--ink);
+    width: 1.55rem; height: 1.55rem;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    margin-top: .15rem;
+  }
+
+  /* ---------- 目录 ---------- */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 1.1rem 1.3rem;
+    margin: 0 0 1rem;
+    font-size: .88rem;
+  }
+  .toc ol { columns: 2; column-gap: 2rem; margin: 0; padding-left: 1.2rem; max-width: none; }
+  .toc li { margin-bottom: .22rem; break-inside: avoid; }
+  .toc a { text-decoration: none; color: var(--ink-soft); }
+  .toc a:hover { color: var(--accent); text-decoration: underline; }
+
+  /* ---------- 判据牌 ---------- */
+  .redlines {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1rem;
+    margin: 0 0 1.3rem;
+    max-width: 44rem;
+  }
+  .redline {
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--bad);
+    background: var(--surface);
+    padding: .9rem 1.05rem;
+  }
+  .redline .lbl {
+    font-family: var(--mono);
+    font-size: .68rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--bad);
+  }
+  .redline .val {
+    font-family: var(--mono);
+    font-size: 1.3rem;
+    font-variant-numeric: tabular-nums;
+    margin: .3rem 0 .25rem;
+  }
+  .redline .desc { font-size: .84rem; color: var(--ink-soft); line-height: 1.5; }
+
+  footer.sig {
+    border-top: 2px solid var(--ink);
+    margin-top: 3rem;
+    padding-top: 1.2rem;
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-faint);
+    line-height: 1.9;
+  }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 46rem) {
+    body { font-size: 16px; }
+    section.clause { grid-template-columns: 1fr; gap: 0; }
+    section.clause > .num { text-align: left; padding: 0 0 .3rem; }
+    .toc ol { columns: 1; }
+  }
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">预登记单 · 子单 · 冻结于开跑之前</p>
+  <h1>钱包战绩持续性</h1>
+  <p class="subtitle">方向三 · 第一关(毛利层)。检验:能不能靠前一段时间的战绩,认出一批在后一段时间依然判断更准的钱包。</p>
+  <div class="facts">
+    <div><b>登记日期</b> 2026-08-11</div>
+    <div><b>状态</b> 已冻结,未跑任何真实结果</div>
+    <div><b>母单</b> PREREG_EDGE_DISCOVERY_FRAMEWORK_2026-07-23</div>
+    <div><b>数据契约</b> DATA_CONTRACT_REBIRTH_2026-07-22 v1.2</div>
+    <div><b>脚本</b> 08-backtests/wallet_skill_persistence.py(未编写)</div>
+    <div><b>产物</b> 08-backtests/results/wallet_skill_2026-08-11/</div>
+  </div>
+</header>
+
+<section class="clause">
+  <div class="num">目录</div>
+  <div class="body">
+    <nav class="toc">
+      <ol>
+        <li><a href="#c0">顶部声明:两处偏离母单</a></li>
+        <li><a href="#c1">假设</a></li>
+        <li><a href="#c2">窗口与时间坐标</a></li>
+        <li><a href="#c3">宇宙与纳入标准</a></li>
+        <li><a href="#c4">符号铁律:输赢怎么算</a></li>
+        <li><a href="#c5">自变量:战绩怎么算</a></li>
+        <li><a href="#c6">判决与红线</a></li>
+        <li><a href="#c7">敏感性与诊断</a></li>
+        <li><a href="#c8">坏数据自检</a></li>
+        <li><a href="#c9">出声计数清单</a></li>
+        <li><a href="#c10">本测试不能回答什么</a></li>
+        <li><a href="#c11">反自欺条款</a></li>
+      </ol>
+    </nav>
+    <p style="font-size:.9rem;color:var(--ink-soft);max-width:44rem">
+      本单在<strong>看到任何真实结果之前</strong>写定。这么做的原因写在母单里:过去 13 轮翻车,反复死在「结果出来之后才定什么算通过」——
+      事后定标准,人必然不自觉挑一个刚好能过的,既是自欺,事后也无法自证清白。
+    </p>
+  </div>
+</section>
+
+<section class="clause" id="c0">
+  <div class="num">§0</div>
+  <div class="body">
+    <h2>顶部声明:相对母单的两处偏离</h2>
+    <p>母单第 7 条要求:子单只能加严不能放宽;任何放宽必须在顶部显著标注并说明理由,并接受「这是在放水」的默认质疑。以下两处照办。</p>
+
+    <h3>偏离一 · 窗口按<em>成交日</em>切,不按<em>官方结算时刻</em>切 —— 这是放宽</h3>
+    <p>母单第 1 条明文:「市场归属窗 = 按其官方结算时刻(结果无关的时间坐标)」「一个市场只能进一个窗」。</p>
+    <p><strong>本单做不到,原因是数据里没有这个坐标。</strong>以下为 2026-08-11 实测:</p>
+    <ul>
+      <li>注册表没有「实际结算时刻」字段;<code>end_date</code> 是<strong>计划</strong>结束日,不是实际结算时刻。</li>
+      <li>唯一可推的替代是注册表快照夹逼(某市场在前一次快照 <code>closed=False</code>、后一次 <code>closed=True</code>)。</li>
+    </ul>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>夹逼法的实测结果</th><th class="num">数值</th></tr></thead>
+        <tbody>
+          <tr><td>能夹出关闭窗口的市场</td><td class="num">78,804 个</td></tr>
+          <tr><td>夹逼区间宽度 · 中位</td><td class="num">57.6 小时</td></tr>
+          <tr><td>夹逼区间宽度 · p90</td><td class="num">227.6 小时</td></tr>
+          <tr><td><strong>2026-07-31 之前能确定已关闭的市场</strong></td><td class="num"><strong>457 个</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>按母单字面执行,排名窗只剩 457 个市场,已在母单充足闸 400/窗 的边缘,而验证窗几乎为空。<strong>测不成。</strong></p>
+
+    <p><strong>替代措施(实测支撑,不是口头保证):</strong></p>
+    <ol>
+      <li>按成交日切窗:排名窗 07-22~07-31,验证窗 08-01~08-10。</li>
+      <li><strong>验证窗剔除「该钱包在排名窗已交易过的同一市场」。</strong>这才是按成交日切窗真正的危害——同一个市场只结算一次,却把输赢同时喂给排名和验证,凭空造出相关。实测这部分占验证窗成交的 <strong>1.7%</strong>(3,801,457 笔中的 62,831 笔),剔除代价极小。</li>
+    </ol>
+    <div class="note warn">
+      <span class="tag">残留风险 · 明说</span>
+      <p>不同钱包在两窗押同一市场时,该市场的结算结果仍会同时进入两窗。这<strong>不会</strong>在钱包层面制造假的「个人持续性」,但会制造<strong>钱包之间的相关</strong> ⇒ 由第 6 条的比赛组分块 bootstrap 承担。</p>
+    </div>
+    <p style="font-size:.92rem;color:var(--ink-soft)">本偏离接受「这是在放水」的默认质疑。若日后注册表补上实际结算时刻字段,本测试应按母单字面重跑。</p>
+
+    <h3>偏离二 · 本单只做毛利层,母单 R1(净收益)留空不填</h3>
+    <p>母单第 4 条顺序铁律:「先看毛偏差能否覆盖成本;毛利层不成立就到此为止」。本单就是那一步,因此<strong>不计交易成本、不计信号延迟</strong>。</p>
+    <div class="shout">
+      <span class="tag">由此推出一条必须写在最显眼处的结论</span>
+      <p><strong>本单即使全绿,也不构成母单意义上的 🟢,更不是「发现了 edge」。</strong>最多只能说:毛利层没被证伪,<strong>有资格进第二关</strong>。第二关(加 15 分钟信号延迟 + 价格敏感成本 + 出场票价)才对应母单 R1。</p>
+      <p style="font-size:.9rem">写这一段是因为过往真实事故:结论在传递中被逐级「升格」。本段是防呆,不是谦辞。</p>
+    </div>
+  </div>
+</section>
+
+<section class="clause" id="c1">
+  <div class="num">§1</div>
+  <div class="body">
+    <h2>假设</h2>
+    <p><strong>H_W(钱包判断力持续性)</strong>:存在一批钱包,其<strong>方向判断的准确度</strong>在一段时期内稳定优于市场标价;该优势可由前一时期的战绩识别,并延续到后一时期。</p>
+
+    <h3>为什么自变量是「算得对」,不是「钱多」</h3>
+    <p>2026-06 的「跟鲸鱼」证伪筛的是<strong>资金规模</strong>(谁下注大),本单筛的是<strong>判断正确率</strong>(谁算得对)。这是<strong>两个不同的自变量</strong>,前者被证伪不蕴含后者被证伪。</p>
+    <div class="note warn">
+      <span class="tag">但先验依然差</span>
+      <p>跟鲸鱼的资金加权收益率是 −4~−5%。换了自变量不等于会通过,当年那些看着为正的格子后来查明全是分母效应的幻觉。</p>
+    </div>
+
+    <h3>理论依据(方向先于数据钉定)</h3>
+    <p>方向一(纯价格偏差)已于 2026-08-10 🔴 关闭,深层原因是:公开标价人人可算,真存在的偏差就会被抢空。方向三与方向一是<strong>同一件事的两个信息层级</strong>——加上「是谁在买」这一层非公开信息之后,edge 才可能存活。本单检验的正是这一层信息是否真的携带信号。</p>
+  </div>
+</section>
+
+<section class="clause" id="c2">
+  <div class="num">§2</div>
+  <div class="body">
+    <h2>窗口与时间坐标 <span class="qual">钉死,不得挪动</span></h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>窗</th><th>定义(以数据湖 dt 分区值为准,不另做时区转换)</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><strong>排名窗 D</strong></td><td class="k">dt ∈ [2026-07-22, 2026-07-31]</td><td>给钱包算战绩、排名次</td></tr>
+          <tr><td><strong>验证窗 V</strong></td><td class="k">dt ∈ [2026-08-01, 2026-08-10]</td><td><strong>只跑一次</strong>,只对照红线宣判</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul>
+      <li><code>T_split = 2026-08-01</code>,<code>T_end = 2026-08-11</code>。一经写定,<strong>不得为了让结果好看而挪动</strong>。</li>
+      <li><strong>2026-08-11 整日弃用</strong>:采集未满一天,数据不完整。</li>
+      <li>采集器干净纪元起点 T0 = 2026-07-22,与母单一致。</li>
+    </ul>
+  </div>
+</section>
+
+<section class="clause" id="c3">
+  <div class="num">§3</div>
+  <div class="body">
+    <h2>宇宙与纳入标准 <span class="qual">全部结果无关</span></h2>
+
+    <h3>3.1 市场层</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>条件</th><th>依据</th></tr></thead>
+        <tbody>
+          <tr><td class="k">market_class = 'event'</td><td>契约 §2.2 排除 5 分钟加密盘;发现层已在 <code>discovery_service.py:324</code> 当场剔除</td></tr>
+          <tr><td class="k">hft_suspect = False</td><td>契约 §2.2「仍入库,分析默认排除」。实测仅 18 个市场,近乎空操作,但照章执行</td></tr>
+          <tr><td class="k">resolved_outcome IS NOT NULL</td><td>母单铁律 4:真值只认官方结算,不用任何代理</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>3.2 成交层:口径拉平闸 <span class="qual">本单新增的加严条件</span></h3>
+    <p>只保留 <code>ingested_at − timestamp &lt; 86400</code>(采集延迟不到 24 小时)的成交。</p>
+    <p><strong>为什么必须加</strong>(2026-08-11 实测):数据湖的完整度<strong>随日期系统性递减</strong>——</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>分区日</th><th class="num">该日成交中「≥3 天后才回填」的占比</th><th class="num">中位采集滞后</th></tr></thead>
+        <tbody>
+          <tr><td class="k">2026-07-22</td><td class="num">68.5%</td><td class="num">13.95 天</td></tr>
+          <tr><td class="k">2026-07-27</td><td class="num">49.5%</td><td class="num">2.58 天</td></tr>
+          <tr><td class="k">2026-08-03</td><td class="num">30.4%</td><td class="num">0.11 天</td></tr>
+          <tr><td class="k">2026-08-09</td><td class="num">6.4%</td><td class="num">0.14 天</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>老分区被回填喂了三周,新分区才喂了两天。<strong>若两窗各用全量,等于同时动了两个自变量</strong>(钱包战绩 + 数据完整度),差分无法归因——违反母单铁律 1。</p>
+    <div class="note accent">
+      <span class="tag">拉平后的实测保留率 · 出声计数,不得省略</span>
+      <ul style="margin-bottom:0">
+        <li><strong>D 窗</strong>:10,911,512 笔 → 保留 4,439,484 笔(40.7%)→ 且已结算 <strong>3,964,283</strong> 笔</li>
+        <li><strong>V 窗</strong>:7,454,291 笔 → 保留 5,460,735 笔(73.3%)→ 且已结算 <strong>3,801,457</strong> 笔</li>
+      </ul>
+    </div>
+    <p>两窗保留后的已结算成交量 396 万对 380 万,<strong>基本平衡</strong>——这个平衡本身就是拉平生效的证据,须在输出中复现。代价(宇宙被限制在活跃市场)写进第 10 条。</p>
+
+    <h3>3.3 钱包层</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>条件</th><th>取值</th><th>依据</th></tr></thead>
+        <tbody>
+          <tr><td>两窗各自的已结算成交笔数</td><td class="num"><strong>≥ 20 笔</strong></td><td>用户 2026-08-11 拍板。此数<strong>无实测分布支撑</strong>,见第 7 条敏感性</td></tr>
+          <tr><td>剔除疑似刷单/做市钱包</td><td class="num">每市场平均 ≥ 20 笔</td><td>其收益来自吃价差与速度,不是判断力,会污染自变量。实测这类钱包 493 个</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note warn">
+      <span class="tag">关于机器人剔除规则的自我举报</span>
+      <p>该规则是我<strong>看过成交结构分布之后</strong>定的。我认为它成立,因为我看的是<strong>结构</strong>(每市场几笔),不是<strong>结果</strong>(谁赚钱)——但这个区别应由读者判断,不由我宣布。故第 7 条同时报告<strong>不剔除</strong>的版本。</p>
+    </div>
+    <p><strong>拉平口径后的可用样本(实测)</strong>:两窗各 ≥10 笔 → 14,689 个钱包;各 <strong>≥20 笔 → 10,021 个</strong>;各 ≥50 笔 → 5,321 个。</p>
+  </div>
+</section>
+
+<section class="clause" id="c4">
+  <div class="num">§4</div>
+  <div class="body">
+    <h2>符号铁律:每笔成交的输赢怎么算</h2>
+    <div class="shout">
+      <span class="tag">本单最容易安静出错的地方</span>
+      <p><code>resolved_outcome</code> 这个字段名会骗人。它<strong>不是</strong>「赢家的编号」,而是 <strong>0 号结果的最终赔付值</strong>。按字面读会让每一笔盈亏的符号翻转,<strong>而翻转后的结果看着一样合理</strong>,不会有任何东西报错。</p>
+    </div>
+
+    <h3>代码依据(权威)</h3>
+    <p><code>11-collector/discovery_service.py:355-359</code></p>
+<pre><code>op = json.loads(m["outcomePrices"])
+v = float(op[0])                       <span class="cmt"># ← outcomePrices[0] = 0 号结果的最终赔付</span>
+resolved = v if v in (0.0, 1.0) else None</code></pre>
+
+    <h3>实测旁证(独立于代码,防止代码与数据不符)</h3>
+    <p>取每个市场每个 <code>outcome_index</code> 的最后成交价:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th class="num">样本数</th><th class="num">最后成交价 均值</th><th class="num">中位</th></tr></thead>
+        <tbody>
+          <tr><td class="k">outcome_index == resolved_outcome</td><td class="num">45,342</td><td class="num">0.1183</td><td class="num"><strong>0.02</strong></td></tr>
+          <tr><td class="k">outcome_index != resolved_outcome</td><td class="num">57,806</td><td class="num">0.9867</td><td class="num"><strong>0.999</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>编号「相符」的那一侧价格趋近 0(输),「不符」的一侧趋近 1(赢)。两条独立证据一致。</p>
+
+    <h3>判定式(脚本必须逐字实现)</h3>
+<pre><code>win(idx) = resolved_outcome           <span class="cmt"># 当 idx == 0</span>
+         = 1.0 - resolved_outcome     <span class="cmt"># 当 idx == 1</span>
+
+dir      = +1                         <span class="cmt"># 当 side == 'BUY'</span>
+         = -1                         <span class="cmt"># 当 side == 'SELL'</span>
+
+每笔毛边际  edge_i = dir_i * (win_i - price_i)   <span class="cmt"># 单位:每合约美元</span>
+每笔投入    cost_i = size_i * price_i</code></pre>
+
+    <div class="note bad">
+      <span class="tag">运行时自检 · 脚本启动必跑,不过则中止,不许降级继续</span>
+      <p>在真实数据上断言:</p>
+      <ol style="margin-bottom:.6rem">
+        <li><code>median(last_price | idx == resolved_outcome) &lt; 0.10</code></li>
+        <li><code>median(last_price | idx != resolved_outcome) &gt; 0.90</code></li>
+      </ol>
+      <p style="margin-bottom:0"><strong>理由:</strong>若上游接口日后改变 <code>outcomePrices</code> 的含义、或采集器改了解析,上述读法会<strong>静默反转</strong>。这个断言是唯一能让「我没读反」这句话可复核的东西——直接对应那一问:<em>如果它现在就是坏的,我看到的会有什么不同?</em></p>
+    </div>
+    <p>且此定义在代码中<strong>只允许存在一份</strong>(单一函数,被所有分支调用)。不许复制粘贴到多处——那是 <code>11-collector</code> 已犯过 3 次的「照抄结构而不抽象」。</p>
+  </div>
+</section>
+
+<section class="clause" id="c5">
+  <div class="num">§5</div>
+  <div class="body">
+    <h2>自变量:钱包战绩怎么算</h2>
+    <p><strong>主口径 —— 资金加权毛收益率:</strong></p>
+<pre><code>R(wallet, 窗) = Σ_i [ size_i * dir_i * (win_i - price_i) ]
+                ───────────────────────────────────────────
+                Σ_i [ size_i * price_i ]</code></pre>
+    <p>分子 = 该钱包在该窗所有成交按持有到结算计价的毛盈亏;分母 = 投入的本金。</p>
+    <p><strong>为什么用资金加权而不是每笔等权</strong>:2026-06 的分层归因显示,等权算出来的「正格」<strong>全部</strong>是分母效应的幻觉。资金加权是上次证伪所用的口径,可比。</p>
+    <div class="note accent">
+      <span class="tag">优先级 · 现在写死,不给事后挑选留空间</span>
+      <p style="margin-bottom:0">每笔等权口径同时计算,但只作旁证。<strong>两者结论冲突时,以资金加权为准。</strong></p>
+    </div>
+    <p><strong>口径含义,明说:</strong>本式假设每笔成交<strong>持有到结算</strong>,因此测的是<strong>该钱包的方向判断对不对</strong>,不是他实际赚了多少钱(他可能中途平仓)。对「跟随者持有到结算」这个用途,本口径是对的;对「复刻他的实际收益」则不是。</p>
+  </div>
+</section>
+
+<section class="clause" id="c6">
+  <div class="num">§6</div>
+  <div class="body">
+    <h2>判决 <span class="qual">主判决唯一,现在钉死</span></h2>
+    <ol>
+      <li>在<strong>排名窗 D</strong> 上,对通过第 3 条全部条件的钱包按 <code>R(wallet, D)</code> 降序排名。</li>
+      <li>取<strong>前 10%</strong>(约 1,002 个钱包)记为「高手候选组」。</li>
+      <li>计算该组在<strong>验证窗 V</strong> 上的<strong>组合层面</strong>资金加权毛收益率 <code>R_V</code>(该组所有成交合并算一个数,已剔除第 0 条的跨窗同市场泄漏)。</li>
+    </ol>
+
+    <h3>红线:两条都要过,缺一即 🔴</h3>
+    <div class="redlines">
+      <div class="redline">
+        <div class="lbl">A · 幅度</div>
+        <div class="val">R_V ≥ +0.5pp</div>
+        <div class="desc">每投入 100 美元,毛赚至少 0.5 美元</div>
+      </div>
+      <div class="redline">
+        <div class="lbl">B · 显著</div>
+        <div class="val">P2.5 &gt; 0</div>
+        <div class="desc">比赛组分块 bootstrap 1000 次,2.5% 分位数大于零(相当于双侧 95%)</div>
+      </div>
+    </div>
+
+    <h3>幅度线为何是 0.5pp 而不是 1.5pp</h3>
+    <p>用户 2026-08-11 拍板,理由入档。<strong>两类错的代价不对称:</strong></p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>错法</th><th>后果</th><th class="num">代价量级</th></tr></thead>
+        <tbody>
+          <tr><td>假绿灯</td><td>白跑一趟第二关,在那里被打死</td><td class="num">几小时</td></tr>
+          <tr><td><strong>假红灯</strong></td><td>误杀方向三,转去做需要从零建盘口采集腿的方向二</td><td class="num"><strong>以周计</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>所以这一关红线该松。而<strong>红线松,红灯才可信</strong>——用 1.5pp 判红,「是不是标准定高了误杀了」这个质疑我无法自证;用 0.5pp 判红,这句质疑不成立。</p>
+    <div class="note good">
+      <span class="tag">这不违反母单「🟢 才是风险区」</span>
+      <p style="margin-bottom:0">门放松是为了<strong>让红灯站得住</strong>。万一真亮绿灯,后面有第 8 条两道坏数据自检 + 第二关等着,审视一点没减。<strong>显著性那一头不一并放松</strong>——一次只动一个自变量。</p>
+    </div>
+
+    <h3>母单红线 R1–R6 的逐条交代</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th class="num">#</th><th>母单红线</th><th>本单如何处理</th></tr></thead>
+        <tbody>
+          <tr><td class="num">R1</td><td>净收益为正</td><td><strong>留空,属第二关</strong>。见第 0 条偏离二</td></tr>
+          <tr><td class="num">R2</td><td>毛利先过</td><td><strong>即本单主判决</strong></td></tr>
+          <tr><td class="num">R3</td><td>抗单点</td><td><strong>必做</strong>:分别剔除贡献最大的单个<strong>比赛组</strong>、贡献最大的单个<strong>钱包</strong>,两种剔法后 <code>R_V</code> 均须仍 ≥ +0.5pp</td></tr>
+          <tr><td class="num">R4</td><td>跨分层稳</td><td><strong>必做</strong>:按入场价档(&lt;0.2 / 0.2–0.8 / &gt;0.8)与市场累计成交额档(&lt;$1万 / $1万–10万 / &gt;$10万)分别报告;主要分层方向须一致,不许靠单一格翻正。每格 &lt;30 个钱包则标注「样本不足」</td></tr>
+          <tr><td class="num">R5</td><td>多重比较校正</td><td>预登记网格见第 7 条,<strong>全表并列报告</strong>。主判决唯一 ⇒ 不做 Bonferroni,但必须同时公布全表,<strong>不许只报最好看那档</strong></td></tr>
+          <tr><td class="num">R6</td><td>OOS 一致</td><td><strong>被 R2 吸收,不是被跳过</strong>:本设计中排名窗为正是构造性的(同义反复),真正的样本外证据就是验证窗独立为正 = R2 本身</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="clause" id="c7">
+  <div class="num">§7</div>
+  <div class="body">
+    <h2>敏感性与诊断 <span class="qual">主次现在钉死,跑完不得对调</span></h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th class="num">编号</th><th>内容</th><th>地位</th></tr></thead>
+        <tbody>
+          <tr><td class="num"><strong>主</strong></td><td>门槛 20 笔 × 前 10%</td><td><strong>唯一判决</strong></td></tr>
+          <tr><td class="num">S1</td><td>门槛 <strong>10 笔</strong> × 前 10%</td><td>稳健性,并列报告,不参与判决</td></tr>
+          <tr><td class="num">S2</td><td>门槛 <strong>50 笔</strong> × 前 10%</td><td>稳健性,并列报告,不参与判决</td></tr>
+          <tr><td class="num">S3</td><td>主设置但<strong>不剔除</strong>疑似机器人</td><td>稳健性,并列报告</td></tr>
+          <tr><td class="num">S4</td><td>每笔等权口径</td><td>旁证(第 5 条已定:冲突时以资金加权为准)</td></tr>
+          <tr><td class="num"><strong>D1</strong></td><td>门槛 20 笔 × <strong>前 1%</strong></td><td><strong>诊断,仅在主判决亮红灯时用于说明</strong>:分辨「真没信号」还是「信号被 10% 稀释了」。<strong>不得改变判决</strong></td></tr>
+          <tr><td class="num">D2</td><td>窗口对调(用 V 排名、D 验证)</td><td>诊断:检查时间趋势污染。不参与判决</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note accent">
+      <span class="tag">S1 / S2 的判读规则 · 现在写死</span>
+      <p>三个门槛结论一致 ⇒ 门槛不是关键,主判决可信。</p>
+      <p style="margin-bottom:0">结论<strong>随门槛翻转</strong> ⇒ 判定本测试<strong>不稳</strong>,主判决降级为「不可结论」,<strong>而不是挑一个能过的报上去</strong>。</p>
+    </div>
+    <p><strong>执行方式</strong>:全部格子在<strong>同一次批量运行</strong>中跑完、一次性全表输出。这是「按预登记网格看一次」,不是「反复试探验证窗」。</p>
+  </div>
+</section>
+
+<section class="clause" id="c8">
+  <div class="num">§8</div>
+  <div class="body">
+    <h2>坏数据自检 <span class="qual">必须在看任何真实结果之前跑完并亮红</span></h2>
+    <div class="note bad">
+      <span class="tag">为什么必须有</span>
+      <p style="margin-bottom:0">2026-08-10 我算出了红线却<strong>没把它接到判决上</strong>——这是「记录事实与使用事实只接一头」的第 5 次发作。本节是把红线焊到执行顺序上,让「忘了接」写不出来。</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th class="num">编号</th><th>做法</th><th>必须得到</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="num"><strong>P1</strong><br>打乱身份</td>
+            <td>把「D 窗钱包身份 → V 窗钱包身份」的对应关系随机重排(A 的排名配 B 的验证表现),其余一切不变,重跑主判决</td>
+            <td><strong>必须 🔴</strong>。若绿 ⇒ 判据在测分档本身的均值回归/分母效应,不是在测钱包</td>
+          </tr>
+          <tr>
+            <td class="num"><strong>P2</strong><br>打乱结果</td>
+            <td>在入场价档内随机重排 <code>win</code>(保留价格结构与下注结构,只砍掉真实输赢),重跑主判决</td>
+            <td><strong>必须 🔴</strong>。若绿 ⇒ 判据能凭空造出正收益</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>闸门规则</strong>:P1、P2 各跑 <strong>20 个随机种子</strong>,主判决亮绿的次数须 ≤ 1/20——即经验假阳性率 ≤ 5%,与红线 B 的名义水平一致。<em>(跑一次红了可能只是运气。)</em></p>
+
+    <h3>执行顺序不可颠倒</h3>
+    <ol class="order">
+      <li><strong>坏数据自检 P1 / P2</strong> —— 判据自己先过体检。未亮红则<strong>立即停工修判据</strong>,不许去看真实结果。</li>
+      <li><strong>母单 G5 缺失检验</strong> —— 证明样本缺失与结果不相关(见第 9 条)。</li>
+      <li><strong>主判决</strong> —— 前两步都过,才准跑验证窗,且只跑一次。</li>
+    </ol>
+  </div>
+</section>
+
+<section class="clause" id="c9">
+  <div class="num">§9</div>
+  <div class="body">
+    <h2>出声计数清单 <span class="qual">母单铁律 3;每条都必须落进输出文件</span></h2>
+    <p>脚本必须逐级打印并<strong>首尾对账</strong>:起始笔数 = Σ 各级剔除 + 最终纳入。</p>
+    <ol>
+      <li>窗内原始成交笔数(分 D/V)</li>
+      <li>采集延迟闸剔除数(分 D/V)+ 保留率</li>
+      <li>未结算市场剔除数;<code>resolved_outcome IS NULL</code> 的市场数(即 <code>lookup_fail</code>)</li>
+      <li><code>hft_crypto</code> / <code>hft_suspect</code> 剔除数</li>
+      <li>跨窗同钱包同市场泄漏剔除数(<strong>预期约 1.7%</strong>,偏离预期须查明)</li>
+      <li>疑似机器人剔除的钱包数与成交数(<strong>预期约 493 个钱包</strong>)</li>
+      <li>门槛淘汰的钱包数(分 D/V)</li>
+      <li>最终进入判决的钱包数、成交数、比赛组数</li>
+      <li><strong>母单 G1 核对</strong>:D/V 两窗各自的已结算市场数,须各 ≥ 400</li>
+    </ol>
+
+    <div class="note bad">
+      <span class="tag">母单 G5 专项 · 证明缺失与结果不相关 · 必须先跑</span>
+      <p>比较「被采集延迟闸<strong>剔掉</strong>的成交」与「<strong>保留</strong>的成交」,在两窗各自内部:</p>
+      <ul>
+        <li>所在市场的结算基础率(<code>resolved_outcome == 1.0</code> 的市场占比)</li>
+        <li>入场价分布(中位数与四分位)</li>
+      </ul>
+      <p style="margin-bottom:0"><strong>若两者出现实质差异 ⇒ 缺失与结果相关 ⇒ 本测试的结论须加注甚至作废。</strong>此项在主结果之前跑,结果无论如何都要写进产物——<strong>不许因为「差异不大」就略去不报</strong>。</p>
+    </div>
+  </div>
+</section>
+
+<section class="clause" id="c10">
+  <div class="num">§10</div>
+  <div class="body">
+    <h2>本测试<em>不能</em>回答什么 <span class="qual">诚实边界,先写死</span></h2>
+    <ol>
+      <li><strong>不能</strong>回答能不能赚钱——未计 15 分钟信号延迟(采集器轮询周期),未计交易成本与出场票价。那是第二关。</li>
+      <li><strong>不能</strong>回答该跟哪个具体钱包——样本内排出的名单是用来做统计的,不能直接拿去下注。</li>
+      <li><strong>不能</strong>回答明天还成不成立——只有 20 个日历日,且是单一时段,无跨季节、跨事件类型的证据。</li>
+      <li>
+        <strong>不能</strong>回答该跟还是该反——S0 门(成交记录的 <code>side</code> 是吃单方还是挂单方)尚未通过。若语义整体翻转,「高手」实为「反指」。
+        <div class="note good" style="margin:.6rem 0 0">
+          <span class="tag">但本测试对此免疫</span>
+          <p style="margin-bottom:0">两窗同时翻转,<strong>持续性关系的符号不变</strong>。S0 只决定日后往哪边下注,不影响本单能不能跑。</p>
+        </div>
+      </li>
+      <li><strong>不能</strong>回答冷门市场与长周期市场——采集延迟闸把宇宙限制在轮询覆盖得到的活跃市场。</li>
+      <li><strong>不能</strong>回答 5 分钟高频加密盘——契约 §2.2 事前排除。(实测该类占平台做市奖励的 55 万/100 万美元,要验须<strong>单独立项</strong>。)</li>
+      <li><strong>不能</strong>用本单的一次结果反推稳健——母单第 6 条:单窗一次通过是必要非充分。</li>
+    </ol>
+  </div>
+</section>
+
+<section class="clause" id="c11">
+  <div class="num">§11</div>
+  <div class="body">
+    <h2>反自欺条款 <span class="qual">签字画押</span></h2>
+    <ul>
+      <li>本单第 2 条窗口、第 3 条纳入标准、第 5 条口径、第 6 条红线、第 7 条主次、第 8 条闸门,<strong>一经写定不得修改</strong>。任何改动 = 新测试,须另立子单并说明理由与日期。</li>
+      <li><strong>执行顺序不可颠倒</strong>:坏数据自检 → G5 缺失检验 → 主判决。前一步不过,不许进下一步。</li>
+      <li>验证窗 V <strong>只准跑一次</strong>(第 7 条的全网格算一次)。若不过而想改假设,须换一个更晚的、从未看过的 V′,本 V 已烧掉。</li>
+      <li>原始输出(逐钱包明细 + 全部计数)落盘 <code>08-backtests/results/wallet_skill_2026-08-11/</code>。</li>
+      <li>若 🔴:如实记录,在本单顶部标注证伪,<strong>不改判据重跑同一 V</strong>。方向三当场关闭,资源转向方向二或外部信息源。</li>
+      <li>若绿:<strong>重申第 0 条偏离二——这不是 edge,只是有资格进第二关。</strong></li>
+    </ul>
+
+    <h3>附:动手前三问</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>问</th><th>答</th></tr></thead>
+        <tbody>
+          <tr><td><strong>服务哪条需求?</strong></td><td>项目最高原则「找到能实际盈利的 edge」。方向一已 🔴,方向三是唯一一条数据全在硬盘上、零新采集、几小时出结果的候选。</td></tr>
+          <tr><td><strong>不做会怎样?</strong></td><td>剩下的候选(方向二盘口、外部信息源)都要先建<strong>以周计</strong>的新采集腿。不先花几小时排除最便宜的这条,就是在没有依据的情况下承担几周的工程量。</td></tr>
+          <tr><td><strong>做完怎么验证?</strong></td><td>两种结果都改变下一步做什么:🟢 → 开第二关(加延迟与成本);🔴 → 关闭方向三,资源投向方向二或外部信息源。<strong>若两种结果都不改变下一步,这个测试就不该做</strong>——此处不是。</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<footer class="sig">
+  预登记单 · 钱包战绩持续性 · 方向三第一关(毛利层)<br>
+  冻结于 2026-08-11,写定时未跑任何真实结果 · 源文件 docs/PREREG_WALLET_SKILL_2026-08-11.md<br>
+  母单 docs/PREREG_EDGE_DISCOVERY_FRAMEWORK_2026-07-23.md · 契约 docs/DATA_CONTRACT_REBIRTH_2026-07-22.md v1.2
+</footer>
+
+</div>
