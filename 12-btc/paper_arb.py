@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import json
 import re
 import signal
@@ -60,20 +61,30 @@ NO_ENTRY_LAST_SEC = 8    # 窗末禁止开仓。⚠️ 同样是拍的
 SIZES = (10, 30, 50, 100, 300)   # 逐个试的下单股数
 DELAY_MS = 150           # 模拟"看到→下单到达"的延迟。⚠️ 120~200ms 区间的中值,拍的
 FRAME_EVERY_S = 1.0      # 盘口落盘节流:每秒最多一帧
+HEARTBEAT_S = 30.0       # 心跳间隔。🔴 没有心跳的时段必须从样本剔掉,否则「0 次」是假的
+STALE_MS = 5000          # 盘口超过这么久没更新 ⇒ 本窗标 degraded
+MAX_REC_MB = 500         # jsonl 上限,超了停止落盘(但继续观察)——别把磁盘写满
 
 UTC = timezone.utc
 now_ms = lambda: int(time.time() * 1000)
 hhmmss = lambda: datetime.now(UTC).strftime("%H:%M:%S")
 
 REC_PATH: str | None = None      # 落盘目标;None = 不落盘(--no-record)
+_REC_STOPPED = False
 
 
 def rec(kind: str, **kw):
     """📼 顺手追加一行 jsonl。⛔ 不做任何聚合/索引/压缩——它只是把看到的东西留下。
     「探针和录盘是同一条路径」:今天跑完,回测就不用再等一天。"""
-    if not REC_PATH:
+    global _REC_STOPPED
+    if not REC_PATH or _REC_STOPPED:
         return
     try:
+        # 磁盘保护:超过上限就停止落盘,但**继续观察**(别把磁盘写满)
+        if os.path.exists(REC_PATH) and os.path.getsize(REC_PATH) > MAX_REC_MB * 1024 * 1024:
+            _REC_STOPPED = True
+            print(f"[{hhmmss()}] ⚠️ 落盘已达 {MAX_REC_MB}MB 上限,停止写盘(观察继续)")
+            return
         with open(REC_PATH, "a") as f:
             f.write(json.dumps({"ts": now_ms(), "k": kind, **kw}) + "\n")
     except OSError:
@@ -229,12 +240,19 @@ class Stats:
         self.best_after = 0.0
         self.real_sizes: list[int] = []
         self.phase = {"前3分": 0, "中段": 0, "末2分": 0}   # 真机会出现在窗内哪一段
+        self.win_ok: set[str] = set()      # 有效窗口(全程有数据)
+        self.win_degraded: set[str] = set()# 降级窗口(断线/盘口发霉)⇒ 不计入有效日均
+        self.switch_fail = 0               # 换窗失败次数(卡在上一窗 = 后面全空)
+        self.reconnects = 0
+        self.rec_stopped = False
 
     def line(self):
         mins = (time.time() - self.t0) / 60
+        ok = len(self.win_ok)
         per_h = self.real_hits / mins * 60 if mins > 0 else 0
-        return (f"[{hhmmss()}] 跑了 {mins:5.1f} 分 | 窗口 {len(self.windows)} | 事件 {self.events:,} | "
-                f"瞬时边 {self.raw_hits} 次 → ⭐延迟后仍有 {self.real_hits} 次 (~{per_h:.1f}/小时)")
+        return (f"[{hhmmss()}] 跑了 {mins:5.1f} 分 | 有效窗 {ok} / 降级 {len(self.win_degraded)} | "
+                f"事件 {self.events:,} | 瞬时边 {self.raw_hits} → ⭐延迟后 {self.real_hits} "
+                f"(~{per_h:.1f}/小时) | 重连 {self.reconnects} 换窗失败 {self.switch_fail}")
 
 
 async def run(minutes: float | None):
@@ -254,7 +272,9 @@ async def run(minutes: float | None):
     while not stop.is_set() and (deadline is None or time.time() < deadline):
         m, end_ts = find_live_market()
         if not m:
-            print(f"[{hhmmss()}] 暂无正在交易的窗口,10 秒后重试")
+            st.switch_fail += 1          # 卡在换窗 = 后面全空,必须可见
+            print(f"[{hhmmss()}] ⚠️ 换窗失败:找不到正在交易的窗口(累计 {st.switch_fail} 次),10 秒后重试")
+            rec("switch_fail")
             await asyncio.sleep(10)
             continue
         toks = parse_tokens(m)
@@ -284,12 +304,16 @@ async def run(minutes: float | None):
                         except Exception:
                             return
                 pt = asyncio.create_task(pinger())
-                last_report = time.time()
+                last_report = last_hb = time.time()
+                last_book_ms = now_ms()
+                degraded = False
 
                 while not stop.is_set():
                     remain = end_ts - time.time()
                     if remain <= 0:
-                        print(f"[{hhmmss()}] ⏹ 窗口结束,切下一个")
+                        (st.win_degraded if degraded else st.win_ok).add(slug)
+                        print(f"[{hhmmss()}] ⏹ 窗口结束 {slug} "
+                              f"⇒ {'🟡degraded(不计入有效日均)' if degraded else '✅有效'},切下一个")
                         break
                     if deadline and time.time() >= deadline:
                         stop.set()
@@ -326,6 +350,7 @@ async def run(minutes: float | None):
                             continue
                         st.events += 1
                         tnow = time.time()
+                        last_book_ms = now_ms()
 
                         # ---- ⭐ 到期的候选:用**当前最新的簿**重算同样股数 ----
                         still = []
@@ -341,15 +366,17 @@ async def run(minutes: float | None):
                                 st.real_sizes.append(n0)
                                 ph = "前3分" if rem0 > 720 else ("末2分" if rem0 < 120 else "中段")
                                 st.phase[ph] += 1
-                                print(f"[{hhmmss()}] 💰 **真机会 #{st.real_hits}**  {n0} 股 | "
-                                      f"瞬时边 {100*e_now:.3f}% → 延迟{DELAY_MS}ms后 {100*e_after:.3f}% | "
-                                      f"毛赚 ${e_after*n0:.2f} | 窗内 {ph}")
+                                print(f"[{hhmmss()}] 💰 真机会 #{st.real_hits} | slug={slug} | "
+                                      f"qty={n0} | edge_now={100*e_now:.3f}% | "
+                                      f"edge_after={100*e_after:.3f}% | secs_into_window={900-rem0:.1f} | "
+                                      f"毛赚 ${e_after*n0:.2f} | {ph}")
                             else:
                                 shown = f"{100*e_after:.3f}%" if e_after is not None else "深度没了"
-                                print(f"[{hhmmss()}] 👻 机会蒸发  {n0} 股 | "
-                                      f"瞬时边 {100*e_now:.3f}% → 延迟后 {shown}")
-                            rec("opportunity", n=n0, edge_now=e_now, edge_after=e_after,
-                                kept=keep, remain=rem0)
+                                print(f"[{hhmmss()}] 👻 蒸发 | slug={slug} | qty={n0} | "
+                                      f"edge_now={100*e_now:.3f}% | edge_after={shown} | "
+                                      f"secs_into_window={900-rem0:.1f}")
+                            rec("opportunity", slug=slug, qty=n0, edge_now=e_now, edge_after=e_after,
+                                kept=keep, secs_into_window=round(900-rem0, 1))
                         pending = still
 
                         if remain <= NO_ENTRY_LAST_SEC:      # 窗末不开仓
@@ -370,35 +397,80 @@ async def run(minutes: float | None):
                                 up_bids=sorted(up.bids.items(), reverse=True)[:5],
                                 dn_bids=sorted(down.bids.items(), reverse=True)[:5])
 
-                    if time.time() - last_report >= 60:
+                    # ---- 🔴 心跳:没有心跳的时段必须从样本剔掉,否则「0 次」是假的 ----
+                    tn = time.time()
+                    if tn - last_hb >= HEARTBEAT_S:
+                        last_hb = tn
+                        age = now_ms() - last_book_ms
+                        if age > STALE_MS:
+                            degraded = True
+                        print(f"[{hhmmss()}] alive window={slug} book_age_ms={age} "
+                              f"ws_ok={not degraded} remain={remain:.0f}s events={st.events}")
+                        rec("heartbeat", slug=slug, book_age_ms=age, ws_ok=(not degraded),
+                            remain=round(remain, 1))
+                    if tn - last_report >= 60:
                         print(st.line())
-                        last_report = time.time()
+                        last_report = tn
                 pt.cancel()
         except Exception as e:
-            print(f"[{hhmmss()}] ⚠️ 连接异常 {type(e).__name__}: {e};3 秒后重连")
+            st.reconnects += 1
+            st.win_degraded.add(slug)      # 断线期间这一窗标 degraded,不计入有效日均
+            print(f"[{hhmmss()}] ⚠️ 连接异常 {type(e).__name__}: {e} "
+                  f"⇒ 本窗 {slug} 标 degraded;3 秒后重连(累计 {st.reconnects} 次)")
+            rec("disconnect", slug=slug, err=type(e).__name__)
             await asyncio.sleep(3)
 
     print("\n" + "=" * 78)
-    print("收工。" + st.line())
     mins = max((time.time() - st.t0) / 60, 1e-9)
-    print(f"  瞬时有边(第一列,⚠️会虚高)  {st.raw_hits} 次 | 最好 {100*st.best_now:.3f}%")
-    print(f"  ⭐延迟 {DELAY_MS}ms 后仍有边(判生死) {st.real_hits} 次 | 最好 {100*st.best_after:.3f}%")
+    expected = max(mins * 60 / 900.0, 1e-9)          # 这段时长「本该」覆盖多少个 15 分钟窗
+    ok, deg = len(st.win_ok), len(st.win_degraded)
+    cov = ok / expected
+
+    # ---- 🔴 第一步:先看覆盖率。覆盖率低 ⇒ 后面三个数全部作废 ----
+    print("【第 0 步】覆盖率 —— 先看这个,它决定后面的数算不算数")
+    print(f"  运行 {mins:.1f} 分 ⇒ 本该覆盖 {expected:.1f} 个窗口")
+    print(f"  ✅ 有效窗 {ok} | 🟡 降级窗 {deg} | 重连 {st.reconnects} 次 | 换窗失败 {st.switch_fail} 次")
+    print(f"  ⭐ 覆盖率 = {ok}/{expected:.1f} = {100*cov:.1f}%")
+    if cov < 0.8:
+        print("  🔴 **覆盖率不足 80% ⇒ 下面三个数作废,先修探针,别拿它下判断。**")
+        print("     (没有心跳的时段必须从样本剔掉,否则「0 次」是假的)")
+    else:
+        print("  ✅ 覆盖率够,下面的数可以读")
+
+    print("\n【判据 1】延迟后的真机会次数(👻 蒸发的不算)")
+    print(f"  瞬时有边 {st.raw_hits} 次(⚠️ 会虚高,不作数)| 最好 {100*st.best_now:.3f}%")
+    print(f"  ⭐ 延迟 {DELAY_MS}ms 后仍有边:**{st.real_hits} 次** | 最好 {100*st.best_after:.3f}%")
     if st.raw_hits:
-        print(f"  存活率 {100*st.real_hits/st.raw_hits:.1f}%  ← 机会看得见抓不抓得住,全在这个数")
+        print(f"  存活率 {100*st.real_hits/st.raw_hits:.1f}%")
+
+    print("\n【判据 2】真机会的可成交股数")
     if st.real_sizes:
         srt = sorted(st.real_sizes)
-        print(f"  可成交股数中位 {srt[len(srt)//2]} 股 | 窗内分布 {st.phase}")
-    print()
-    if st.real_hits == 0:
-        print("  ⇒ 🔴 延迟后 0 次。若跑满一天仍如此,同窗口荷兰赌可以关掉,七个模块一个都不用写。")
+        med = srt[len(srt) // 2]
+        print(f"  中位 {med} 股 | 最小 {srt[0]} | 最大 {srt[-1]}")
+        if med <= 2:
+            print("  🔴 中位深度只有 1~2 股 ⇒ 按判停条件,项目停。")
+    else:
+        med = 0
+        print("  (无真机会,无从统计)")
+
+    print("\n【判据 3】真机会落在窗内哪一段")
+    print(f"  {st.phase}   ⚠️ 末 2 分钟即使有边,窗末 {NO_ENTRY_LAST_SEC}s 已禁开")
+
+    print("\n【结论】")
+    if cov < 0.8:
+        print("  ⛔ 覆盖率不足,本轮不下结论。")
+    elif st.real_hits == 0:
+        print("  🔴 有效覆盖下延迟后 0 次 ⇒ 按判停条件,同窗口荷兰赌可以关掉,")
+        print("     七个模块一个都不用写。")
     else:
         per_day = st.real_hits / mins * 60 * 24
-        med = sorted(st.real_sizes)[len(st.real_sizes)//2]
-        print(f"  ⇒ 按此速率外推:约 {per_day:.0f} 次/天,中位 {med} 股")
-        print(f"     粗估日收益 ≈ {100*st.best_after:.3f}% × {med} 股 × {per_day:.0f} 次 "
-              f"= ${st.best_after*med*per_day:.2f}/天(⚠️ 用最好边算,是上界)")
+        print(f"  🟡 延迟后有边。按此速率外推约 {per_day:.0f} 次/天,中位 {med} 股。")
+        print(f"  ⚠️ 但**先别谈 $20/天**:要先看这些机会是不是集中在某几个波动窗,")
+        print(f"     以及两腿是否真能都成交。有边 ≠ 有钱。")
     if REC_PATH:
-        print(f"\n  📼 盘口与机会已落盘: {REC_PATH}")
+        sz = os.path.getsize(REC_PATH) / 1048576 if os.path.exists(REC_PATH) else 0
+        print(f"\n  📼 盘口/机会/心跳已落盘:{REC_PATH}  ({sz:.1f} MB)")
     print("=" * 78)
 
 
