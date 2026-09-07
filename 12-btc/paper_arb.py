@@ -8,11 +8,18 @@ BTC 15m 同窗口荷兰赌 —— paper 模式观察器(只报告,不下单,不�
     python3 12-btc/paper_arb.py                # 默认跑到 Ctrl-C
     python3 12-btc/paper_arb.py --minutes 60   # 跑 60 分钟后自动收工
 
-它回答一个问题:**以我们真实的网络延迟,一天 87.8 次机会里能看见几次。**
-(87.8 次/天 来自 50 天历史数据的离线统计;那份统计假设"每次都抓得到",
- 而实测机会持续中位 0.00 秒 ⇒ 能不能看见是命门,只能实时试。)
+它回答一个问题:**以我们真实的网络延迟,一天 87.8 次机会里能抓住几次。**
 
-⛔ 本文件不写任何文件、不连数据库。产出就是终端里滚动的日志。
+🔴🔴 **每条机会记两列,你要的答案是第二列**(2026-09-07 用户指出,我第一版只有第一列):
+  · edge_now           —— 盘口快照到达那一瞬间的净边
+  · edge_after_delay   —— 人为等 DELAY_MS 之后,用**当时最新的簿**重算同样股数
+真实下单要走"我看到 → 决策 → 发单 → 到达",至少 120–200ms。
+只看第一列会把**已经消失的盘口**算成机会 —— 而实测机会持续中位 **0.00 秒**,
+所以第一列几乎一定虚高。**判生死只看第二列。**
+
+📼 顺手把盘口帧写成 jsonl(每秒一帧 + 全部机会事件)。
+   ⭐「探针和录盘是同一条路径,不是两个阶段」——今天跑完,第 3 步回测就不用再等一天。
+   ⛔ 但仍然:不建存储层、不连数据库、不做任何离线分析。就是追加写一个文件。
 
 --------------------------------------------------------------------------
 今天(2026-09-07)踩过的坑,全部焊在代码里,别再犯:
@@ -51,10 +58,26 @@ FEE_RATE = 0.07          # taker: shares × 0.07 × p × (1−p);maker 免费(�
 MIN_EDGE = 0.008         # 净边门槛。⚠️ 拍的(来自 Grok 建议),**待用实测分布重定**
 NO_ENTRY_LAST_SEC = 8    # 窗末禁止开仓。⚠️ 同样是拍的
 SIZES = (10, 30, 50, 100, 300)   # 逐个试的下单股数
+DELAY_MS = 150           # 模拟"看到→下单到达"的延迟。⚠️ 120~200ms 区间的中值,拍的
+FRAME_EVERY_S = 1.0      # 盘口落盘节流:每秒最多一帧
 
 UTC = timezone.utc
 now_ms = lambda: int(time.time() * 1000)
 hhmmss = lambda: datetime.now(UTC).strftime("%H:%M:%S")
+
+REC_PATH: str | None = None      # 落盘目标;None = 不落盘(--no-record)
+
+
+def rec(kind: str, **kw):
+    """📼 顺手追加一行 jsonl。⛔ 不做任何聚合/索引/压缩——它只是把看到的东西留下。
+    「探针和录盘是同一条路径」:今天跑完,回测就不用再等一天。"""
+    if not REC_PATH:
+        return
+    try:
+        with open(REC_PATH, "a") as f:
+            f.write(json.dumps({"ts": now_ms(), "k": kind, **kw}) + "\n")
+    except OSError:
+        pass                      # 落盘失败绝不打断观察(附加职责不许打断核心职责)
 
 
 def http_json(url: str, timeout: int = 20):
@@ -136,16 +159,24 @@ def taker_fee(shares: float, avg_price: float) -> float:
     return shares * FEE_RATE * avg_price * (1.0 - avg_price)
 
 
+def edge_at(up: Book, down: Book, n: int):
+    """给定股数 n 的净边;深度不足返回 None。净边 = 每股净赚(赔付恒为 $1/股)。"""
+    cu, cd = up.walk_asks(n), down.walk_asks(n)
+    if cu is None or cd is None:
+        return None
+    pu, pd = cu / n, cd / n
+    total = cu + cd + taker_fee(n, pu) + taker_fee(n, pd)
+    return (n * 1.0 - total) / n, pu, pd, total
+
+
 def evaluate(up: Book, down: Book):
-    """返回 (最优股数, 净边, 明细) 或 None。净边 = 每股净赚 / 1 美元赔付。"""
+    """返回 (最优股数, 净边, 明细) 或 None —— 取「净边×股数」最大的那档。"""
     best = None
     for n in SIZES:
-        cu, cd = up.walk_asks(n), down.walk_asks(n)
-        if cu is None or cd is None:       # 深度不够,更大的股数也不用试
+        r = edge_at(up, down, n)
+        if r is None:                      # 深度不够,更大的股数也不用试
             break
-        pu, pd = cu / n, cd / n
-        total = cu + cd + taker_fee(n, pu) + taker_fee(n, pd)
-        edge = (n * 1.0 - total) / n       # 每股净边(结算必有一腿赔付 $1)
+        edge, pu, pd, total = r
         if edge >= MIN_EDGE and (best is None or edge * n > best[1] * best[0]):
             best = (n, edge, (pu, pd, total))
     return best
@@ -190,17 +221,20 @@ def selftest() -> bool:
 class Stats:
     def __init__(self):
         self.t0 = time.time()
-        self.events = 0            # 收到的盘口事件数
-        self.hits = 0              # 报出机会的次数
+        self.events = 0
+        self.raw_hits = 0          # 第一列:快照到达瞬间有边(⚠️ 会虚高)
+        self.real_hits = 0         # ⭐第二列:延迟 DELAY_MS 之后仍有边 —— 判生死看这个
         self.windows = set()
-        self.best_edge = 0.0
+        self.best_now = 0.0
+        self.best_after = 0.0
+        self.real_sizes: list[int] = []
+        self.phase = {"前3分": 0, "中段": 0, "末2分": 0}   # 真机会出现在窗内哪一段
 
     def line(self):
         mins = (time.time() - self.t0) / 60
-        rate = self.hits / mins * 60 if mins > 0 else 0
-        return (f"[{hhmmss()}] 已跑 {mins:5.1f} 分 | 窗口 {len(self.windows)} 个 | "
-                f"盘口事件 {self.events:,} | ⭐机会 {self.hits} 次 (~{rate:.1f}/小时) | "
-                f"最好净边 {100*self.best_edge:.3f}%")
+        per_h = self.real_hits / mins * 60 if mins > 0 else 0
+        return (f"[{hhmmss()}] 跑了 {mins:5.1f} 分 | 窗口 {len(self.windows)} | 事件 {self.events:,} | "
+                f"瞬时边 {self.raw_hits} 次 → ⭐延迟后仍有 {self.real_hits} 次 (~{per_h:.1f}/小时)")
 
 
 async def run(minutes: float | None):
@@ -236,6 +270,8 @@ async def run(minutes: float | None):
 
         up, down = Book(), Book()
         idx = {toks[0]: up, toks[1]: down}
+        pending: list = []          # 待复算的候选机会
+        last_frame = 0.0
         try:
             async with websockets.connect(CLOB_WS, open_timeout=20) as ws:
                 await ws.send(json.dumps({"assets_ids": toks, "type": "market"}))
@@ -289,17 +325,50 @@ async def run(minutes: float | None):
                         else:
                             continue
                         st.events += 1
+                        tnow = time.time()
+
+                        # ---- ⭐ 到期的候选:用**当前最新的簿**重算同样股数 ----
+                        still = []
+                        for due_at, n0, e_now, rem0 in pending:
+                            if tnow < due_at:
+                                still.append((due_at, n0, e_now, rem0)); continue
+                            r2 = edge_at(up, down, n0)
+                            e_after = r2[0] if r2 else None
+                            keep = e_after is not None and e_after >= MIN_EDGE
+                            if keep:
+                                st.real_hits += 1
+                                st.best_after = max(st.best_after, e_after)
+                                st.real_sizes.append(n0)
+                                ph = "前3分" if rem0 > 720 else ("末2分" if rem0 < 120 else "中段")
+                                st.phase[ph] += 1
+                                print(f"[{hhmmss()}] 💰 **真机会 #{st.real_hits}**  {n0} 股 | "
+                                      f"瞬时边 {100*e_now:.3f}% → 延迟{DELAY_MS}ms后 {100*e_after:.3f}% | "
+                                      f"毛赚 ${e_after*n0:.2f} | 窗内 {ph}")
+                            else:
+                                shown = f"{100*e_after:.3f}%" if e_after is not None else "深度没了"
+                                print(f"[{hhmmss()}] 👻 机会蒸发  {n0} 股 | "
+                                      f"瞬时边 {100*e_now:.3f}% → 延迟后 {shown}")
+                            rec("opportunity", n=n0, edge_now=e_now, edge_after=e_after,
+                                kept=keep, remain=rem0)
+                        pending = still
 
                         if remain <= NO_ENTRY_LAST_SEC:      # 窗末不开仓
                             continue
                         r = evaluate(up, down)
                         if r:
                             n, edge, (pu, pd, total) = r
-                            st.hits += 1
-                            st.best_edge = max(st.best_edge, edge)
-                            print(f"[{hhmmss()}] 💰 机会 #{st.hits}  {n} 股 | "
-                                  f"UP均价 {pu:.4f} DOWN均价 {pd:.4f} | 含费成本 {total/n:.4f} | "
-                                  f"净边 {100*edge:.3f}% ⇒ 该笔毛赚 ${edge*n:.2f} | 剩余 {remain:.0f}s")
+                            st.raw_hits += 1
+                            st.best_now = max(st.best_now, edge)
+                            pending.append((tnow + DELAY_MS / 1000.0, n, edge, remain))
+
+                        # ---- 📼 顺手落盘(节流每秒一帧)----
+                        if tnow - last_frame >= FRAME_EVERY_S:
+                            last_frame = tnow
+                            rec("frame", slug=slug, remain=round(remain, 2),
+                                up_asks=sorted(up.asks.items())[:5],
+                                dn_asks=sorted(down.asks.items())[:5],
+                                up_bids=sorted(up.bids.items(), reverse=True)[:5],
+                                dn_bids=sorted(down.bids.items(), reverse=True)[:5])
 
                     if time.time() - last_report >= 60:
                         print(st.line())
@@ -311,27 +380,47 @@ async def run(minutes: float | None):
 
     print("\n" + "=" * 78)
     print("收工。" + st.line())
-    mins = (time.time() - st.t0) / 60
-    if st.hits == 0:
-        print("⇒ 全程 0 次机会。若持续如此,同窗口荷兰赌这条路可以关掉,不必再建任何东西。")
+    mins = max((time.time() - st.t0) / 60, 1e-9)
+    print(f"  瞬时有边(第一列,⚠️会虚高)  {st.raw_hits} 次 | 最好 {100*st.best_now:.3f}%")
+    print(f"  ⭐延迟 {DELAY_MS}ms 后仍有边(判生死) {st.real_hits} 次 | 最好 {100*st.best_after:.3f}%")
+    if st.raw_hits:
+        print(f"  存活率 {100*st.real_hits/st.raw_hits:.1f}%  ← 机会看得见抓不抓得住,全在这个数")
+    if st.real_sizes:
+        srt = sorted(st.real_sizes)
+        print(f"  可成交股数中位 {srt[len(srt)//2]} 股 | 窗内分布 {st.phase}")
+    print()
+    if st.real_hits == 0:
+        print("  ⇒ 🔴 延迟后 0 次。若跑满一天仍如此,同窗口荷兰赌可以关掉,七个模块一个都不用写。")
     else:
-        print(f"⇒ 按此速率外推:约 {st.hits / max(mins,1e-9) * 60 * 24:.0f} 次/天")
-        print("   ⚠️ 这只是「看见了几次」。真下单还要过:两腿都成交、深度真吃得到、延迟内价格没变。")
+        per_day = st.real_hits / mins * 60 * 24
+        med = sorted(st.real_sizes)[len(st.real_sizes)//2]
+        print(f"  ⇒ 按此速率外推:约 {per_day:.0f} 次/天,中位 {med} 股")
+        print(f"     粗估日收益 ≈ {100*st.best_after:.3f}% × {med} 股 × {per_day:.0f} 次 "
+              f"= ${st.best_after*med*per_day:.2f}/天(⚠️ 用最好边算,是上界)")
+    if REC_PATH:
+        print(f"\n  📼 盘口与机会已落盘: {REC_PATH}")
     print("=" * 78)
 
 
 def main():
-    global MIN_EDGE
+    global MIN_EDGE, REC_PATH
     ap = argparse.ArgumentParser(description="BTC 15m 荷兰赌 paper 观察器(只报告不下单)")
     ap.add_argument("--minutes", type=float, default=None, help="跑多少分钟后自动收工")
     ap.add_argument("--min-edge", type=float, default=MIN_EDGE, help=f"净边门槛(默认 {MIN_EDGE})")
     ap.add_argument("--skip-selftest", action="store_true")
+    ap.add_argument("--record", default=None,
+                    help="盘口/机会落盘的 jsonl 路径(默认 12-btc/rec_<日期>.jsonl;--no-record 关闭)")
+    ap.add_argument("--no-record", action="store_true")
     a = ap.parse_args()
     MIN_EDGE = a.min_edge
+    if not a.no_record:
+        REC_PATH = a.record or f"12-btc/rec_{datetime.now(UTC):%Y%m%d}.jsonl"
 
     print("=" * 78)
     print("BTC 15m 同窗口荷兰赌 · paper 模式(⛔ 不下单 · ⛔ 不写任何文件)")
-    print(f"净边门槛 {100*MIN_EDGE:.2f}% | 窗末 {NO_ENTRY_LAST_SEC}s 禁开 | 试探股数 {SIZES}")
+    print(f"净边门槛 {100*MIN_EDGE:.2f}% | 延迟复算 {DELAY_MS}ms | 窗末 {NO_ENTRY_LAST_SEC}s 禁开")
+    print(f"试探股数 {SIZES} | 落盘 {REC_PATH or '关闭'}")
+    print("⭐ 判生死看【延迟后仍有边】那一列,不是瞬时边")
     print("=" * 78)
     if not a.skip_selftest and not selftest():
         sys.exit("🔴 自检未通过,不跑。")
